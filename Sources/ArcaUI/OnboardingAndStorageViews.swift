@@ -1,0 +1,556 @@
+import SwiftUI
+import ArcaCore
+
+// MARK: - Screens 1, 2, 3, 4: Welcome, Storage Choice, Cloud Account Setup, Starter Templates
+
+@available(macOS 14.0, iOS 17.0, *)
+public struct OnboardingContainerView: View {
+    @Bindable var viewModel: ArcaAppViewModel
+
+    @ViewState private var currentStep: Int = 1
+    @ViewState private var selectedMode: SpaceStorageMode = .arcaSync
+    @ViewState private var acceptedCloudTerms: Bool = false
+    @ViewState private var emailInput: String = ""
+    @ViewState private var selectedTemplates: Set<StarterTemplateID> = [.vehicleMaintenance, .homeInventory, .warranties]
+    @ViewState private var includeSensitiveMedicalLocalSpace: Bool = false
+    @Environment(\.colorScheme) private var colorScheme
+
+    public init(viewModel: ArcaAppViewModel) {
+        self.viewModel = viewModel
+    }
+
+    public var body: some View {
+        VStack(spacing: 0) {
+            // Top Mobile Header Bar with Step Progress & Language Selector
+            VStack(spacing: 12) {
+                HStack {
+                    HStack(spacing: 8) {
+                        ZStack {
+                            RoundedRectangle(cornerRadius: 9, style: .continuous)
+                                .fill(ArcaTheme.accent)
+                                .frame(width: 28, height: 28)
+                            Image(systemName: "archivebox.fill")
+                                .font(.system(size: 13, weight: .bold))
+                                .foregroundStyle(.white)
+                        }
+                        Text(ArcaStrings.text("app.name", language: viewModel.language))
+                            .font(.system(size: 17, weight: .bold, design: .rounded))
+                    }
+
+                    Spacer()
+
+                    Text("Step \(currentStep) of 4")
+                        .font(.system(size: 12, weight: .semibold, design: .rounded))
+                        .foregroundStyle(.secondary)
+
+                    Spacer()
+
+                    Menu {
+                        ForEach(AppLanguage.allCases) { lang in
+                            Button {
+                                viewModel.language = lang
+                            } label: {
+                                Label(lang.displayName, systemImage: viewModel.language == lang ? "checkmark" : "globe")
+                            }
+                        }
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "globe")
+                                .font(.system(size: 12, weight: .semibold))
+                            Text(viewModel.language.rawValue.uppercased())
+                                .font(.system(size: 12, weight: .bold, design: .rounded))
+                        }
+                        .foregroundStyle(ArcaTheme.accent)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 5)
+                        .background(Capsule().fill(ArcaTheme.accent.opacity(0.12)))
+                    }
+                    .buttonStyle(.plain)
+                }
+
+                // Step Progress Bar
+                HStack(spacing: 6) {
+                    ForEach(1...4, id: \.self) { step in
+                        Capsule()
+                            .fill(step <= currentStep ? ArcaTheme.accent : Color.secondary.opacity(0.20))
+                            .frame(height: 5)
+                    }
+                }
+                .accessibilityLabel("Onboarding step \(currentStep) of 4")
+            }
+            .padding(.horizontal, 20)
+            .padding(.top, 14)
+            .padding(.bottom, 10)
+
+            Group {
+                switch currentStep {
+                case 1:
+                    welcomeStep
+                case 2:
+                    storageChoiceStep
+                case 3:
+                    cloudAccountSetupStep
+                default:
+                    starterTemplateStep
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+        .background(ArcaTheme.canvasBackground(for: colorScheme))
+    }
+
+    // MARK: Screen 1 — Welcome
+    private var welcomeStep: some View {
+        ScrollView(showsIndicators: false) {
+            VStack(alignment: .leading, spacing: 22) {
+                // Hero Card
+                VStack(alignment: .leading, spacing: 14) {
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 20, style: .continuous)
+                            .fill(
+                                LinearGradient(
+                                    colors: [ArcaTheme.accent, ArcaTheme.secondaryEmerald],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                )
+                            )
+                            .frame(width: 64, height: 64)
+                            .shadow(color: ArcaTheme.accent.opacity(0.30), radius: 12, x: 0, y: 6)
+
+                        Image(systemName: "archivebox.fill")
+                            .font(.system(size: 28, weight: .bold))
+                            .foregroundStyle(.white)
+                    }
+
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(ArcaStrings.text("app.tagline", language: viewModel.language))
+                            .font(.system(size: 28, weight: .bold, design: .rounded))
+                            .foregroundStyle(.primary)
+
+                        Text(ArcaStrings.text("app.heroPrompt", language: viewModel.language))
+                            .font(.system(size: 15))
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                .padding(.top, 6)
+
+                // Value Pillars Card
+                ArcaSectionCard(title: "Why People Trust Arca", icon: "checkmark.seal.fill") {
+                    VStack(alignment: .leading, spacing: 16) {
+                        featureRow(
+                            icon: "internaldrive.fill",
+                            tint: ArcaTheme.accent,
+                            title: "Local-First & Offline Ready",
+                            subtitle: "Every Space lives on your phone first. Create, search, and edit records in a garage or on a flight with zero signal."
+                        )
+                        Divider().opacity(0.5)
+                        featureRow(
+                            icon: "slider.horizontal.3",
+                            tint: ArcaTheme.secondaryEmerald,
+                            title: "Friendly Forms, No Database Jargon",
+                            subtitle: "Start with ready-made templates for vehicles, warranties, home inventory, or health visits—or customize fields any time."
+                        )
+                        Divider().opacity(0.5)
+                        featureRow(
+                            icon: "lock.shield.fill",
+                            tint: ArcaTheme.plumSensitive,
+                            title: "Per-Space Privacy Control",
+                            subtitle: "Sync general spaces across devices with client-side encryption, while keeping sensitive spaces strictly on this device."
+                        )
+                    }
+                }
+
+                Button {
+                    withAnimation(.spring(response: 0.32, dampingFraction: 0.84)) { currentStep = 2 }
+                } label: {
+                    HStack {
+                        Text(ArcaStrings.text("welcome.getStarted", language: viewModel.language))
+                        Image(systemName: "arrow.right")
+                    }
+                }
+                .buttonStyle(ArcaPrimaryButtonStyle())
+            }
+            .padding(20)
+        }
+    }
+
+    // MARK: Screen 2 — Storage Choice & Privacy Explanation
+    private var storageChoiceStep: some View {
+        ScrollView(showsIndicators: false) {
+            VStack(alignment: .leading, spacing: 16) {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(ArcaStrings.text("storage.title", language: viewModel.language))
+                        .font(.system(size: 22, weight: .bold, design: .rounded))
+
+                    Text("Choose a default for new Spaces. You can always keep sensitive Spaces (like Medical Visits) Local-Only while syncing others.")
+                        .font(.system(size: 13))
+                        .foregroundStyle(.secondary)
+                }
+
+                storageModeOptionCard(
+                    mode: .arcaSync,
+                    badge: "Recommended",
+                    icon: "arrow.triangle.2.circlepath.icloud.fill",
+                    tint: ArcaTheme.accent,
+                    title: ArcaStrings.text("storage.mode.arcaSync.title", language: viewModel.language),
+                    bullets: [
+                        "Records live locally first and synchronize automatically when online.",
+                        "End-to-end encrypted on your device—Arca servers never see plaintext records, schemas, or keys.",
+                        "Free accounts support up to 2 active devices."
+                    ]
+                )
+
+                storageModeOptionCard(
+                    mode: .localOnly,
+                    badge: "No Account",
+                    icon: "iphone",
+                    tint: ArcaTheme.secondaryEmerald,
+                    title: ArcaStrings.text("storage.mode.localOnly.title", language: viewModel.language),
+                    bullets: [
+                        "Records and attachments never leave this device unless you export a backup.",
+                        "Full offline search, insights, and manual `.arcaarchive` backups included free.",
+                        "Remember to export periodic backups since Arca holds no remote copy."
+                    ]
+                )
+
+                storageModeOptionCard(
+                    mode: .personalCloudBackup,
+                    badge: "Pro Adapter",
+                    icon: "externaldrive.fill.badge.icloud",
+                    tint: ArcaTheme.warmAmber,
+                    title: ArcaStrings.text("storage.mode.personalCloud.title", language: viewModel.language),
+                    bullets: [
+                        "Direct encrypted backup archives to iCloud Drive or Google Drive.",
+                        "Treated as encrypted backup first, separate from live sync.",
+                        "Never silently falls back to Arca Cloud if a provider fails."
+                    ]
+                )
+
+                if selectedMode == .arcaSync {
+                    Button {
+                        acceptedCloudTerms.toggle()
+                    } label: {
+                        HStack(alignment: .top, spacing: 12) {
+                            Image(systemName: acceptedCloudTerms ? "checkmark.square.fill" : "square")
+                                .font(.system(size: 20, weight: .semibold))
+                                .foregroundStyle(acceptedCloudTerms ? ArcaTheme.accent : .secondary)
+
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text("I understand and accept encrypted cloud storage for synced Spaces")
+                                    .font(.system(size: 13, weight: .semibold, design: .rounded))
+                                    .foregroundStyle(.primary)
+                                Text("No records upload until you enable Arca Sync. Server-visible metadata is limited to account ID, device count, ciphertext byte size, and request timestamps.")
+                                    .font(.system(size: 11))
+                                    .foregroundStyle(.secondary)
+                                    .multilineTextAlignment(.leading)
+                            }
+                        }
+                        .padding(14)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(
+                            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                .fill(ArcaTheme.accent.opacity(0.08))
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                .strokeBorder(ArcaTheme.accent.opacity(0.28), lineWidth: 1)
+                        )
+                    }
+                    .buttonStyle(.plain)
+                }
+
+                HStack(spacing: 10) {
+                    Button("Back") {
+                        withAnimation { currentStep = 1 }
+                    }
+                    .buttonStyle(ArcaSecondaryButtonStyle(tint: .secondary))
+
+                    Button("Continue") {
+                        withAnimation(.spring(response: 0.32, dampingFraction: 0.84)) {
+                            if selectedMode == .localOnly {
+                                currentStep = 4
+                            } else {
+                                currentStep = 3
+                            }
+                        }
+                    }
+                    .buttonStyle(ArcaPrimaryButtonStyle())
+                    .disabled(selectedMode == .arcaSync && !acceptedCloudTerms)
+                }
+                .padding(.top, 4)
+            }
+            .padding(20)
+        }
+    }
+
+    // MARK: Screen 3 — Cloud Account Setup (Skippable through Local-Only Mode)
+    private var cloudAccountSetupStep: some View {
+        ScrollView(showsIndicators: false) {
+            VStack(alignment: .leading, spacing: 18) {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Set Up Arca Sync & Recovery Key")
+                        .font(.system(size: 22, weight: .bold, design: .rounded))
+
+                    Text("Your account password signs you in, while your Recovery Key decrypts your records if you ever lose all enrolled devices.")
+                        .font(.system(size: 13))
+                        .foregroundStyle(.secondary)
+                }
+
+                ArcaSectionCard(title: "Account Sign-In Email", icon: "envelope.fill") {
+                    ArcaStyledTextField("you@example.com", text: $emailInput, icon: "at")
+                }
+
+                ArcaSectionCard(
+                    title: "Emergency E2EE Recovery Key",
+                    subtitle: "Resetting your account password cannot decrypt your synced records because Arca servers never hold your keys. Save this Recovery Key in a password manager.",
+                    icon: "key.fill",
+                    iconTint: ArcaTheme.warmAmber
+                ) {
+                    Text(viewModel.recoveryKeyPhrase)
+                        .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                        .foregroundStyle(.primary)
+                        .padding(12)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(
+                            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                .fill(ArcaTheme.warmAmber.opacity(0.10))
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                .strokeBorder(ArcaTheme.warmAmber.opacity(0.30), lineWidth: 1)
+                        )
+                }
+
+                VStack(spacing: 10) {
+                    Button {
+                        viewModel.completeCloudAccountEnrollment(email: emailInput.isEmpty ? "alex@example.com" : emailInput)
+                        withAnimation(.spring(response: 0.32, dampingFraction: 0.84)) { currentStep = 4 }
+                    } label: {
+                        Label("Enroll This Device & Continue", systemImage: "checkmark.shield.fill")
+                    }
+                    .buttonStyle(ArcaPrimaryButtonStyle())
+
+                    HStack(spacing: 10) {
+                        Button("Back") {
+                            withAnimation { currentStep = 2 }
+                        }
+                        .buttonStyle(ArcaSecondaryButtonStyle(tint: .secondary))
+
+                        Button("Skip & Use Local-Only Instead") {
+                            selectedMode = .localOnly
+                            withAnimation { currentStep = 4 }
+                        }
+                        .buttonStyle(ArcaSecondaryButtonStyle(tint: ArcaTheme.accent, isFullWidth: true))
+                    }
+                }
+            }
+            .padding(20)
+        }
+    }
+
+    // MARK: Screen 4 — Starter Template Selection
+    private var starterTemplateStep: some View {
+        ScrollView(showsIndicators: false) {
+            VStack(alignment: .leading, spacing: 16) {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Choose Starter Collections")
+                        .font(.system(size: 22, weight: .bold, design: .rounded))
+
+                    Text("We’ll create your default Space right away with realistic sample records so you can explore immediately.")
+                        .font(.system(size: 13))
+                        .foregroundStyle(.secondary)
+                }
+
+                ForEach(StarterTemplateCatalog.all) { template in
+                    let isMedical = template.id == .medicalVisits
+                    let isSelected = isMedical ? includeSensitiveMedicalLocalSpace : selectedTemplates.contains(template.id)
+                    let tintColor = ArcaTheme.color(fromHex: template.colorHex)
+
+                    Button {
+                        if isMedical {
+                            includeSensitiveMedicalLocalSpace.toggle()
+                        } else if selectedTemplates.contains(template.id) {
+                            selectedTemplates.remove(template.id)
+                        } else {
+                            selectedTemplates.insert(template.id)
+                        }
+                    } label: {
+                        VStack(alignment: .leading, spacing: 10) {
+                            HStack(alignment: .center, spacing: 14) {
+                                ZStack {
+                                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                        .fill(tintColor)
+                                        .frame(width: 42, height: 42)
+                                    Image(systemName: template.iconName)
+                                        .font(.system(size: 18, weight: .semibold))
+                                        .foregroundStyle(.white)
+                                }
+
+                                VStack(alignment: .leading, spacing: 3) {
+                                    HStack(spacing: 6) {
+                                        Text(template.name)
+                                            .font(.system(size: 15, weight: .bold, design: .rounded))
+                                            .foregroundStyle(.primary)
+                                        if isMedical {
+                                            Text("Local-Only Default")
+                                                .font(.system(size: 10, weight: .bold, design: .rounded))
+                                                .padding(.horizontal, 7)
+                                                .padding(.vertical, 3)
+                                                .background(Capsule().fill(ArcaTheme.plumSensitive.opacity(0.15)))
+                                                .foregroundStyle(ArcaTheme.plumSensitive)
+                                        }
+                                    }
+                                    Text(template.subtitle)
+                                        .font(.system(size: 12))
+                                        .foregroundStyle(.secondary)
+                                        .multilineTextAlignment(.leading)
+                                }
+
+                                Spacer()
+
+                                Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                                    .font(.system(size: 22, weight: .semibold))
+                                    .foregroundStyle(isSelected ? tintColor : Color.secondary.opacity(0.4))
+                            }
+
+                            if let disclosure = template.sensitivityDisclosure {
+                                Text(disclosure)
+                                    .font(.system(size: 11))
+                                    .foregroundStyle(.secondary)
+                                    .padding(10)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .background(
+                                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                            .fill(ArcaTheme.plumSensitive.opacity(0.08))
+                                    )
+                            }
+                        }
+                        .padding(14)
+                        .background(
+                            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                                .fill(ArcaTheme.cardBackground(for: colorScheme))
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                                .strokeBorder(isSelected ? tintColor.opacity(0.65) : ArcaTheme.cardBorder(for: colorScheme), lineWidth: isSelected ? 1.5 : 1)
+                        )
+                    }
+                    .buttonStyle(.plain)
+                }
+
+                HStack(spacing: 10) {
+                    Button("Back") {
+                        withAnimation { currentStep = 2 }
+                    }
+                    .buttonStyle(ArcaSecondaryButtonStyle(tint: .secondary))
+
+                    Button {
+                        Task {
+                            await viewModel.finishOnboarding(
+                                defaultMode: selectedMode == .personalCloudBackup ? .localOnly : selectedMode,
+                                acceptedCloudTerms: acceptedCloudTerms,
+                                selectedTemplates: Array(selectedTemplates),
+                                createSeparateMedicalLocalSpace: includeSensitiveMedicalLocalSpace
+                            )
+                        }
+                    } label: {
+                        Label("Open My Spaces", systemImage: "sparkles")
+                    }
+                    .buttonStyle(ArcaPrimaryButtonStyle())
+                }
+                .padding(.top, 4)
+            }
+            .padding(20)
+        }
+    }
+
+    private func featureRow(icon: String, tint: Color, title: String, subtitle: String) -> some View {
+        HStack(alignment: .top, spacing: 14) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(tint.opacity(0.14))
+                    .frame(width: 36, height: 36)
+                Image(systemName: icon)
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(tint)
+            }
+            .accessibilityHidden(true)
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title)
+                    .font(.system(size: 14, weight: .bold, design: .rounded))
+                Text(subtitle)
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    private func storageModeOptionCard(
+        mode: SpaceStorageMode,
+        badge: String,
+        icon: String,
+        tint: Color,
+        title: String,
+        bullets: [String]
+    ) -> some View {
+        let isSelected = selectedMode == mode
+        return Button {
+            withAnimation(.easeOut(duration: 0.16)) {
+                selectedMode = mode
+            }
+        } label: {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(spacing: 10) {
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .fill(tint.opacity(0.14))
+                            .frame(width: 34, height: 34)
+                        Image(systemName: icon)
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundStyle(tint)
+                    }
+
+                    Text(title)
+                        .font(.system(size: 15, weight: .bold, design: .rounded))
+                        .foregroundStyle(.primary)
+
+                    Spacer()
+
+                    Text(badge)
+                        .font(.system(size: 10, weight: .bold, design: .rounded))
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(Capsule().fill(tint.opacity(0.14)))
+                        .foregroundStyle(tint)
+                }
+
+                ForEach(bullets, id: \.self) { bullet in
+                    HStack(alignment: .top, spacing: 8) {
+                        Circle()
+                            .fill(tint.opacity(0.6))
+                            .frame(width: 5, height: 5)
+                            .padding(.top, 5)
+                        Text(bullet)
+                            .font(.system(size: 12))
+                            .foregroundStyle(.secondary)
+                            .multilineTextAlignment(.leading)
+                    }
+                }
+            }
+            .padding(15)
+            .background(
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .fill(ArcaTheme.cardBackground(for: colorScheme))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .strokeBorder(isSelected ? tint : ArcaTheme.cardBorder(for: colorScheme), lineWidth: isSelected ? 2 : 1)
+            )
+            .shadow(color: isSelected ? tint.opacity(0.12) : .clear, radius: 8, x: 0, y: 4)
+        }
+        .buttonStyle(.plain)
+    }
+}

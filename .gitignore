@@ -1,0 +1,21 @@
+# macOS
+.DS_Store
+
+# Swift Package Manager & Xcode build artifacts
+.build/
+.swiftpm/
+DerivedData/
+xcuserdata/
+*.xcworkspace/xcuserdata/
+Arca.app/
+
+# Local downloaded SDK & toolchains
+.tools/
+
+# Android Gradle build artifacts & local SDK paths
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
+*.iml
+.idea/

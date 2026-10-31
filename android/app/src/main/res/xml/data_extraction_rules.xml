@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<data-extraction-rules>
+    <!-- Local-only Spaces and encryption keys are excluded from automatic unencrypted OS cloud extraction -->
+    <cloud-backup>
+        <exclude domain="database" path="." />
+        <exclude domain="file" path="spaces" />
+        <exclude domain="sharedpref" path="." />
+    </cloud-backup>
+    <device-transfer>
+        <exclude domain="database" path="." />
+        <exclude domain="file" path="spaces" />
+    </device-transfer>
+</data-extraction-rules>
