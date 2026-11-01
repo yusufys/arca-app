@@ -177,111 +177,23 @@ public struct OnboardingContainerView: View {
 
     // MARK: Screen 2 — Storage Choice & Privacy Explanation
     private var storageChoiceStep: some View {
-        ScrollView(showsIndicators: false) {
-            VStack(alignment: .leading, spacing: 16) {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text(ArcaStrings.text("storage.title", language: viewModel.language))
-                        .font(.system(size: 22, weight: .bold, design: .rounded))
-
-                    Text("Choose a default for new Spaces. You can always keep sensitive Spaces (like Medical Visits) Local-Only while syncing others.")
-                        .font(.system(size: 13))
-                        .foregroundStyle(.secondary)
-                }
-
-                storageModeOptionCard(
-                    mode: .arcaSync,
-                    badge: "Recommended",
-                    icon: "arrow.triangle.2.circlepath.icloud.fill",
-                    tint: ArcaTheme.accent,
-                    title: ArcaStrings.text("storage.mode.arcaSync.title", language: viewModel.language),
-                    bullets: [
-                        "Records live locally first and synchronize automatically when online.",
-                        "End-to-end encrypted on your device—Arca servers never see plaintext records, schemas, or keys.",
-                        "Free accounts support up to 2 active devices."
-                    ]
-                )
-
-                storageModeOptionCard(
-                    mode: .localOnly,
-                    badge: "No Account",
-                    icon: "iphone",
-                    tint: ArcaTheme.secondaryEmerald,
-                    title: ArcaStrings.text("storage.mode.localOnly.title", language: viewModel.language),
-                    bullets: [
-                        "Records and attachments never leave this device unless you export a backup.",
-                        "Full offline search, insights, and manual `.arcaarchive` backups included free.",
-                        "Remember to export periodic backups since Arca holds no remote copy."
-                    ]
-                )
-
-                storageModeOptionCard(
-                    mode: .personalCloudBackup,
-                    badge: "Pro Adapter",
-                    icon: "externaldrive.fill.badge.icloud",
-                    tint: ArcaTheme.warmAmber,
-                    title: ArcaStrings.text("storage.mode.personalCloud.title", language: viewModel.language),
-                    bullets: [
-                        "Direct encrypted backup archives to iCloud Drive or Google Drive.",
-                        "Treated as encrypted backup first, separate from live sync.",
-                        "Never silently falls back to Arca Cloud if a provider fails."
-                    ]
-                )
-
-                if selectedMode == .arcaSync {
-                    Button {
-                        acceptedCloudTerms.toggle()
-                    } label: {
-                        HStack(alignment: .top, spacing: 12) {
-                            Image(systemName: acceptedCloudTerms ? "checkmark.square.fill" : "square")
-                                .font(.system(size: 20, weight: .semibold))
-                                .foregroundStyle(acceptedCloudTerms ? ArcaTheme.accent : .secondary)
-
-                            VStack(alignment: .leading, spacing: 3) {
-                                Text("I understand and accept encrypted cloud storage for synced Spaces")
-                                    .font(.system(size: 13, weight: .semibold, design: .rounded))
-                                    .foregroundStyle(.primary)
-                                Text("No records upload until you enable Arca Sync. Server-visible metadata is limited to account ID, device count, ciphertext byte size, and request timestamps.")
-                                    .font(.system(size: 11))
-                                    .foregroundStyle(.secondary)
-                                    .multilineTextAlignment(.leading)
-                            }
-                        }
-                        .padding(14)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(
-                            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                                .fill(ArcaTheme.accent.opacity(0.08))
-                        )
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                                .strokeBorder(ArcaTheme.accent.opacity(0.28), lineWidth: 1)
-                        )
+        StorageModeComparisonStepView(
+            selectedMode: $selectedMode,
+            acceptedCloudTerms: $acceptedCloudTerms,
+            language: viewModel.language,
+            onBack: {
+                withAnimation { currentStep = 1 }
+            },
+            onContinue: {
+                withAnimation(.spring(response: 0.32, dampingFraction: 0.84)) {
+                    if selectedMode == .localOnly {
+                        currentStep = 4
+                    } else {
+                        currentStep = 3
                     }
-                    .buttonStyle(.plain)
                 }
-
-                HStack(spacing: 10) {
-                    Button("Back") {
-                        withAnimation { currentStep = 1 }
-                    }
-                    .buttonStyle(ArcaSecondaryButtonStyle(tint: .secondary))
-
-                    Button("Continue") {
-                        withAnimation(.spring(response: 0.32, dampingFraction: 0.84)) {
-                            if selectedMode == .localOnly {
-                                currentStep = 4
-                            } else {
-                                currentStep = 3
-                            }
-                        }
-                    }
-                    .buttonStyle(ArcaPrimaryButtonStyle())
-                    .disabled(selectedMode == .arcaSync && !acceptedCloudTerms)
-                }
-                .padding(.top, 4)
             }
-            .padding(20)
-        }
+        )
     }
 
     // MARK: Screen 3 — Cloud Account Setup (Skippable through Local-Only Mode)
@@ -485,6 +397,140 @@ public struct OnboardingContainerView: View {
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
+        }
+    }
+}
+
+// MARK: - Screen 2: Storage Mode Comparison Step View (Arca Sync Default vs Local-Only)
+
+@available(macOS 14.0, iOS 17.0, *)
+public struct StorageModeComparisonStepView: View {
+    @Binding public var selectedMode: SpaceStorageMode
+    @Binding public var acceptedCloudTerms: Bool
+    public var language: AppLanguage
+    public var onBack: (() -> Void)?
+    public var onContinue: (() -> Void)?
+    @Environment(\.colorScheme) private var colorScheme
+
+    public init(
+        selectedMode: Binding<SpaceStorageMode>,
+        acceptedCloudTerms: Binding<Bool>,
+        language: AppLanguage = .english,
+        onBack: (() -> Void)? = nil,
+        onContinue: (() -> Void)? = nil
+    ) {
+        self._selectedMode = selectedMode
+        self._acceptedCloudTerms = acceptedCloudTerms
+        self.language = language
+        self.onBack = onBack
+        self.onContinue = onContinue
+    }
+
+    public var body: some View {
+        ScrollView(showsIndicators: false) {
+            VStack(alignment: .leading, spacing: 16) {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(ArcaStrings.text("storage.title", language: language))
+                        .font(.system(size: 22, weight: .bold, design: .rounded))
+
+                    Text("Arca Sync is the default cloud-synced E2EE mode for new Spaces. Local-Only is always available whenever you want records never to leave this phone.")
+                        .font(.system(size: 13))
+                        .foregroundStyle(.secondary)
+                }
+
+                storageModeOptionCard(
+                    mode: .arcaSync,
+                    badge: "Cloud DB — Default",
+                    icon: "arrow.triangle.2.circlepath.icloud.fill",
+                    tint: ArcaTheme.accent,
+                    title: "Arca Sync (Cloud DB — Default)",
+                    bullets: [
+                        "Default mode for new Spaces. Records live locally first and synchronize seamlessly across devices when online.",
+                        "End-to-end encrypted on your device—Arca servers never see plaintext records, schemas, or encryption keys.",
+                        "Free accounts support up to 2 active devices; Pro expands to 10 devices."
+                    ]
+                )
+
+                storageModeOptionCard(
+                    mode: .localOnly,
+                    badge: "On This Device",
+                    icon: "iphone",
+                    tint: ArcaTheme.secondaryEmerald,
+                    title: "Local-Only (On This Device)",
+                    bullets: [
+                        "Always-available option for users who want records never to leave their phone.",
+                        "Zero account required. Sensitive Medical Visits spaces default to Local-Only with explicit disclosure.",
+                        "Full offline SQLite storage, FTS5 search, insights, and manual .arcaarchive backups included free."
+                    ]
+                )
+
+                storageModeOptionCard(
+                    mode: .personalCloudBackup,
+                    badge: "Pro Adapter",
+                    icon: "externaldrive.fill.badge.icloud",
+                    tint: ArcaTheme.warmAmber,
+                    title: ArcaStrings.text("storage.mode.personalCloud.title", language: language),
+                    bullets: [
+                        "Direct encrypted backup archives to iCloud Drive or Google Drive.",
+                        "Treated as encrypted backup first, separate from live sync.",
+                        "Never silently falls back to Arca Cloud if a provider fails."
+                    ]
+                )
+
+                if selectedMode == .arcaSync {
+                    Button {
+                        acceptedCloudTerms.toggle()
+                    } label: {
+                        HStack(alignment: .top, spacing: 12) {
+                            Image(systemName: acceptedCloudTerms ? "checkmark.square.fill" : "square")
+                                .font(.system(size: 20, weight: .semibold))
+                                .foregroundStyle(acceptedCloudTerms ? ArcaTheme.accent : .secondary)
+
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text("I understand and accept encrypted cloud storage for synced Spaces")
+                                    .font(.system(size: 13, weight: .semibold, design: .rounded))
+                                    .foregroundStyle(.primary)
+                                Text("No records upload until you enable Arca Sync. Server-visible metadata is limited to account ID, device count, ciphertext byte size, and request timestamps.")
+                                    .font(.system(size: 11))
+                                    .foregroundStyle(.secondary)
+                                    .multilineTextAlignment(.leading)
+                            }
+                        }
+                        .padding(14)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(
+                            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                .fill(ArcaTheme.accent.opacity(0.08))
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                .strokeBorder(ArcaTheme.accent.opacity(0.28), lineWidth: 1)
+                        )
+                    }
+                    .buttonStyle(.plain)
+                }
+
+                if onBack != nil || onContinue != nil {
+                    HStack(spacing: 10) {
+                        if let back = onBack {
+                            Button("Back") {
+                                back()
+                            }
+                            .buttonStyle(ArcaSecondaryButtonStyle(tint: .secondary))
+                        }
+
+                        if let cont = onContinue {
+                            Button("Continue") {
+                                cont()
+                            }
+                            .buttonStyle(ArcaPrimaryButtonStyle())
+                            .disabled(selectedMode == .arcaSync && !acceptedCloudTerms)
+                        }
+                    }
+                    .padding(.top, 4)
+                }
+            }
+            .padding(20)
         }
     }
 

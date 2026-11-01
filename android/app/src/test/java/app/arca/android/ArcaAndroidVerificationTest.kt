@@ -94,12 +94,78 @@ class ArcaAndroidVerificationTest {
 
         val sensitiveMedicalSpace = SpaceMetadata(
             name = "Medical Visits",
-            storageMode = SpaceStorageMode.LOCAL_ONLY,
             containsSensitiveHealthTemplate = true
         )
+        assertEquals(SpaceStorageMode.LOCAL_ONLY, sensitiveMedicalSpace.resolvedStorageMode)
         val policy = ProviderPolicyAssessment.evaluate(PersonalCloudProvider.ICLOUD_DRIVE, sensitiveMedicalSpace)
         assertFalse(policy.isPermittedForBackup)
         assertFalse(policy.allowsSilentFallbackToArcaCloud)
+    }
+
+    @Test
+    fun verifySpaceStorageModeDefaultsAndSwitching() {
+        // Regular space defaults to ARCA_SYNC
+        val regularSpace = SpaceMetadata(name = "Personal Projects")
+        assertEquals(SpaceStorageMode.ARCA_SYNC, regularSpace.storageMode)
+        assertEquals(SpaceStorageMode.ARCA_SYNC, regularSpace.resolvedStorageMode)
+
+        // Sensitive Medical Visits space defaults to LOCAL_ONLY via resolvedStorageMode
+        val sensitiveMedicalSpace = SpaceMetadata(
+            name = "Medical Visits",
+            containsSensitiveHealthTemplate = true
+        )
+        assertEquals(SpaceStorageMode.LOCAL_ONLY, sensitiveMedicalSpace.resolvedStorageMode)
+
+        // Sensitive space with explicit user confirmation can use ARCA_SYNC
+        val confirmedSensitiveSpace = SpaceMetadata(
+            name = "Confirmed Medical",
+            storageMode = SpaceStorageMode.ARCA_SYNC,
+            containsSensitiveHealthTemplate = true,
+            userExplicitlyConfirmedSyncForSensitiveSpace = true
+        )
+        assertEquals(SpaceStorageMode.ARCA_SYNC, confirmedSensitiveSpace.resolvedStorageMode)
+
+        // Users can choose or switch to LOCAL_ONLY anytime
+        val switchedLocalSpace = regularSpace.copy(storageMode = SpaceStorageMode.LOCAL_ONLY)
+        assertEquals(SpaceStorageMode.LOCAL_ONLY, switchedLocalSpace.storageMode)
+        assertEquals(SpaceStorageMode.LOCAL_ONLY, switchedLocalSpace.resolvedStorageMode)
+
+        // ViewModel test: bootstrapDefaultWorkspace uses ARCA_SYNC for default space
+        val vm = app.arca.android.ui.ArcaViewModel(startWithCompletedOnboarding = true)
+        val initialDefaultSpace = vm.currentSpace
+        assertEquals(SpaceStorageMode.ARCA_SYNC, initialDefaultSpace?.storageMode)
+
+        // Create new space with default ARCA_SYNC
+        vm.createSpace(name = "Workshop", iconName = "build")
+        val createdSpace = vm.spaces.first { it.name == "Workshop" }
+        assertEquals(SpaceStorageMode.ARCA_SYNC, createdSpace.storageMode)
+
+        // User chooses LOCAL_ONLY when creating
+        vm.createSpace(name = "Private Vault", iconName = "lock", storageMode = SpaceStorageMode.LOCAL_ONLY)
+        val privateSpace = vm.spaces.first { it.name == "Private Vault" }
+        assertEquals(SpaceStorageMode.LOCAL_ONLY, privateSpace.storageMode)
+
+        // User can switch/toggle storage mode anytime
+        vm.toggleSpaceStorageMode(createdSpace.id)
+        val toggledSpace = vm.spaces.first { it.id == createdSpace.id }
+        assertEquals(SpaceStorageMode.LOCAL_ONLY, toggledSpace.storageMode)
+    }
+
+    @Test
+    fun verifyAppAnnouncementBannerAndLaravelHttpConfigDefaults() {
+        val banner = app.arca.android.model.AppAnnouncementBanner(
+            id = "ann-1",
+            title = "Welcome to Arca Sync",
+            body = "End-to-end encrypted cloud sync is now default."
+        )
+        assertEquals("home_banner", banner.placement)
+        assertEquals("android", banner.targetPlatform)
+        assertEquals("all", banner.targetTier)
+
+        val config = app.arca.android.sync.LaravelHttpConfig()
+        assertEquals("http://10.0.2.2:8000", config.baseUrl)
+        assertEquals(null, config.apiToken)
+        assertEquals(SpaceStorageMode.ARCA_SYNC, config.defaultStorageMode)
     }
 
     @Test(expected = IllegalArgumentException::class)

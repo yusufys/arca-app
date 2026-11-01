@@ -3,7 +3,12 @@
 **Arca — “Your records. Your way.”**  
 *"Save something important now. Find it easily when you need it."*
 
-A local-first, cross-platform monorepo for **Arca** on **iOS (Swift / SwiftUI)** and **Android (Kotlin / Jetpack Compose)**.
+A cross-platform monorepo for **Arca** featuring:
+- **iOS (`Swift` / `SwiftUI`)**
+- **Android (`Kotlin` / `Jetpack Compose`)**
+- **Backend (`Laravel 13` + `PostgreSQL` + `FilamentPHP Admin Panel` + `RevenueCat Webhooks`)**
+
+By default, new Spaces use **Arca Sync (Cloud DB, End-to-End Encrypted)** while allowing users to switch any Space to **Local-Only (On Device)** at any time (and defaulting sensitive **Medical Visits** spaces to Local-Only with disclosure).
 
 ---
 
@@ -20,8 +25,8 @@ arca-app/
 │   ├── ArcaCrypto/                  # Provider-independent AES-256-GCM, HKDF-SHA256, Curve25519 & RecoveryKeyCredential
 │   ├── ArcaPersistence/             # Actor-based SQLite WAL stores (CatalogStore, SpaceStore, FTS5 search, projections)
 │   ├── ArcaArchive/                 # Portable .arcaarchive & encrypted .arcaarchive.enc export and staged restore
-│   ├── ArcaSync/                    # Durable outbox, idempotent operations & concurrent edit conflict preservation
-│   ├── ArcaBilling/                 # StoreKit 2 subscriptions & non-destructive post-expiry safeguards
+│   ├── ArcaSync/                    # Durable outbox, Laravel HTTP E2EE sync client & conflict preservation
+│   ├── ArcaBilling/                 # StoreKit 2 / RevenueCat subscriptions & non-destructive post-expiry safeguards
 │   ├── ArcaCloudAdapters/           # Optional personal cloud backup adapters & provider policy verification
 │   ├── ArcaUI/                      # SwiftUI views, design system, and EN / AR (RTL) / TR localization
 │   ├── ArcaApp/                     # Desktop / Simulator preview entry point
@@ -33,10 +38,46 @@ arca-app/
 │   │   ├── model/                   # Cross-platform models, templates & SchemaEngine
 │   │   ├── crypto/                  # AES-256-GCM, HKDF-SHA256, PBKDF2 & .arcaarchive validator
 │   │   ├── persistence/             # Android SQLite WAL CatalogStore, SpaceStore & FTS search
-│   │   ├── sync/                    # Conflict merge engine, device limits & Play Billing post-expiry policy
+│   │   ├── sync/                    # Laravel HTTP sync config, conflict merge engine & post-expiry policy
 │   │   └── ui/                      # Jetpack Compose screens, ViewModel, Theme & EN / AR (RTL) / TR strings
 │   └── app/src/test/                # JUnit 4 verification tests
+├── backend/                         # Laravel 13 + PostgreSQL + FilamentPHP + RevenueCat Backend
+│   ├── config/arca.php              # Default Cloud Sync mode, Free/Pro quotas & RevenueCat config
+│   ├── app/Http/Controllers/Api/V1/ # Auth, Devices, E2EE Sync (Push/Pull/Migrate), Attachments, RevenueCat, Feed & Snapshots
+│   ├── app/Filament/Resources/      # FilamentPHP v3 Resources (Announcements/Ads, Users, Devices, Public Snapshots)
+│   ├── app/Http/Controllers/AdminDashboardController.php # Built-in /admin Web Dashboard
+│   ├── database/migrations/         # PostgreSQL migrations for E2EE sync log, devices, announcements & webhooks
+│   └── tests/Feature/               # Automated PHPUnit API & security test suite
 └── Arca-debug.apk                   # Pre-built Android debug APK for quick device testing
+```
+
+---
+
+## Running Backend (`Laravel` + `PostgreSQL` + `FilamentPHP` + `RevenueCat`)
+
+### 1. Configure `.env` for PostgreSQL & RevenueCat
+```bash
+cd backend
+cp .env.example .env
+composer install
+php artisan key:generate
+php artisan migrate --seed
+php artisan serve
+```
+
+### 2. Admin Panel & API Endpoints
+- **Admin Dashboard / Announcements & Ads Manager**: `http://127.0.0.1:8000/admin`
+- **RevenueCat Webhook Endpoint**: `POST /api/v1/webhooks/revenuecat` (with `Authorization: Bearer <REVENUECAT_WEBHOOK_SECRET>`)
+- **E2EE Sync Endpoints**:
+  - `POST /api/v1/spaces/{spaceId}/push` (Zero-plaintext validated; idempotent by `operation_id`)
+  - `GET /api/v1/spaces/{spaceId}/pull?since_cursor=0`
+  - `POST /api/v1/spaces/{spaceId}/migrate-mode` (Switch between `arca_sync` Cloud DB default and `local_only` with signed remote deletion receipt)
+- **App Feed (Announcements / Ads / Remote Config)**: `GET /api/v1/app-feed?platform=ios&tier=free`
+
+### 3. Run Backend Automated Tests (PHPUnit)
+```bash
+cd backend
+php artisan test
 ```
 
 ---

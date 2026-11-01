@@ -584,6 +584,12 @@ enum ArcaVerificationSuite {
         let healthSpace = vm.spaces.first(where: { $0.containsSensitiveHealthTemplate })
         try checkEqual(healthSpace?.storageMode, .localOnly, "Sensitive health template space must default to .localOnly")
 
+        // Verify SpaceMetadata constructor defaults
+        let regularDefaultSpace = SpaceMetadata(name: "Regular Project")
+        try checkEqual(regularDefaultSpace.storageMode, .arcaSync, "SpaceMetadata must default to .arcaSync for regular spaces")
+        let sensitiveDefaultSpace = SpaceMetadata(name: "Medical Space", containsSensitiveHealthTemplate: true)
+        try checkEqual(sensitiveDefaultSpace.storageMode, .localOnly, "SpaceMetadata must default to .localOnly for sensitive templates")
+
         // Verify Insights report
         let insights = vm.currentSpaceInsights
         try check(insights.totalRecords >= 2, "Default space should have seeded sample records")

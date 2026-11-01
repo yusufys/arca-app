@@ -19,3 +19,12 @@ android/app/build/
 android/local.properties
 *.iml
 .idea/
+
+# Laravel Backend vendor, local env & SQLite dev files
+backend/vendor/
+backend/node_modules/
+backend/.env
+backend/.env.backup
+backend/.phpunit.result.cache
+backend/database/*.sqlite
+backend/storage/*.key

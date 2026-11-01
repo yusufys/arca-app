@@ -34,7 +34,7 @@ let package = Package(
         ),
         .target(
             name: "ArcaSync",
-            dependencies: ["ArcaCore", "ArcaCrypto", "ArcaPersistence"]
+            dependencies: ["ArcaCore", "ArcaCrypto", "ArcaPersistence", "ArcaBilling"]
         ),
         .target(
             name: "ArcaBilling",

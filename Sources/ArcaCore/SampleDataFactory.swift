@@ -10,7 +10,7 @@ public enum SampleDataFactory {
         public let records: [RecordItem]
     }
 
-    public static func createDefaultPersonalSpace(storageMode: SpaceStorageMode = .localOnly) -> SeededSpaceBundle {
+    public static func createDefaultPersonalSpace(storageMode: SpaceStorageMode = .arcaSync) -> SeededSpaceBundle {
         let spaceId = UUID()
         let space = SpaceMetadata(
             id: spaceId,

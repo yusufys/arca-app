@@ -64,6 +64,7 @@ public struct SpaceMetadata: Identifiable, Codable, Sendable, Equatable, Hashabl
     public var cloudSyncAcceptedAt: Date?
     public var personalCloudProvider: PersonalCloudProvider?
     public var containsSensitiveHealthTemplate: Bool
+    public var userExplicitlyConfirmedSyncForSensitiveSpace: Bool
     public var createdAt: Date
     public var updatedAt: Date
     public var revision: Int64
@@ -73,10 +74,11 @@ public struct SpaceMetadata: Identifiable, Codable, Sendable, Equatable, Hashabl
         name: String,
         iconName: String = "folder.fill",
         accentHex: String = "#2B5B84",
-        storageMode: SpaceStorageMode = .localOnly,
+        storageMode: SpaceStorageMode = .arcaSync,
         cloudSyncAcceptedAt: Date? = nil,
         personalCloudProvider: PersonalCloudProvider? = nil,
         containsSensitiveHealthTemplate: Bool = false,
+        userExplicitlyConfirmedSyncForSensitiveSpace: Bool = false,
         createdAt: Date = Date(),
         updatedAt: Date = Date(),
         revision: Int64 = 1
@@ -85,13 +87,42 @@ public struct SpaceMetadata: Identifiable, Codable, Sendable, Equatable, Hashabl
         self.name = name
         self.iconName = iconName
         self.accentHex = accentHex
-        self.storageMode = storageMode
+        let resolvedMode: SpaceStorageMode
+        if containsSensitiveHealthTemplate && !userExplicitlyConfirmedSyncForSensitiveSpace {
+            resolvedMode = .localOnly
+        } else {
+            resolvedMode = storageMode
+        }
+        self.storageMode = resolvedMode
         self.cloudSyncAcceptedAt = cloudSyncAcceptedAt
         self.personalCloudProvider = personalCloudProvider
         self.containsSensitiveHealthTemplate = containsSensitiveHealthTemplate
+        self.userExplicitlyConfirmedSyncForSensitiveSpace = userExplicitlyConfirmedSyncForSensitiveSpace
         self.createdAt = createdAt
         self.updatedAt = updatedAt
         self.revision = revision
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id, name, iconName, accentHex, storageMode, cloudSyncAcceptedAt
+        case personalCloudProvider, containsSensitiveHealthTemplate
+        case userExplicitlyConfirmedSyncForSensitiveSpace, createdAt, updatedAt, revision
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.id = try container.decode(UUID.self, forKey: .id)
+        self.name = try container.decode(String.self, forKey: .name)
+        self.iconName = try container.decode(String.self, forKey: .iconName)
+        self.accentHex = try container.decode(String.self, forKey: .accentHex)
+        self.storageMode = try container.decode(SpaceStorageMode.self, forKey: .storageMode)
+        self.cloudSyncAcceptedAt = try container.decodeIfPresent(Date.self, forKey: .cloudSyncAcceptedAt)
+        self.personalCloudProvider = try container.decodeIfPresent(PersonalCloudProvider.self, forKey: .personalCloudProvider)
+        self.containsSensitiveHealthTemplate = try container.decodeIfPresent(Bool.self, forKey: .containsSensitiveHealthTemplate) ?? false
+        self.userExplicitlyConfirmedSyncForSensitiveSpace = try container.decodeIfPresent(Bool.self, forKey: .userExplicitlyConfirmedSyncForSensitiveSpace) ?? false
+        self.createdAt = try container.decode(Date.self, forKey: .createdAt)
+        self.updatedAt = try container.decode(Date.self, forKey: .updatedAt)
+        self.revision = try container.decode(Int64.self, forKey: .revision)
     }
 }
 

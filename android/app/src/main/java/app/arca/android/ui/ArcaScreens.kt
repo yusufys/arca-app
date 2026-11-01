@@ -338,6 +338,8 @@ fun HomeScreen(
     onQuickAddRecord: (CollectionSchema) -> Unit
 ) {
     var newSpaceName by remember { mutableStateOf("") }
+    var newSpaceMode by remember { mutableStateOf(SpaceStorageMode.ARCA_SYNC) }
+    var newSpaceIcon by remember { mutableStateOf("folder") }
     var showCreateSpace by remember { mutableStateOf(false) }
 
     Column(
@@ -354,15 +356,18 @@ fun HomeScreen(
         ) {
             Column(modifier = Modifier.weight(1f)) {
                 val modeText = if (viewModel.currentSpace?.storageMode == SpaceStorageMode.ARCA_SYNC) {
-                    "ARCA SYNC • E2EE"
+                    "ARCA SYNC • E2EE (TAP TO SWITCH)"
                 } else {
-                    "ON THIS DEVICE ONLY"
+                    "ON THIS DEVICE ONLY (TAP TO SWITCH)"
                 }
                 Text(
                     text = modeText,
                     fontSize = 10.sp,
                     fontWeight = FontWeight.Bold,
-                    color = ArcaPalette.AccentTeal
+                    color = if (viewModel.currentSpace?.storageMode == SpaceStorageMode.ARCA_SYNC) ArcaPalette.AccentTeal else ArcaPalette.SecondaryEmerald,
+                    modifier = Modifier.clickable {
+                        viewModel.currentSpace?.id?.let { viewModel.toggleSpaceStorageMode(it) }
+                    }
                 )
                 Text(
                     text = viewModel.currentSpace?.name ?: "Arca",
@@ -427,20 +432,45 @@ fun HomeScreen(
         }
 
         if (showCreateSpace) {
-            ArcaSectionCard(title = "Create Independent Space") {
+            ArcaSectionCard(
+                title = "Create Independent Space",
+                subtitle = "Each Space is stored in its own isolated SQLite database. Choose cloud sync or local-only."
+            ) {
                 OutlinedTextField(
                     value = newSpaceName,
                     onValueChange = { newSpaceName = it },
                     label = { Text("Space Name (e.g., Vacation Cabin)") },
                     modifier = Modifier.fillMaxWidth()
                 )
+                Text("Storage Posture:", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                    ArcaPillBadge(
+                        text = if (newSpaceMode == SpaceStorageMode.ARCA_SYNC) "✓ Arca Sync (Default Cloud)" else "Arca Sync (Default Cloud)",
+                        tint = if (newSpaceMode == SpaceStorageMode.ARCA_SYNC) ArcaPalette.AccentTeal else Color.Gray,
+                        onClick = { newSpaceMode = SpaceStorageMode.ARCA_SYNC }
+                    )
+                    ArcaPillBadge(
+                        text = if (newSpaceMode == SpaceStorageMode.LOCAL_ONLY) "✓ Local-Only (On Device)" else "Local-Only (On Device)",
+                        tint = if (newSpaceMode == SpaceStorageMode.LOCAL_ONLY) ArcaPalette.SecondaryEmerald else Color.Gray,
+                        onClick = { newSpaceMode = SpaceStorageMode.LOCAL_ONLY }
+                    )
+                }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     ArcaPrimaryButton(
-                        text = "Create Local Space",
+                        text = if (newSpaceMode == SpaceStorageMode.ARCA_SYNC) "Create Cloud Space" else "Create Local Space",
                         modifier = Modifier.weight(1f)
                     ) {
-                        viewModel.createSpace(newSpaceName, SpaceStorageMode.LOCAL_ONLY)
-                        newSpaceName = ""
+                        val trimmed = newSpaceName.trim()
+                        if (trimmed.isNotEmpty()) {
+                            viewModel.createSpace(trimmed, newSpaceIcon, newSpaceMode)
+                            newSpaceName = ""
+                            showCreateSpace = false
+                        }
+                    }
+                    ArcaSecondaryButton(
+                        text = "Cancel",
+                        modifier = Modifier.weight(0.5f)
+                    ) {
                         showCreateSpace = false
                     }
                 }

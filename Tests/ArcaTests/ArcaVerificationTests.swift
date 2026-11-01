@@ -444,4 +444,20 @@ final class ArcaVerificationTests: XCTestCase {
         XCTAssertTrue(iCloudGeneralAssessment.isPermittedForBackup)
         XCTAssertFalse(iCloudGeneralAssessment.allowsSilentFallbackToArcaCloud)
     }
+
+    func testSpaceMetadataDefaultStorageModes() {
+        let regularSpace = SpaceMetadata(name: "Regular Space")
+        XCTAssertEqual(regularSpace.storageMode, .arcaSync)
+
+        let sensitiveSpace = SpaceMetadata(name: "Health Records", containsSensitiveHealthTemplate: true)
+        XCTAssertEqual(sensitiveSpace.storageMode, .localOnly)
+
+        let confirmedSensitiveSpace = SpaceMetadata(
+            name: "Health Records Synced",
+            storageMode: .arcaSync,
+            containsSensitiveHealthTemplate: true,
+            userExplicitlyConfirmedSyncForSensitiveSpace: true
+        )
+        XCTAssertEqual(confirmedSensitiveSpace.storageMode, .arcaSync)
+    }
 }

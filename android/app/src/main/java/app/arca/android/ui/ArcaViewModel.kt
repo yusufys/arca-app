@@ -81,6 +81,10 @@ class ArcaViewModel(startWithCompletedOnboarding: Boolean = true) : ViewModel() 
         get() = subscriptionTier == SubscriptionTier.PRO
 
     init {
+        bootstrapDefaultWorkspace()
+    }
+
+    fun bootstrapDefaultWorkspace() {
         seedInitialSpacesAndSampleRecords()
     }
 
@@ -237,17 +241,55 @@ class ArcaViewModel(startWithCompletedOnboarding: Boolean = true) : ViewModel() 
         currentSpaceId = spaceId
     }
 
-    fun createSpace(name: String, storageMode: SpaceStorageMode) {
+    fun createSpace(
+        name: String,
+        iconName: String = "folder",
+        storageMode: SpaceStorageMode = SpaceStorageMode.ARCA_SYNC
+    ) {
         val trimmed = name.trim()
         if (trimmed.isEmpty()) return
         val newSpace = SpaceMetadata(
             name = trimmed,
-            iconName = "folder",
+            iconName = iconName,
             accentHex = "#1F5673",
-            storageMode = storageMode
+            storageMode = storageMode,
+            acceptedCloudStorageTermsAt = if (storageMode == SpaceStorageMode.ARCA_SYNC) Instant.now() else null
         )
         spaces.add(newSpace)
         currentSpaceId = newSpace.id
+    }
+
+    fun createSpace(name: String, storageMode: SpaceStorageMode) {
+        createSpace(name = name, iconName = "folder", storageMode = storageMode)
+    }
+
+    fun toggleSpaceStorageMode(spaceId: UUID) {
+        val idx = spaces.indexOfFirst { it.id == spaceId }
+        if (idx >= 0) {
+            val space = spaces[idx]
+            val newMode = if (space.storageMode == SpaceStorageMode.ARCA_SYNC) {
+                SpaceStorageMode.LOCAL_ONLY
+            } else {
+                SpaceStorageMode.ARCA_SYNC
+            }
+            spaces[idx] = space.copy(
+                storageMode = newMode,
+                userExplicitlyConfirmedSyncForSensitiveSpace = newMode == SpaceStorageMode.ARCA_SYNC,
+                acceptedCloudStorageTermsAt = if (newMode == SpaceStorageMode.ARCA_SYNC) Instant.now() else space.acceptedCloudStorageTermsAt
+            )
+        }
+    }
+
+    fun updateSpaceStorageMode(spaceId: UUID, mode: SpaceStorageMode) {
+        val idx = spaces.indexOfFirst { it.id == spaceId }
+        if (idx >= 0) {
+            val space = spaces[idx]
+            spaces[idx] = space.copy(
+                storageMode = mode,
+                userExplicitlyConfirmedSyncForSensitiveSpace = mode == SpaceStorageMode.ARCA_SYNC,
+                acceptedCloudStorageTermsAt = if (mode == SpaceStorageMode.ARCA_SYNC) Instant.now() else space.acceptedCloudStorageTermsAt
+            )
+        }
     }
 
     fun addCollectionFromTemplate(template: StarterTemplate, inDedicatedLocalSpace: Boolean) {

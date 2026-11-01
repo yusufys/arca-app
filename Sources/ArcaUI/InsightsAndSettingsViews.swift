@@ -817,10 +817,17 @@ public struct StorageModeMigrationScreenView: View {
 
                 ArcaSectionCard(title: "Choose Target Storage Mode", icon: "externaldrive.fill") {
                     Picker("Target Storage Mode", selection: $targetMode) {
-                        Text("Local Only").tag(SpaceStorageMode.localOnly)
-                        Text("Arca Sync (E2EE)").tag(SpaceStorageMode.arcaSync)
+                        Text("Arca Sync (Cloud DB — Default)").tag(SpaceStorageMode.arcaSync)
+                        Text("Local-Only (On This Device)").tag(SpaceStorageMode.localOnly)
                         Text("Personal Cloud Backup (Pro)").tag(SpaceStorageMode.personalCloudBackup)
                     }
+                    Text(targetMode == .arcaSync
+                         ? "Arca Sync is the default cloud-synced E2EE mode across devices."
+                         : targetMode == .localOnly
+                         ? "Local-Only keeps all records and attachments strictly on this device."
+                         : "Personal Cloud Backup sends direct encrypted archives to iCloud or Google Drive.")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
                 }
 
                 ArcaSectionCard(title: "Migration Impact Preview", icon: "info.circle.fill") {

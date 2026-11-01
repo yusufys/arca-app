@@ -36,13 +36,32 @@ data class SpaceMetadata(
     val name: String,
     val iconName: String = "folder",
     val accentHex: String = "#1F5673",
-    val storageMode: SpaceStorageMode = SpaceStorageMode.LOCAL_ONLY,
+    val storageMode: SpaceStorageMode = SpaceStorageMode.ARCA_SYNC,
     val personalCloudProvider: PersonalCloudProvider? = null,
     val acceptedCloudStorageTermsAt: Instant? = null,
     val currentEncryptionKeyVersion: Int = 1,
     val createdAt: Instant = Instant.now(),
     val updatedAt: Instant = Instant.now(),
-    val containsSensitiveHealthTemplate: Boolean = false
+    val containsSensitiveHealthTemplate: Boolean = false,
+    val userExplicitlyConfirmedSyncForSensitiveSpace: Boolean = false
+) {
+    val resolvedStorageMode: SpaceStorageMode
+        get() = if (containsSensitiveHealthTemplate && !userExplicitlyConfirmedSyncForSensitiveSpace) {
+            SpaceStorageMode.LOCAL_ONLY
+        } else {
+            storageMode
+        }
+}
+
+data class AppAnnouncementBanner(
+    val id: String,
+    val title: String,
+    val body: String,
+    val ctaLabel: String? = null,
+    val ctaUrl: String? = null,
+    val placement: String = "home_banner",
+    val targetPlatform: String = "android",
+    val targetTier: String = "all"
 )
 
 // MARK: - Exact Money & Calendar Date Types

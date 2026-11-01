@@ -530,7 +530,7 @@ public struct ManageSpacesSheetView: View {
     @Environment(\.colorScheme) private var colorScheme
 
     @ViewState private var newSpaceName = ""
-    @ViewState private var newSpaceMode: SpaceStorageMode = .localOnly
+    @ViewState private var newSpaceMode: SpaceStorageMode = .arcaSync
     @ViewState private var newSpaceIcon = "folder.fill"
     @ViewState private var renamingSpace: SpaceMetadata?
     @ViewState private var renameText = ""

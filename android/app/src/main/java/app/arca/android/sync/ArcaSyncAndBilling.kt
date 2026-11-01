@@ -4,6 +4,7 @@ import app.arca.android.model.FieldValue
 import app.arca.android.model.PersonalCloudProvider
 import app.arca.android.model.RecordItem
 import app.arca.android.model.SpaceMetadata
+import app.arca.android.model.SpaceStorageMode
 import java.time.Instant
 import java.util.UUID
 
@@ -185,3 +186,11 @@ data class ProviderPolicyAssessment(
         }
     }
 }
+
+// MARK: - Laravel Arca Sync HTTP Client Configuration
+
+data class LaravelHttpConfig(
+    val baseUrl: String = "http://10.0.2.2:8000",
+    val apiToken: String? = null,
+    val defaultStorageMode: SpaceStorageMode = SpaceStorageMode.ARCA_SYNC
+)
