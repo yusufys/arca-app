@@ -21,6 +21,8 @@ class AdminDashboardController extends Controller
         $proSubscribers = User::where('subscription_tier', 'pro')->count();
         $enrolledDevices = EnrolledDevice::count();
         $activeDevices = EnrolledDevice::whereNull('revoked_at')->count();
+        $guestDevices = EnrolledDevice::whereNull('user_id')->count();
+        $userLinkedDevices = EnrolledDevice::whereNotNull('user_id')->count();
         $syncedSpaces = SyncedSpace::count();
 
         $spaceCiphertextBytes = (int) SyncedSpace::sum('ciphertext_bytes');
@@ -35,6 +37,8 @@ class AdminDashboardController extends Controller
             'pro_subscribers' => $proSubscribers,
             'enrolled_devices' => $enrolledDevices,
             'active_devices' => $activeDevices,
+            'guest_devices' => $guestDevices,
+            'user_linked_devices' => $userLinkedDevices,
             'synced_spaces' => $syncedSpaces,
             'ciphertext_bytes' => $totalCiphertextBytes,
             'formatted_ciphertext_bytes' => $this->formatBytes($totalCiphertextBytes),
@@ -47,16 +51,25 @@ class AdminDashboardController extends Controller
             ->orderBy('created_at', 'desc')
             ->get();
 
+        $recentDevices = EnrolledDevice::with('user')
+            ->orderBy('last_synced_at', 'desc')
+            ->orderBy('created_at', 'desc')
+            ->limit(10)
+            ->get();
+
         if ($request->expectsJson()) {
             return response()->json([
                 'stats' => $stats,
                 'announcements' => $announcements,
+                'recent_devices' => $recentDevices,
             ]);
         }
 
         return view('admin.dashboard', [
             'stats' => $stats,
             'announcements' => $announcements,
+            'recent_devices' => $recentDevices,
+            'recentDevices' => $recentDevices,
         ]);
     }
 

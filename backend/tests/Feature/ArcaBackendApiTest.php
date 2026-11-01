@@ -690,4 +690,146 @@ class ArcaBackendApiTest extends TestCase
         $overQuotaResp->assertStatus(403)
             ->assertJsonPath('error', 'REMOTE_STORAGE_QUOTA_EXCEEDED');
     }
+
+    /**
+     * 9. Anonymous device registration with nullable user_id, device_token, and automatic login/registration association.
+     */
+    public function test_anonymous_device_registration_with_nullable_user_id_and_login_association(): void
+    {
+        $deviceId = (string) Str::uuid();
+        $deviceToken = 'tok-android-pixel9-xyz';
+
+        // 9a. Call POST /api/v1/devices/register without authentication
+        $registerDeviceResp = $this->postJson('/api/v1/devices/register', [
+            'id' => $deviceId,
+            'device_token' => $deviceToken,
+            'device_name' => 'Pixel 9 Pro XL',
+            'platform' => 'android',
+            'app_version' => '1.2.0',
+            'public_key_x25519' => 'x25519_base64_sample_key',
+        ]);
+
+        $registerDeviceResp->assertStatus(201)
+            ->assertJsonPath('device.id', $deviceId)
+            ->assertJsonPath('device.device_token', $deviceToken)
+            ->assertJsonPath('device.user_id', null)
+            ->assertJsonPath('device.is_associated', false);
+
+        // Verify DB row exists with user_id = null and device_token
+        $deviceInDb = EnrolledDevice::find($deviceId);
+        $this->assertNotNull($deviceInDb);
+        $this->assertNull($deviceInDb->user_id);
+        $this->assertEquals($deviceToken, $deviceInDb->device_token);
+        $this->assertEquals('Pixel 9 Pro XL', $deviceInDb->device_name);
+        $this->assertEquals('android', $deviceInDb->platform);
+
+        // 9b. Update anonymous device before login
+        $updateDeviceResp = $this->postJson('/api/v1/devices/register', [
+            'device_token' => $deviceToken,
+            'device_name' => 'Pixel 9 Pro XL (Renamed)',
+            'platform' => 'android',
+        ]);
+
+        $updateDeviceResp->assertStatus(200)
+            ->assertJsonPath('device.device_name', 'Pixel 9 Pro XL (Renamed)')
+            ->assertJsonPath('device.user_id', null);
+
+        // 9c. Call POST /api/v1/auth/register passing device_id and device_token
+        $registerUserResp = $this->postJson('/api/v1/auth/register', [
+            'name' => 'Bob Mobile',
+            'email' => 'bob.mobile@arca.app',
+            'password' => 'BobMobilePassword123!',
+            'device_id' => $deviceId,
+            'device_token' => $deviceToken,
+            'device_name' => 'Pixel 9 Pro XL (Renamed)',
+            'platform' => 'android',
+        ]);
+
+        $registerUserResp->assertStatus(201)
+            ->assertJsonPath('user.email', 'bob.mobile@arca.app')
+            ->assertJsonPath('associated_device.id', $deviceId)
+            ->assertJsonPath('associated_device.device_token', $deviceToken);
+
+        $registeredUserId = $registerUserResp->json('user.id');
+        $this->assertNotNull($registeredUserId);
+
+        // Verify DB row now has user_id = $user->id
+        $deviceInDb->refresh();
+        $this->assertEquals($registeredUserId, $deviceInDb->user_id);
+        $this->assertTrue($deviceInDb->is_associated);
+
+        // 9d. Test login association with an anonymous iOS device
+        $iosDeviceId = (string) Str::uuid();
+        $iosDeviceToken = 'tok-ios-iphone16pro-abc';
+
+        $this->postJson('/api/v1/devices/register', [
+            'id' => $iosDeviceId,
+            'device_token' => $iosDeviceToken,
+            'device_name' => 'iPhone 16 Pro',
+            'platform' => 'ios',
+        ])->assertStatus(201);
+
+        $loginResp = $this->postJson('/api/v1/auth/login', [
+            'email' => 'bob.mobile@arca.app',
+            'password' => 'BobMobilePassword123!',
+            'device_id' => $iosDeviceId,
+            'device_token' => $iosDeviceToken,
+            'device_name' => 'iPhone 16 Pro',
+            'platform' => 'ios',
+        ]);
+
+        $loginResp->assertStatus(200)
+            ->assertJsonPath('associated_device.id', $iosDeviceId)
+            ->assertJsonPath('associated_device.device_token', $iosDeviceToken);
+
+        $iosDeviceInDb = EnrolledDevice::find($iosDeviceId);
+        $this->assertEquals($registeredUserId, $iosDeviceInDb->user_id);
+
+        // 9e. Test DeviceController@enroll claiming an anonymous device without primary key collision
+        $macDeviceId = (string) Str::uuid();
+        $macDeviceToken = 'tok-macos-m3-xyz';
+
+        // Pre-register anonymously
+        $this->postJson('/api/v1/devices/register', [
+            'id' => $macDeviceId,
+            'device_token' => $macDeviceToken,
+            'device_name' => 'MacBook Pro M3',
+            'platform' => 'macos',
+        ])->assertStatus(201);
+
+        // Free tier has 2 active devices (Pixel + iPhone); enrolling a 3rd will exceed quota
+        $token = $registerUserResp->json('api_token');
+        $overQuotaEnrollResp = $this->withHeader('Authorization', "Bearer {$token}")
+            ->postJson('/api/v1/devices/enroll', [
+                'id' => $macDeviceId,
+                'device_token' => $macDeviceToken,
+                'device_name' => 'MacBook Pro M3',
+                'platform' => 'macos',
+                'public_key_x25519' => 'sample_pubkey_mac',
+            ]);
+
+        $overQuotaEnrollResp->assertStatus(403)
+            ->assertJsonPath('error_code', 'DEVICE_LIMIT_EXCEEDED');
+
+        // Upgrade Bob to Pro tier (allows up to 10 devices)
+        $bobUser = User::find($registeredUserId);
+        $bobUser->update(['subscription_tier' => 'pro']);
+
+        // Now claim anonymous device via /devices/enroll
+        $claimResp = $this->withHeader('Authorization', "Bearer {$token}")
+            ->postJson('/api/v1/devices/enroll', [
+                'id' => $macDeviceId,
+                'device_token' => $macDeviceToken,
+                'device_name' => 'MacBook Pro M3',
+                'platform' => 'macos',
+                'public_key_x25519' => 'sample_pubkey_mac',
+            ]);
+
+        $claimResp->assertStatus(201)
+            ->assertJsonPath('device.id', $macDeviceId)
+            ->assertJsonPath('device.user_id', $registeredUserId);
+
+        $macDeviceInDb = EnrolledDevice::find($macDeviceId);
+        $this->assertEquals($registeredUserId, $macDeviceInDb->user_id);
+    }
 }

@@ -326,7 +326,9 @@ enum class StarterTemplateID(val wireValue: String) {
     VEHICLE_MAINTENANCE("vehicle_maintenance"),
     HOME_INVENTORY("home_inventory"),
     WARRANTIES("warranties"),
-    MEDICAL_VISITS("medical_visits")
+    MEDICAL_VISITS("medical_visits"),
+    SUBSCRIPTIONS("subscriptions"),
+    DOCUMENTS("documents")
 }
 
 data class StarterTemplate(
@@ -418,7 +420,7 @@ object StarterTemplateCatalog {
 
     val warranties = StarterTemplate(
         id = StarterTemplateID.WARRANTIES,
-        name = "Warranties",
+        name = "Warranties & Serials",
         subtitle = "Keep expiration dates, coverage terms, retailer receipts, and support contacts in one place.",
         iconName = "verified_user",
         colorHex = "#8C5A2B",
@@ -456,8 +458,95 @@ object StarterTemplateCatalog {
         )
     }
 
-    val all: List<StarterTemplate> = listOf(vehicleMaintenance, homeInventory, warranties, medicalVisits)
+    val subscriptions = StarterTemplate(
+        id = StarterTemplateID.SUBSCRIPTIONS,
+        name = "Subscriptions & Renewals",
+        subtitle = "Track recurring memberships, software licenses, renewal dates, and billing amounts.",
+        iconName = "autorenew",
+        colorHex = "#4A5D4E",
+        isSensitiveLocalDefault = false,
+        sensitivityDisclosure = null
+    ) {
+        listOf(
+            FieldDefinition(label = "Service / App Name", type = FieldType.SHORT_TEXT, isRequired = true, sortOrder = 0, isPrimaryTitle = true),
+            FieldDefinition(label = "Renewal Date", type = FieldType.DATE, isRequired = true, sortOrder = 1),
+            FieldDefinition(
+                label = "Billing Cycle",
+                type = FieldType.SINGLE_SELECT,
+                isRequired = false,
+                sortOrder = 2,
+                options = listOf(
+                    SelectOption(id = "monthly", label = "Monthly"),
+                    SelectOption(id = "annual", label = "Annual"),
+                    SelectOption(id = "weekly", label = "Weekly"),
+                    SelectOption(id = "quarterly", label = "Quarterly")
+                )
+            ),
+            FieldDefinition(label = "Cost", type = FieldType.CURRENCY, isRequired = false, sortOrder = 3),
+            FieldDefinition(label = "Auto-Renew", type = FieldType.BOOLEAN, isRequired = false, sortOrder = 4),
+            FieldDefinition(label = "Payment Method", type = FieldType.SHORT_TEXT, isRequired = false, sortOrder = 5),
+            FieldDefinition(label = "Account / Login Email", type = FieldType.SHORT_TEXT, isRequired = false, sortOrder = 6),
+            FieldDefinition(label = "Invoices & Receipts", type = FieldType.ATTACHMENT, isRequired = false, sortOrder = 7),
+            FieldDefinition(label = "Notes", type = FieldType.LONG_TEXT, isRequired = false, sortOrder = 8)
+        )
+    }
+
+    val documents = StarterTemplate(
+        id = StarterTemplateID.DOCUMENTS,
+        name = "Documents & IDs",
+        subtitle = "Secure scans of passports, IDs, licenses, insurance policies, and certificates.",
+        iconName = "badge",
+        colorHex = "#5E4B72",
+        isSensitiveLocalDefault = false,
+        sensitivityDisclosure = null
+    ) {
+        listOf(
+            FieldDefinition(label = "Document Title", type = FieldType.SHORT_TEXT, isRequired = true, sortOrder = 0, isPrimaryTitle = true),
+            FieldDefinition(
+                label = "Document Type",
+                type = FieldType.SINGLE_SELECT,
+                isRequired = false,
+                sortOrder = 1,
+                options = listOf(
+                    SelectOption(id = "passport", label = "Passport"),
+                    SelectOption(id = "national_id", label = "National ID"),
+                    SelectOption(id = "driver_license", label = "Driver's License"),
+                    SelectOption(id = "insurance", label = "Insurance Card"),
+                    SelectOption(id = "contract", label = "Contract / Lease"),
+                    SelectOption(id = "tax", label = "Tax Document"),
+                    SelectOption(id = "certificate", label = "Certificate")
+                )
+            ),
+            FieldDefinition(label = "Identifier / Number", type = FieldType.SHORT_TEXT, isRequired = false, sortOrder = 2),
+            FieldDefinition(label = "Issue Date", type = FieldType.DATE, isRequired = false, sortOrder = 3),
+            FieldDefinition(label = "Expiration Date", type = FieldType.DATE, isRequired = false, sortOrder = 4),
+            FieldDefinition(label = "Issuing Authority", type = FieldType.SHORT_TEXT, isRequired = false, sortOrder = 5),
+            FieldDefinition(label = "Scanned Files & Photos", type = FieldType.ATTACHMENT, isRequired = false, sortOrder = 6),
+            FieldDefinition(label = "Notes", type = FieldType.LONG_TEXT, isRequired = false, sortOrder = 7)
+        )
+    }
+
+    val all: List<StarterTemplate> = listOf(vehicleMaintenance, warranties, homeInventory, medicalVisits, subscriptions, documents)
 }
+
+// MARK: - Record Sort & Snapshots
+
+enum class RecordSortCriterion(val displayLabel: String) {
+    UPDATED_DESC("Newest (Updated)"),
+    UPDATED_ASC("Oldest (Updated)"),
+    TITLE_ASC("Title (A → Z)"),
+    TITLE_DESC("Title (Z → A)")
+}
+
+data class PublicRecordSnapshot(
+    val id: UUID = UUID.randomUUID(),
+    val sourceRecordId: UUID,
+    val title: String,
+    val shareToken: String = "snap-${UUID.randomUUID().toString().take(8)}",
+    val selectedFieldPairs: List<Pair<String, String>>,
+    val createdAt: Instant = Instant.now(),
+    val isRevoked: Boolean = false
+)
 
 // MARK: - Dynamic Schema Evolution & Validation Engine
 
@@ -469,16 +558,116 @@ data class RecordValidationError(
 
 data class FieldConversionPreview(
     val fieldId: UUID,
-    val fieldLabel: String,
+    val fieldLabel: String = "",
     val fromType: FieldType,
     val toType: FieldType,
     val totalRecordsExamined: Int,
-    val compatibleCount: Int,
+    val successCount: Int,
     val failureCount: Int,
-    val sampleFailureDescriptions: List<String>
+    val sampleFailureDescriptions: List<String> = emptyList()
 ) {
     val isSafeToApplyWithoutLoss: Boolean
         get() = failureCount == 0
+
+    val compatibleCount: Int
+        get() = successCount
+}
+
+object SimpleJsonParser {
+    fun parse(json: String): Any? {
+        val tokens = tokenize(json.trim())
+        var pos = 0
+
+        fun parseValue(): Any? {
+            if (pos >= tokens.size) return null
+            val tok = tokens[pos++]
+            return when (tok) {
+                "{" -> {
+                    val map = mutableMapOf<String, Any?>()
+                    while (pos < tokens.size && tokens[pos] != "}") {
+                        val keyVal = parseValue()
+                        val key = keyVal?.toString() ?: break
+                        if (pos < tokens.size && tokens[pos] == ":") pos++
+                        val value = parseValue()
+                        map[key] = value
+                        if (pos < tokens.size && tokens[pos] == ",") pos++
+                    }
+                    if (pos < tokens.size && tokens[pos] == "}") pos++
+                    map
+                }
+                "[" -> {
+                    val list = mutableListOf<Any?>()
+                    while (pos < tokens.size && tokens[pos] != "]") {
+                        val value = parseValue()
+                        list.add(value)
+                        if (pos < tokens.size && tokens[pos] == ",") pos++
+                    }
+                    if (pos < tokens.size && tokens[pos] == "]") pos++
+                    list
+                }
+                "true" -> true
+                "false" -> false
+                "null" -> null
+                else -> {
+                    if (tok.startsWith("\"") && tok.endsWith("\"") && tok.length >= 2) {
+                        tok.substring(1, tok.length - 1)
+                            .replace("\\\"", "\"")
+                            .replace("\\\\", "\\")
+                            .replace("\\n", "\n")
+                            .replace("\\r", "\r")
+                            .replace("\\t", "\t")
+                    } else {
+                        tok.toDoubleOrNull() ?: tok.toLongOrNull() ?: tok
+                    }
+                }
+            }
+        }
+
+        return parseValue()
+    }
+
+    private fun tokenize(s: String): List<String> {
+        val tokens = mutableListOf<String>()
+        var i = 0
+        while (i < s.length) {
+            val c = s[i]
+            when {
+                c.isWhitespace() -> i++
+                c in listOf('{', '}', '[', ']', ':', ',') -> {
+                    tokens.add(c.toString())
+                    i++
+                }
+                c == '"' -> {
+                    val sb = StringBuilder()
+                    sb.append('"')
+                    i++
+                    var escaped = false
+                    while (i < s.length) {
+                        val ch = s[i]
+                        sb.append(ch)
+                        i++
+                        if (escaped) {
+                            escaped = false
+                        } else if (ch == '\\') {
+                            escaped = true
+                        } else if (ch == '"') {
+                            break
+                        }
+                    }
+                    tokens.add(sb.toString())
+                }
+                else -> {
+                    val sb = StringBuilder()
+                    while (i < s.length && !s[i].isWhitespace() && s[i] !in listOf('{', '}', '[', ']', ':', ',')) {
+                        sb.append(s[i])
+                        i++
+                    }
+                    tokens.add(sb.toString())
+                }
+            }
+        }
+        return tokens
+    }
 }
 
 object SchemaEngine {
@@ -519,26 +708,66 @@ object SchemaEngine {
     }
 
     /**
+     * Reorders active fields deterministically and increments schemaVersion.
+     */
+    fun reorderFields(schema: CollectionSchema, orderedFieldIds: List<UUID>): CollectionSchema {
+        var nextOrder = 0
+        val updatedFields = schema.fields.toMutableList()
+        for (id in orderedFieldIds) {
+            val idx = updatedFields.indexOfFirst { it.id == id }
+            if (idx >= 0) {
+                updatedFields[idx] = updatedFields[idx].copy(sortOrder = nextOrder++)
+            }
+        }
+        for (i in updatedFields.indices) {
+            if (!orderedFieldIds.contains(updatedFields[i].id)) {
+                updatedFields[i] = updatedFields[i].copy(sortOrder = nextOrder++)
+            }
+        }
+        updatedFields.sortBy { it.sortOrder }
+        return schema.copy(
+            schemaVersion = schema.schemaVersion + 1,
+            fields = updatedFields,
+            updatedAt = Instant.now()
+        )
+    }
+
+    /**
+     * Restores a previously archived field, immediately exposing all preserved historical record values.
+     */
+    fun restoreArchivedField(schema: CollectionSchema, fieldId: UUID): CollectionSchema {
+        val updated = schema.fields.map { f ->
+            if (f.id == fieldId) f.copy(isArchived = false, archivedAt = null) else f
+        }
+        return schema.copy(
+            schemaVersion = schema.schemaVersion + 1,
+            fields = updated,
+            updatedAt = Instant.now()
+        )
+    }
+
+    /**
      * Dry-run previews converting a field to `targetType` without mutating or discarding any record values.
      */
-    fun previewFieldConversion(
+    fun previewFieldTypeConversion(
         field: FieldDefinition,
         targetType: FieldType,
         records: List<RecordItem>
     ): FieldConversionPreview {
-        var compatible = 0
+        var successes = 0
         var failures = 0
         val samples = mutableListOf<String>()
+        val activeRecords = records.filter { it.deletedAt == null }
 
-        for (rec in records) {
+        for (rec in activeRecords) {
             val current = rec.values[field.id] ?: FieldValue.NullValue
             if (current.isNullOrEmpty) {
-                compatible++
+                successes++
                 continue
             }
             val converted = attemptConvert(current, targetType, field.validation)
             if (converted != null) {
-                compatible++
+                successes++
             } else {
                 failures++
                 if (samples.size < 3) {
@@ -552,11 +781,169 @@ object SchemaEngine {
             fieldLabel = field.label,
             fromType = field.type,
             toType = targetType,
-            totalRecordsExamined = records.size,
-            compatibleCount = compatible,
+            totalRecordsExamined = activeRecords.size,
+            successCount = successes,
             failureCount = failures,
             sampleFailureDescriptions = samples
         )
+    }
+
+    fun previewFieldConversion(
+        field: FieldDefinition,
+        targetType: FieldType,
+        records: List<RecordItem>
+    ): FieldConversionPreview = previewFieldTypeConversion(field, targetType, records)
+
+    fun applyFieldTypeConversion(
+        schema: CollectionSchema,
+        fieldId: UUID,
+        targetType: FieldType,
+        records: List<RecordItem>
+    ): Pair<CollectionSchema, List<RecordItem>> {
+        val field = schema.fields.firstOrNull { it.id == fieldId }
+            ?: throw NoSuchElementException("Field $fieldId not found in collection ${schema.name}")
+        val preview = previewFieldTypeConversion(field, targetType, records)
+        if (!preview.isSafeToApplyWithoutLoss) {
+            throw IllegalStateException("Field conversion would lose data for ${preview.failureCount} record(s)")
+        }
+
+        val updatedFields = schema.fields.map { f ->
+            if (f.id == fieldId) f.copy(type = targetType) else f
+        }
+        val updatedSchema = schema.copy(
+            schemaVersion = schema.schemaVersion + 1,
+            fields = updatedFields,
+            updatedAt = Instant.now()
+        )
+
+        val updatedRecords = records.map { rec ->
+            if (rec.deletedAt != null) return@map rec
+            val current = rec.values[fieldId] ?: FieldValue.NullValue
+            if (current.isNullOrEmpty) return@map rec
+            val converted = attemptConvert(current, targetType, field.validation) ?: current
+            val newValues = rec.values.toMutableMap()
+            newValues[fieldId] = converted
+            rec.copy(
+                values = newValues,
+                schemaVersionAtWrite = updatedSchema.schemaVersion,
+                revision = rec.revision + 1,
+                updatedAt = Instant.now()
+            )
+        }
+
+        return Pair(updatedSchema, updatedRecords)
+    }
+
+    fun chatGptSchemaPrompt(topic: String): String {
+        return """
+        Generate a JSON collection schema for the Arca personal records app for the topic: "$topic".
+        Respond ONLY with valid JSON matching this structure:
+        {
+          "name": "Collection Name",
+          "iconName": "folder",
+          "colorHex": "#2B5B84",
+          "fields": [
+            {
+              "label": "Primary Title",
+              "type": "short_text",
+              "isRequired": true,
+              "isPrimaryTitle": true,
+              "options": []
+            }
+          ]
+        }
+        Allowed field types: short_text, long_text, number, currency, date, date_time, boolean, single_select, multi_select, rating, attachment.
+        """.trimIndent()
+    }
+
+    fun parseAndValidateImportedSchemaJson(json: String, spaceId: UUID): Result<CollectionSchema> {
+        return try {
+            val trimmed = json.trim()
+            if (trimmed.isEmpty()) {
+                return Result.failure(IllegalArgumentException("Imported JSON cannot be empty"))
+            }
+            val cleanJson = trimmed
+                .removePrefix("```json")
+                .removePrefix("```JSON")
+                .removePrefix("```")
+                .removeSuffix("```")
+                .trim()
+
+            val parsed = SimpleJsonParser.parse(cleanJson) as? Map<*, *>
+                ?: return Result.failure(IllegalArgumentException("Invalid JSON root object"))
+
+            val name = (parsed["name"] as? String)?.trim().orEmpty()
+            if (name.isEmpty()) {
+                return Result.failure(IllegalArgumentException("Schema must contain a non-empty collection 'name'"))
+            }
+            val iconName = (parsed["iconName"] as? String)?.trim()?.ifBlank { "folder" } ?: "folder"
+            val colorHex = (parsed["colorHex"] as? String)?.trim()?.ifBlank { "#1F5673" } ?: "#1F5673"
+            val fieldsRaw = (parsed["fields"] as? List<*>)
+                ?: return Result.failure(IllegalArgumentException("Schema must contain a 'fields' array"))
+            if (fieldsRaw.isEmpty()) {
+                return Result.failure(IllegalArgumentException("Schema must define at least one field"))
+            }
+
+            val fields = mutableListOf<FieldDefinition>()
+            for ((i, fItem) in fieldsRaw.withIndex()) {
+                val fMap = fItem as? Map<*, *>
+                    ?: return Result.failure(IllegalArgumentException("Field #$i must be a JSON object"))
+                val label = (fMap["label"] as? String)?.trim().orEmpty()
+                if (label.isEmpty()) {
+                    return Result.failure(IllegalArgumentException("Field #${i + 1} has an empty label"))
+                }
+                val typeStr = (fMap["type"] as? String)?.trim() ?: "short_text"
+                val type = FieldType.fromWire(typeStr)
+                val isRequired = (fMap["isRequired"] as? Boolean) ?: (i == 0)
+                val isPrimaryTitle = (fMap["isPrimaryTitle"] as? Boolean) ?: (i == 0)
+
+                val optionsList = mutableListOf<SelectOption>()
+                val optsRaw = fMap["options"] as? List<*>
+                if (optsRaw != null) {
+                    for ((j, optItem) in optsRaw.withIndex()) {
+                        when (optItem) {
+                            is Map<*, *> -> {
+                                val optId = (optItem["id"] as? String) ?: UUID.randomUUID().toString()
+                                val optLabel = (optItem["label"] as? String) ?: "Option ${j + 1}"
+                                optionsList.add(SelectOption(id = optId, label = optLabel))
+                            }
+                            else -> {
+                                val optStr = optItem?.toString()?.trim().orEmpty()
+                                if (optStr.isNotEmpty()) {
+                                    optionsList.add(SelectOption(label = optStr))
+                                }
+                            }
+                        }
+                    }
+                }
+
+                fields.add(
+                    FieldDefinition(
+                        id = UUID.randomUUID(),
+                        label = label,
+                        type = type,
+                        isRequired = isRequired,
+                        sortOrder = i,
+                        options = optionsList,
+                        isPrimaryTitle = isPrimaryTitle
+                    )
+                )
+            }
+
+            Result.success(
+                CollectionSchema(
+                    id = UUID.randomUUID(),
+                    spaceId = spaceId,
+                    name = name,
+                    iconName = iconName,
+                    colorHex = colorHex,
+                    schemaVersion = 1,
+                    fields = fields
+                )
+            )
+        } catch (e: Exception) {
+            Result.failure(IllegalArgumentException("Failed to parse JSON schema: ${e.message}", e))
+        }
     }
 
     fun attemptConvert(value: FieldValue, targetType: FieldType, rules: FieldValidationRules = FieldValidationRules()): FieldValue? {
@@ -567,16 +954,273 @@ object SchemaEngine {
             FieldType.NUMBER -> when (value) {
                 is FieldValue.NumberValue -> value
                 is FieldValue.ShortText -> value.value.trim().toDoubleOrNull()?.let { FieldValue.NumberValue(it) }
+                is FieldValue.LongText -> value.value.trim().toDoubleOrNull()?.let { FieldValue.NumberValue(it) }
                 is FieldValue.Rating -> FieldValue.NumberValue(value.stars.toDouble())
+                is FieldValue.CurrencyValue -> FieldValue.NumberValue(value.value.decimalValue.toDouble())
                 else -> null
             }
             FieldType.CURRENCY -> when (value) {
                 is FieldValue.CurrencyValue -> value
                 is FieldValue.NumberValue -> MoneyValue.fromDecimalString(value.value.toString(), rules.defaultCurrencyCode)?.let { FieldValue.CurrencyValue(it) }
                 is FieldValue.ShortText -> MoneyValue.fromDecimalString(value.value, rules.defaultCurrencyCode)?.let { FieldValue.CurrencyValue(it) }
+                is FieldValue.LongText -> MoneyValue.fromDecimalString(value.value, rules.defaultCurrencyCode)?.let { FieldValue.CurrencyValue(it) }
                 else -> null
             }
-            else -> null
+            FieldType.DATE -> when (value) {
+                is FieldValue.DateValue -> value
+                is FieldValue.ShortText -> CalendarDate.fromIsoString(value.value)?.let { FieldValue.DateValue(it) }
+                is FieldValue.DateTimeValue -> {
+                    val zdt = value.value.atOffset(ZoneOffset.UTC)
+                    FieldValue.DateValue(CalendarDate(zdt.year, zdt.monthValue, zdt.dayOfMonth))
+                }
+                else -> null
+            }
+            FieldType.DATE_TIME -> when (value) {
+                is FieldValue.DateTimeValue -> value
+                is FieldValue.DateValue -> {
+                    val inst = value.value.toLocalDate().atStartOfDay(ZoneOffset.UTC).toInstant()
+                    FieldValue.DateTimeValue(inst)
+                }
+                is FieldValue.ShortText -> {
+                    try {
+                        FieldValue.DateTimeValue(Instant.parse(value.value))
+                    } catch (_: Exception) {
+                        CalendarDate.fromIsoString(value.value)?.let {
+                            FieldValue.DateTimeValue(it.toLocalDate().atStartOfDay(ZoneOffset.UTC).toInstant())
+                        }
+                    }
+                }
+                else -> null
+            }
+            FieldType.BOOLEAN -> when (value) {
+                is FieldValue.BooleanValue -> value
+                is FieldValue.ShortText -> when (value.value.trim().lowercase(Locale.ROOT)) {
+                    "true", "yes", "1", "y" -> FieldValue.BooleanValue(true)
+                    "false", "no", "0", "n" -> FieldValue.BooleanValue(false)
+                    else -> null
+                }
+                else -> null
+            }
+            FieldType.RATING -> when (value) {
+                is FieldValue.Rating -> value
+                is FieldValue.NumberValue -> {
+                    val stars = value.value.toInt()
+                    if (stars in 0..rules.maxRating) FieldValue.Rating(stars) else null
+                }
+                is FieldValue.ShortText -> value.value.trim().toIntOrNull()?.let {
+                    if (it in 0..rules.maxRating) FieldValue.Rating(it) else null
+                }
+                else -> null
+            }
+            FieldType.SINGLE_SELECT -> when (value) {
+                is FieldValue.SingleSelect -> value
+                is FieldValue.ShortText -> FieldValue.SingleSelect(value.value)
+                is FieldValue.MultiSelect -> value.optionIds.firstOrNull()?.let { FieldValue.SingleSelect(it) }
+                else -> null
+            }
+            FieldType.MULTI_SELECT -> when (value) {
+                is FieldValue.MultiSelect -> value
+                is FieldValue.SingleSelect -> FieldValue.MultiSelect(listOf(value.optionId))
+                is FieldValue.ShortText -> FieldValue.MultiSelect(listOf(value.value))
+                else -> null
+            }
+            FieldType.ATTACHMENT -> when (value) {
+                is FieldValue.Attachments -> value
+                else -> null
+            }
+        }
+    }
+}
+
+// MARK: - Space Insights Engine
+
+data class NumericSummary(
+    val fieldId: UUID,
+    val collectionName: String,
+    val fieldLabel: String,
+    val isCurrency: Boolean,
+    val currencyCode: String?,
+    val count: Int,
+    val sum: Double,
+    val average: Double,
+    val formattedSum: String,
+    val formattedAverage: String
+)
+
+data class UpcomingExpiration(
+    val recordId: UUID,
+    val collectionId: UUID,
+    val title: String,
+    val fieldLabel: String,
+    val expirationDate: CalendarDate,
+    val daysRemaining: Long,
+    val isExpired: Boolean
+)
+
+data class SelectDistribution(
+    val fieldId: UUID,
+    val fieldLabel: String,
+    val optionLabel: String,
+    val count: Int
+)
+
+data class SpaceInsightsReport(
+    val spaceId: UUID,
+    val totalRecords: Int,
+    val favoriteRecords: Int,
+    val totalAttachments: Int,
+    val numericSummaries: List<NumericSummary>,
+    val upcomingExpirations: List<UpcomingExpiration>,
+    val selectDistributions: List<SelectDistribution>
+) {
+    companion object {
+        fun compute(
+            spaceId: UUID,
+            collections: List<CollectionSchema>,
+            records: List<RecordItem>,
+            referenceDate: CalendarDate = CalendarDate.today()
+        ): SpaceInsightsReport {
+            val activeCollections = collections.filter { it.spaceId == spaceId }
+            val activeRecords = records.filter { it.spaceId == spaceId && it.deletedAt == null }
+
+            val totalRecords = activeRecords.size
+            val favoriteRecords = activeRecords.count { it.isFavorite }
+            val totalAttachments = activeRecords.sumOf { it.allAttachments.size }
+
+            val numericSummaries = mutableListOf<NumericSummary>()
+            val selectDistributions = mutableListOf<SelectDistribution>()
+            val upcomingExpirations = mutableListOf<UpcomingExpiration>()
+
+            val refLocalDate = referenceDate.toLocalDate()
+
+            for (col in activeCollections) {
+                val colRecords = activeRecords.filter { it.collectionId == col.id }
+
+                for (field in col.activeFields) {
+                    when (field.type) {
+                        FieldType.NUMBER -> {
+                            val nums = colRecords.mapNotNull {
+                                (it.values[field.id] as? FieldValue.NumberValue)?.value
+                            }
+                            if (nums.isNotEmpty()) {
+                                val sum = nums.sum()
+                                val avg = sum / nums.size
+                                val fmtSum = if (sum % 1.0 == 0.0) sum.toLong().toString() else String.format(Locale.US, "%.1f", sum)
+                                val fmtAvg = if (avg % 1.0 == 0.0) avg.toLong().toString() else String.format(Locale.US, "%.1f", avg)
+                                numericSummaries.add(
+                                    NumericSummary(
+                                        fieldId = field.id,
+                                        collectionName = col.name,
+                                        fieldLabel = field.label,
+                                        isCurrency = false,
+                                        currencyCode = null,
+                                        count = nums.size,
+                                        sum = sum,
+                                        average = avg,
+                                        formattedSum = fmtSum,
+                                        formattedAverage = fmtAvg
+                                    )
+                                )
+                            }
+                        }
+                        FieldType.CURRENCY -> {
+                            val moneyItems = colRecords.mapNotNull {
+                                (it.values[field.id] as? FieldValue.CurrencyValue)?.value
+                            }
+                            if (moneyItems.isNotEmpty()) {
+                                val code = moneyItems.firstOrNull()?.currencyCode ?: field.validation.defaultCurrencyCode
+                                val totalMinor = moneyItems.sumOf { it.minorUnits }
+                                val avgMinor = totalMinor / moneyItems.size
+                                val totalMoney = MoneyValue(minorUnits = totalMinor, currencyCode = code)
+                                val avgMoney = MoneyValue(minorUnits = avgMinor, currencyCode = code)
+                                numericSummaries.add(
+                                    NumericSummary(
+                                        fieldId = field.id,
+                                        collectionName = col.name,
+                                        fieldLabel = field.label,
+                                        isCurrency = true,
+                                        currencyCode = code,
+                                        count = moneyItems.size,
+                                        sum = totalMoney.decimalValue.toDouble(),
+                                        average = avgMoney.decimalValue.toDouble(),
+                                        formattedSum = totalMoney.formatted(),
+                                        formattedAverage = avgMoney.formatted()
+                                    )
+                                )
+                            }
+                        }
+                        FieldType.SINGLE_SELECT -> {
+                            val counts = mutableMapOf<String, Int>()
+                            for (rec in colRecords) {
+                                val optId = (rec.values[field.id] as? FieldValue.SingleSelect)?.optionId ?: continue
+                                val label = field.options.firstOrNull { it.id == optId || it.label == optId }?.label ?: optId
+                                counts[label] = (counts[label] ?: 0) + 1
+                            }
+                            for ((label, count) in counts.entries.sortedByDescending { it.value }) {
+                                selectDistributions.add(
+                                    SelectDistribution(
+                                        fieldId = field.id,
+                                        fieldLabel = "${col.name} • ${field.label}",
+                                        optionLabel = label,
+                                        count = count
+                                    )
+                                )
+                            }
+                        }
+                        FieldType.MULTI_SELECT -> {
+                            val counts = mutableMapOf<String, Int>()
+                            for (rec in colRecords) {
+                                val optIds = (rec.values[field.id] as? FieldValue.MultiSelect)?.optionIds ?: continue
+                                for (optId in optIds) {
+                                    val label = field.options.firstOrNull { it.id == optId || it.label == optId }?.label ?: optId
+                                    counts[label] = (counts[label] ?: 0) + 1
+                                }
+                            }
+                            for ((label, count) in counts.entries.sortedByDescending { it.value }) {
+                                selectDistributions.add(
+                                    SelectDistribution(
+                                        fieldId = field.id,
+                                        fieldLabel = "${col.name} • ${field.label}",
+                                        optionLabel = label,
+                                        count = count
+                                    )
+                                )
+                            }
+                        }
+                        FieldType.DATE -> {
+                            for (rec in colRecords) {
+                                val calDate = (rec.values[field.id] as? FieldValue.DateValue)?.value ?: continue
+                                val recDate = calDate.toLocalDate()
+                                val days = java.time.temporal.ChronoUnit.DAYS.between(refLocalDate, recDate)
+                                upcomingExpirations.add(
+                                    UpcomingExpiration(
+                                        recordId = rec.id,
+                                        collectionId = col.id,
+                                        title = rec.title(col),
+                                        fieldLabel = field.label,
+                                        expirationDate = calDate,
+                                        daysRemaining = days,
+                                        isExpired = days < 0
+                                    )
+                                )
+                            }
+                        }
+                        else -> {}
+                    }
+                }
+            }
+
+            upcomingExpirations.sortBy { it.daysRemaining }
+
+            return SpaceInsightsReport(
+                spaceId = spaceId,
+                totalRecords = totalRecords,
+                favoriteRecords = favoriteRecords,
+                totalAttachments = totalAttachments,
+                numericSummaries = numericSummaries,
+                upcomingExpirations = upcomingExpirations,
+                selectDistributions = selectDistributions
+            )
         }
     }
 }

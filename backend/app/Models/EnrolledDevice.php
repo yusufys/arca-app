@@ -16,12 +16,23 @@ class EnrolledDevice extends Model
     protected $fillable = [
         'id',
         'user_id',
+        'device_token',
         'device_name',
         'platform',
+        'app_version',
         'public_key_x25519',
         'last_synced_at',
         'revoked_at',
     ];
+
+    protected $appends = [
+        'is_associated',
+    ];
+
+    public function getIsAssociatedAttribute(): bool
+    {
+        return $this->user_id !== null;
+    }
 
     protected function casts(): array
     {

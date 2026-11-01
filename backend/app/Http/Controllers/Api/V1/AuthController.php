@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
+use App\Models\EnrolledDevice;
 use App\Models\User;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -17,6 +18,11 @@ class AuthController extends Controller
             'name' => 'required|string|max:255',
             'email' => 'required|email|max:255|unique:users,email',
             'password' => 'required|string|min:8',
+            'device_id' => 'nullable|uuid',
+            'device_token' => 'nullable|string|max:191',
+            'device_name' => 'nullable|string|max:255',
+            'platform' => 'nullable|string|in:ios,android,macos',
+            'public_key_x25519' => 'nullable|string',
         ]);
 
         $user = User::create([
@@ -28,6 +34,8 @@ class AuthController extends Controller
             'subscription_state' => 'active',
             'remote_storage_bytes_used' => 0,
         ]);
+
+        $associatedDevice = $this->associateDeviceWithUser($user, $validated);
 
         return response()->json([
             'user' => [
@@ -41,6 +49,7 @@ class AuthController extends Controller
                 'created_at' => $user->created_at,
             ],
             'api_token' => $user->api_token,
+            'associated_device' => $associatedDevice,
             'default_space_storage_mode' => config('arca.default_space_storage_mode', 'arca_sync'),
             'entitlements' => [
                 'tier' => $user->subscription_tier,
@@ -57,6 +66,11 @@ class AuthController extends Controller
         $validated = $request->validate([
             'email' => 'required|email',
             'password' => 'required|string',
+            'device_id' => 'nullable|uuid',
+            'device_token' => 'nullable|string|max:191',
+            'device_name' => 'nullable|string|max:255',
+            'platform' => 'nullable|string|in:ios,android,macos',
+            'public_key_x25519' => 'nullable|string',
         ]);
 
         $user = User::where('email', $validated['email'])->first();
@@ -73,6 +87,8 @@ class AuthController extends Controller
             $user->save();
         }
 
+        $associatedDevice = $this->associateDeviceWithUser($user, $validated);
+
         return response()->json([
             'user' => [
                 'id' => $user->id,
@@ -85,6 +101,7 @@ class AuthController extends Controller
                 'created_at' => $user->created_at,
             ],
             'api_token' => $user->api_token,
+            'associated_device' => $associatedDevice,
             'default_space_storage_mode' => config('arca.default_space_storage_mode', 'arca_sync'),
             'entitlements' => [
                 'tier' => $user->subscription_tier,
@@ -94,6 +111,98 @@ class AuthController extends Controller
             ],
             'post_expiry_policy' => $user->postExpiryPolicy(),
         ]);
+    }
+
+    public function associateDeviceWithUser(User $user, array $data): ?EnrolledDevice
+    {
+        $deviceId = $data['device_id'] ?? null;
+        $deviceToken = $data['device_token'] ?? null;
+
+        if (! $deviceId && ! $deviceToken) {
+            return null;
+        }
+
+        $device = null;
+        if ($deviceId) {
+            $device = EnrolledDevice::where('id', $deviceId)->first();
+        }
+        if (! $device && $deviceToken) {
+            $device = EnrolledDevice::where('device_token', $deviceToken)->first();
+        }
+
+        $deviceName = $data['device_name'] ?? ($device?->device_name ?? 'Arca Client');
+        $platform = $data['platform'] ?? ($device?->platform ?? 'ios');
+        $publicKey = $data['public_key_x25519'] ?? ($device?->public_key_x25519 ?? null);
+
+        if ($device) {
+            if ($device->user_id === $user->id) {
+                if ($deviceToken) {
+                    EnrolledDevice::where('device_token', $deviceToken)->where('id', '!=', $device->id)->update(['device_token' => null]);
+                    $device->device_token = $deviceToken;
+                }
+                if (! empty($data['device_name'])) {
+                    $device->device_name = $data['device_name'];
+                }
+                if (! empty($data['platform'])) {
+                    $device->platform = $data['platform'];
+                }
+                if (! empty($data['public_key_x25519'])) {
+                    $device->public_key_x25519 = $data['public_key_x25519'];
+                }
+                $device->revoked_at = null;
+                $device->last_synced_at = now();
+                $device->save();
+                $device->refresh();
+
+                return $device;
+            }
+
+            if ($user->activeEnrolledDevicesCount() < $user->maxAllowedDevices()) {
+                if ($deviceToken) {
+                    EnrolledDevice::where('device_token', $deviceToken)->where('id', '!=', $device->id)->update(['device_token' => null]);
+                    $device->device_token = $deviceToken;
+                }
+                $device->user_id = $user->id;
+                if (! empty($data['device_name'])) {
+                    $device->device_name = $data['device_name'];
+                }
+                if (! empty($data['platform'])) {
+                    $device->platform = $data['platform'];
+                }
+                if (! empty($data['public_key_x25519'])) {
+                    $device->public_key_x25519 = $data['public_key_x25519'];
+                }
+                $device->revoked_at = null;
+                $device->last_synced_at = now();
+                $device->save();
+                $device->refresh();
+
+                return $device;
+            }
+
+            return null;
+        }
+
+        if ($user->activeEnrolledDevicesCount() < $user->maxAllowedDevices()) {
+            if ($deviceToken) {
+                EnrolledDevice::where('device_token', $deviceToken)->update(['device_token' => null]);
+            }
+
+            $device = EnrolledDevice::create([
+                'id' => $deviceId ?: (string) Str::uuid(),
+                'user_id' => $user->id,
+                'device_token' => $deviceToken,
+                'device_name' => $deviceName,
+                'platform' => $platform,
+                'public_key_x25519' => $publicKey,
+                'last_synced_at' => now(),
+                'revoked_at' => null,
+            ]);
+
+            return $device;
+        }
+
+        return null;
     }
 
     public function me(Request $request): JsonResponse

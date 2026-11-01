@@ -272,16 +272,18 @@ fun ArcaPrimaryButton(
 fun ArcaSecondaryButton(
     text: String,
     tint: Color = ArcaPalette.AccentTeal,
+    enabled: Boolean = true,
     modifier: Modifier = Modifier,
     onClick: () -> Unit
 ) {
     OutlinedButton(
         onClick = onClick,
+        enabled = enabled,
         shape = RoundedCornerShape(12.dp),
-        border = BorderStroke(1.dp, tint.copy(alpha = 0.35f)),
+        border = BorderStroke(1.dp, if (enabled) tint.copy(alpha = 0.35f) else Color.Gray.copy(alpha = 0.25f)),
         colors = ButtonDefaults.outlinedButtonColors(
-            containerColor = tint.copy(alpha = 0.09f),
-            contentColor = tint
+            containerColor = if (enabled) tint.copy(alpha = 0.09f) else Color.Transparent,
+            contentColor = if (enabled) tint else Color.Gray
         ),
         contentPadding = PaddingValues(horizontal = 16.dp, vertical = 11.dp),
         modifier = modifier

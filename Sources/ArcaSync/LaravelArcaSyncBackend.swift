@@ -250,6 +250,82 @@ public final class LaravelArcaSyncBackend: ArcaSyncBackendProtocol, @unchecked S
 
     // MARK: - 2. Device Enrollment & Revocation
 
+    /// Registers a device anonymously (or updates its registration) before user login/registration.
+    public func registerAnonymousDevice(
+        deviceId: UUID,
+        deviceToken: String,
+        deviceName: String,
+        platform: String,
+        publicKeyBase64: String? = nil
+    ) async throws {
+        struct RegisterPayload: Encodable {
+            let id: String
+            let device_id: String
+            let device_token: String
+            let device_name: String
+            let platform: String
+            let public_key_x25519: String?
+        }
+
+        let body = try jsonEncoder.encode(RegisterPayload(
+            id: deviceId.uuidString,
+            device_id: deviceId.uuidString,
+            device_token: deviceToken,
+            device_name: deviceName,
+            platform: platform,
+            public_key_x25519: publicKeyBase64
+        ))
+
+        let req = createRequest(path: "api/v1/devices/register", method: "POST", body: body)
+        let (data, response) = try await session.data(for: req)
+        guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else {
+            let errorText = String(data: data, encoding: .utf8) ?? "Device registration failed"
+            let code = (response as? HTTPURLResponse)?.statusCode ?? 500
+            throw NSError(domain: "LaravelArcaSyncBackend", code: code, userInfo: [NSLocalizedDescriptionKey: errorText])
+        }
+    }
+
+    /// Logs in and associates an existing or anonymous device with the user account, storing `api_token` in `self.apiToken`.
+    public func loginAndAssociateDevice(
+        email: String,
+        password: String,
+        deviceId: UUID,
+        deviceToken: String,
+        deviceName: String
+    ) async throws -> String {
+        struct LoginPayload: Encodable {
+            let email: String
+            let password: String
+            let device_id: String
+            let device_token: String
+            let device_name: String
+        }
+
+        let body = try jsonEncoder.encode(LoginPayload(
+            email: email,
+            password: password,
+            device_id: deviceId.uuidString,
+            device_token: deviceToken,
+            device_name: deviceName
+        ))
+
+        let req = createRequest(path: "api/v1/auth/login", method: "POST", body: body)
+        let (data, response) = try await session.data(for: req)
+        guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else {
+            let errorText = String(data: data, encoding: .utf8) ?? "Login and device association failed"
+            let code = (response as? HTTPURLResponse)?.statusCode ?? 401
+            throw NSError(domain: "LaravelArcaSyncBackend", code: code, userInfo: [NSLocalizedDescriptionKey: errorText])
+        }
+
+        struct LoginResponse: Decodable {
+            let api_token: String
+        }
+
+        let decoded = try jsonDecoder.decode(LoginResponse.self, from: data)
+        self.apiToken = decoded.api_token
+        return decoded.api_token
+    }
+
     public func enrollDevice(
         accountId: String,
         device: EnrolledDevice,

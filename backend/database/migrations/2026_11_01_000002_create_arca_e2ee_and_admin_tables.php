@@ -13,10 +13,12 @@ return new class extends Migration
     {
         Schema::create('enrolled_devices', function (Blueprint $table) {
             $table->uuid('id')->primary();
-            $table->foreignId('user_id')->constrained()->cascadeOnDelete();
+            $table->foreignId('user_id')->nullable()->constrained()->nullOnDelete();
+            $table->string('device_token', 191)->nullable()->unique();
             $table->string('device_name');
             $table->string('platform'); // 'ios' | 'android' | 'macos'
-            $table->text('public_key_x25519');
+            $table->string('app_version')->nullable()->default('1.0.0');
+            $table->text('public_key_x25519')->nullable();
             $table->timestamp('last_synced_at')->nullable();
             $table->timestamp('revoked_at')->nullable();
             $table->timestamps();

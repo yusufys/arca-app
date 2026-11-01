@@ -86,7 +86,7 @@
                 <div class="text-xs font-medium uppercase tracking-wider text-slate-400">Enrolled Devices</div>
                 <div class="text-3xl font-extrabold text-white mt-2">{{ number_format($stats['enrolled_devices']) }}</div>
                 <div class="text-xs text-slate-400 mt-2 font-medium">
-                    {{ number_format($stats['active_devices']) }} active (unrevoked)
+                    {{ number_format($stats['active_devices']) }} active · {{ number_format($stats['user_linked_devices']) }} linked · {{ number_format($stats['guest_devices']) }} guest
                 </div>
             </div>
 
@@ -282,6 +282,76 @@
                     </div>
                 @endif
             </div>
+        </div>
+
+        <!-- Recent Devices Table -->
+        <div class="bg-slate-800/60 border border-slate-700/60 rounded-2xl p-6 shadow-xl mt-10">
+            <div class="flex items-center justify-between mb-4">
+                <div>
+                    <h2 class="text-lg font-bold text-white">Registered & Guest Devices</h2>
+                    <p class="text-xs text-slate-400">Recent devices synced, assigned to users or guest/unassigned</p>
+                </div>
+                <div class="text-xs text-slate-400">
+                    <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-indigo-950/60 border border-indigo-500/30 text-indigo-300">
+                        {{ number_format($stats['user_linked_devices']) }} Linked / {{ number_format($stats['guest_devices']) }} Guest
+                    </span>
+                </div>
+            </div>
+
+            @php
+                $devicesList = $recentDevices ?? $recent_devices ?? collect();
+            @endphp
+
+            @if ($devicesList->isEmpty())
+                <div class="py-8 text-center text-slate-400 text-sm">
+                    No registered devices yet.
+                </div>
+            @else
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left text-sm">
+                        <thead>
+                            <tr class="border-b border-slate-700 text-slate-400 text-xs uppercase tracking-wider">
+                                <th class="py-3 px-3">Device Name</th>
+                                <th class="py-3 px-3">Platform</th>
+                                <th class="py-3 px-3">Device Token</th>
+                                <th class="py-3 px-3">User</th>
+                                <th class="py-3 px-3">Last Synced At</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-slate-700/60">
+                            @foreach ($devicesList as $device)
+                                <tr class="hover:bg-slate-700/30 transition">
+                                    <td class="py-3 px-3 font-medium text-white">
+                                        {{ $device->device_name }}
+                                    </td>
+                                    <td class="py-3 px-3">
+                                        <span class="inline-flex px-2 py-0.5 rounded text-xs font-semibold bg-slate-700 text-slate-200">
+                                            {{ $device->platform }}
+                                        </span>
+                                    </td>
+                                    <td class="py-3 px-3 text-slate-300 font-mono text-xs max-w-[200px] truncate" title="{{ $device->device_token }}">
+                                        {{ $device->device_token ?? '—' }}
+                                    </td>
+                                    <td class="py-3 px-3">
+                                        @if ($device->user)
+                                            <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium bg-emerald-950/60 text-emerald-300 border border-emerald-500/30">
+                                                {{ $device->user->email }}
+                                            </span>
+                                        @else
+                                            <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium bg-amber-950/60 text-amber-300 border border-amber-500/30">
+                                                Unassigned / Pre-Login
+                                            </span>
+                                        @endif
+                                    </td>
+                                    <td class="py-3 px-3 text-slate-400 text-xs">
+                                        {{ $device->last_synced_at ? $device->last_synced_at->diffForHumans() : 'Never' }}
+                                    </td>
+                                </tr>
+                            @endforeach
+                        </tbody>
+                    </table>
+                </div>
+            @endif
         </div>
     </div>
 </body>

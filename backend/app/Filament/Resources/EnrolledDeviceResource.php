@@ -34,6 +34,8 @@ class EnrolledDeviceResource extends Resource
             TextInput::make('device_name')
                 ->required()
                 ->maxLength(255),
+            TextInput::make('device_token')
+                ->maxLength(191),
             Select::make('platform')
                 ->options([
                     'ios' => 'iOS',
@@ -41,8 +43,7 @@ class EnrolledDeviceResource extends Resource
                     'macos' => 'macOS',
                 ])
                 ->required(),
-            TextInput::make('public_key_x25519')
-                ->required(),
+            TextInput::make('public_key_x25519'),
             DateTimePicker::make('last_synced_at'),
             DateTimePicker::make('revoked_at'),
         ]);
@@ -53,7 +54,11 @@ class EnrolledDeviceResource extends Resource
         return $table
             ->columns([
                 TextColumn::make('id')->searchable(),
-                TextColumn::make('user.email')->label('User')->searchable(),
+                TextColumn::make('device_token')->searchable(),
+                TextColumn::make('user.email')
+                    ->label('User')
+                    ->default('Unassigned (Guest)')
+                    ->searchable(),
                 TextColumn::make('device_name')->searchable(),
                 TextColumn::make('platform')->badge(),
                 TextColumn::make('last_synced_at')->dateTime()->sortable(),

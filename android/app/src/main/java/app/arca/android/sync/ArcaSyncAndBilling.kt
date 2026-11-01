@@ -106,9 +106,24 @@ object SyncConflictEngine {
 
 data class EnrolledDevice(
     val deviceId: UUID = UUID.randomUUID(),
+    val deviceToken: String = "arca_android_tok_${UUID.randomUUID().toString().replace("-", "").take(16)}",
     val deviceName: String,
-    val isCurrentDevice: Boolean,
+    val platform: String = "android",
+    val publicKeyX25519: String = "x25519_pub_${UUID.randomUUID().toString().take(12)}",
+    val userId: Long? = null,
+    val isCurrentDevice: Boolean = false,
     val enrolledAt: Instant = Instant.now()
+)
+
+data class CloudAccountSession(
+    val userId: Long,
+    val userUuid: String,
+    val name: String,
+    val email: String,
+    val apiToken: String,
+    val tier: SubscriptionTier = SubscriptionTier.FREE,
+    val associatedDeviceId: UUID,
+    val associatedDeviceToken: String
 )
 
 // MARK: - Commercial Quotas & Non-Destructive Post-Expiry Policy (Google Play Billing)
