@@ -190,7 +190,9 @@ data class ProviderPolicyAssessment(
 // MARK: - Laravel Arca Sync HTTP Client Configuration
 
 data class LaravelHttpConfig(
-    val baseUrl: String = "http://10.0.2.2:8000",
+    val baseUrl: String = app.arca.android.BuildConfig.ARCA_API_BASE_URL,
     val apiToken: String? = null,
+    val revenueCatPublicSdkKey: String = app.arca.android.BuildConfig.REVENUECAT_ANDROID_PUBLIC_KEY,
+    val revenueCatProEntitlementId: String = app.arca.android.BuildConfig.REVENUECAT_PRO_ENTITLEMENT_ID,
     val defaultStorageMode: SpaceStorageMode = SpaceStorageMode.ARCA_SYNC
 )

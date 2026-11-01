@@ -1,6 +1,19 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.compose.compiler)
+}
+
+val localProps = Properties().apply {
+    val propFile = rootProject.file("local.properties")
+    if (propFile.exists()) {
+        propFile.inputStream().use { load(it) }
+    }
+}
+
+fun envOrProp(key: String, default: String): String {
+    return System.getenv(key) ?: localProps.getProperty(key) ?: default
 }
 
 android {
@@ -15,6 +28,10 @@ android {
         versionName = "1.0.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
+        buildConfigField("String", "ARCA_API_BASE_URL", "\"${envOrProp("ARCA_API_BASE_URL", "http://10.0.2.2:8000")}\"")
+        buildConfigField("String", "REVENUECAT_ANDROID_PUBLIC_KEY", "\"${envOrProp("REVENUECAT_ANDROID_PUBLIC_KEY", "goog_replace_with_your_revenuecat_android_public_sdk_key")}\"")
+        buildConfigField("String", "REVENUECAT_PRO_ENTITLEMENT_ID", "\"${envOrProp("REVENUECAT_PRO_ENTITLEMENT_ID", "arca_pro")}\"")
     }
 
     buildTypes {
@@ -35,7 +52,7 @@ android {
     buildFeatures {
         compose = true
         aidl = false
-        buildConfig = false
+        buildConfig = true
         shaders = false
     }
 

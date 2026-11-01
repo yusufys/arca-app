@@ -24,6 +24,12 @@
 	<true/>
 	<key>NSFaceIDUsageDescription</key>
 	<string>Arca uses Face ID to lock and protect your personal records on this device.</string>
+	<key>ARCA_API_BASE_URL</key>
+	<string>http://127.0.0.1:8000</string>
+	<key>REVENUECAT_IOS_PUBLIC_KEY</key>
+	<string>appl_replace_with_your_revenuecat_ios_public_sdk_key</string>
+	<key>REVENUECAT_PRO_ENTITLEMENT_ID</key>
+	<string>arca_pro</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

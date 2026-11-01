@@ -76,6 +76,37 @@ public struct AppAnnouncementBanner: Codable, Sendable, Equatable, Identifiable 
     }
 }
 
+// MARK: - Mobile Environment & Runtime Configuration
+
+/// Reads mobile environment variables and Info.plist build keys for the Laravel API and RevenueCat SDK.
+/// Note: Mobile clients ONLY ever receive PUBLIC SDK keys (e.g. RevenueCat `appl_...`).
+/// Secret keys (`REVENUECAT_WEBHOOK_SECRET`, DB credentials, S3 secret keys) live exclusively in `backend/.env`.
+public enum ArcaEnvironmentConfig {
+    public static var apiBaseURL: URL {
+        let envValue = ProcessInfo.processInfo.environment["ARCA_API_BASE_URL"]
+            ?? (Bundle.main.object(forInfoDictionaryKey: "ARCA_API_BASE_URL") as? String)
+            ?? "http://127.0.0.1:8000"
+        return URL(string: envValue) ?? URL(string: "http://127.0.0.1:8000")!
+    }
+
+    public static var apiToken: String? {
+        ProcessInfo.processInfo.environment["ARCA_API_TOKEN"]
+            ?? UserDefaults.standard.string(forKey: "arca.auth.api_token")
+    }
+
+    public static var revenueCatPublicSDKKey: String {
+        ProcessInfo.processInfo.environment["REVENUECAT_IOS_PUBLIC_KEY"]
+            ?? (Bundle.main.object(forInfoDictionaryKey: "REVENUECAT_IOS_PUBLIC_KEY") as? String)
+            ?? "appl_replace_with_your_revenuecat_ios_public_sdk_key"
+    }
+
+    public static var revenueCatProEntitlementID: String {
+        ProcessInfo.processInfo.environment["REVENUECAT_PRO_ENTITLEMENT_ID"]
+            ?? (Bundle.main.object(forInfoDictionaryKey: "REVENUECAT_PRO_ENTITLEMENT_ID") as? String)
+            ?? "arca_pro"
+    }
+}
+
 // MARK: - Laravel HTTP Sync & Announcement Backend
 
 /// Production-ready Arca Sync Backend communicating with the Laravel + PostgreSQL backend
@@ -91,8 +122,8 @@ public final class LaravelArcaSyncBackend: ArcaSyncBackendProtocol, @unchecked S
     private let jsonDecoder: JSONDecoder
 
     public init(
-        baseURL: URL = URL(string: "http://127.0.0.1:8000")!,
-        apiToken: String? = nil,
+        baseURL: URL = ArcaEnvironmentConfig.apiBaseURL,
+        apiToken: String? = ArcaEnvironmentConfig.apiToken,
         session: URLSession = .shared,
         fallback: InMemoryArcaSyncBackend = InMemoryArcaSyncBackend()
     ) {
