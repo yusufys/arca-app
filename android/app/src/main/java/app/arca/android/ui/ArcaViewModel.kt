@@ -165,38 +165,47 @@ class ArcaViewModel(startWithCompletedOnboarding: Boolean = true) : ViewModel() 
         var resolvedToken = "arca_tok_${UUID.randomUUID().toString().replace("-", "").take(24)}"
         var resolvedTier = SubscriptionTier.FREE
 
-        // Attempt HTTP request if backend is reachable
+        // Attempt HTTP request on background thread (avoids NetworkOnMainThreadException on physical Android devices)
         try {
-            val endpoint = if (isRegistration) "/api/v1/auth/register" else "/api/v1/auth/login"
-            val url = java.net.URL("${app.arca.android.BuildConfig.ARCA_API_BASE_URL}$endpoint")
-            val conn = url.openConnection() as java.net.HttpURLConnection
-            conn.connectTimeout = 2000
-            conn.readTimeout = 2000
-            conn.requestMethod = "POST"
-            conn.doOutput = true
-            conn.setRequestProperty("Content-Type", "application/json")
-            conn.setRequestProperty("Accept", "application/json")
-            val payload = if (isRegistration) {
-                """{"name":"$trimmedName","email":"$trimmedEmail","password":"$password"}"""
-            } else {
-                """{"email":"$trimmedEmail","password":"$password"}"""
-            }
-            conn.outputStream.use { it.write(payload.toByteArray(Charsets.UTF_8)) }
-            val code = conn.responseCode
-            if (code in 200..299) {
-                val resp = conn.inputStream.bufferedReader().use { it.readText() }
-                val root = app.arca.android.model.SimpleJsonParser.parse(resp) as? Map<*, *>
-                val userObj = root?.get("user") as? Map<*, *>
-                if (userObj != null) {
-                    resolvedUserId = (userObj["id"] as? Number)?.toLong() ?: 101L
-                    resolvedUuid = (userObj["uuid"] as? String) ?: resolvedUuid
-                    resolvedName = (userObj["name"] as? String) ?: resolvedName
-                    val tierStr = (userObj["subscription_tier"] as? String) ?: "free"
-                    resolvedTier = if (tierStr.equals("pro", ignoreCase = true)) SubscriptionTier.PRO else SubscriptionTier.FREE
+            val worker = Thread {
+                try {
+                    val endpoint = if (isRegistration) "/api/v1/auth/register" else "/api/v1/auth/login"
+                    val url = java.net.URL("${app.arca.android.BuildConfig.ARCA_API_BASE_URL}$endpoint")
+                    val conn = url.openConnection() as java.net.HttpURLConnection
+                    conn.connectTimeout = 2000
+                    conn.readTimeout = 2000
+                    conn.requestMethod = "POST"
+                    conn.doOutput = true
+                    conn.setRequestProperty("Content-Type", "application/json")
+                    conn.setRequestProperty("Accept", "application/json")
+                    val devFields = """"device_id":"${currentDevice.deviceId}","device_token":"${currentDevice.deviceToken}","device_name":"${currentDevice.deviceName}","platform":"android","public_key_x25519":"${currentDevice.publicKeyX25519}""""
+                    val payload = if (isRegistration) {
+                        """{"name":"$trimmedName","email":"$trimmedEmail","password":"$password",$devFields}"""
+                    } else {
+                        """{"email":"$trimmedEmail","password":"$password",$devFields}"""
+                    }
+                    conn.outputStream.use { it.write(payload.toByteArray(Charsets.UTF_8)) }
+                    val code = conn.responseCode
+                    if (code in 200..299) {
+                        val resp = conn.inputStream.bufferedReader().use { it.readText() }
+                        val root = app.arca.android.model.SimpleJsonParser.parse(resp) as? Map<*, *>
+                        val userObj = root?.get("user") as? Map<*, *>
+                        if (userObj != null) {
+                            resolvedUserId = (userObj["id"] as? Number)?.toLong() ?: 101L
+                            resolvedUuid = (userObj["uuid"] as? String) ?: resolvedUuid
+                            resolvedName = (userObj["name"] as? String) ?: resolvedName
+                            val tierStr = (userObj["subscription_tier"] as? String) ?: "free"
+                            resolvedTier = if (tierStr.equals("pro", ignoreCase = true)) SubscriptionTier.PRO else SubscriptionTier.FREE
+                        }
+                        resolvedToken = (root?.get("api_token") as? String) ?: resolvedToken
+                    }
+                    conn.disconnect()
+                } catch (_: Exception) {
+                    // Local fallback for offline mode or test environment
                 }
-                resolvedToken = (root?.get("api_token") as? String) ?: resolvedToken
             }
-            conn.disconnect()
+            worker.start()
+            worker.join(2200)
         } catch (_: Exception) {
             // Local fallback for offline mode or test environment
         }

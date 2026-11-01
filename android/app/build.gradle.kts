@@ -29,7 +29,7 @@ android {
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
-        buildConfigField("String", "ARCA_API_BASE_URL", "\"${envOrProp("ARCA_API_BASE_URL", "http://10.0.2.2:8000")}\"")
+        buildConfigField("String", "ARCA_API_BASE_URL", "\"${envOrProp("ARCA_API_BASE_URL", "http://192.168.1.4:8000")}\"")
         buildConfigField("String", "REVENUECAT_ANDROID_PUBLIC_KEY", "\"${envOrProp("REVENUECAT_ANDROID_PUBLIC_KEY", "goog_replace_with_your_revenuecat_android_public_sdk_key")}\"")
         buildConfigField("String", "REVENUECAT_PRO_ENTITLEMENT_ID", "\"${envOrProp("REVENUECAT_PRO_ENTITLEMENT_ID", "arca_pro")}\"")
     }

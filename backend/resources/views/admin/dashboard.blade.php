@@ -53,6 +53,35 @@
             </div>
         @endif
 
+        <!-- Wireless OTA APK Download & QR Code Banner -->
+        <div class="mt-6 p-6 rounded-2xl bg-gradient-to-r from-indigo-950/80 via-slate-800/80 to-slate-800/80 border border-indigo-500/30 shadow-xl flex flex-col md:flex-row items-center justify-between gap-6">
+            <div class="space-y-2">
+                <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-indigo-500/20 text-indigo-300 text-xs font-semibold">
+                    <span>📱 Wireless Device Testing (Over Local Wi-Fi)</span>
+                </div>
+                <h2 class="text-xl font-bold text-white">Install Latest Android APK Without Cables</h2>
+                <p class="text-sm text-slate-300 max-w-2xl">
+                    Scan the QR code with your Android phone camera (connected to the same Wi-Fi) or open
+                    <code class="px-2 py-0.5 rounded bg-slate-900 text-indigo-300 font-mono text-xs">{{ request()->getSchemeAndHttpHost() }}/download-apk</code>
+                    on your phone browser to download and install the latest <span class="text-white font-semibold">Arca-debug.apk</span> immediately.
+                </p>
+                <div class="pt-2 flex flex-wrap items-center gap-3">
+                    <a href="/download-apk" class="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold shadow-lg shadow-indigo-600/30 transition">
+                        <span>⬇ Download Arca-debug.apk</span>
+                    </a>
+                    <span class="text-xs text-slate-400 font-mono">API Base URL: {{ request()->getSchemeAndHttpHost() }}</span>
+                </div>
+            </div>
+            <div class="flex flex-col items-center bg-white p-3 rounded-2xl shadow-lg shrink-0">
+                <img
+                    src="https://api.qrserver.com/v1/create-qr-code/?size=130x130&data={{ urlencode(request()->getSchemeAndHttpHost() . '/download-apk') }}"
+                    alt="Scan to Download APK"
+                    class="w-32 h-32 rounded-lg"
+                />
+                <span class="text-[11px] font-bold text-slate-800 mt-1.5">Scan with Phone Camera</span>
+            </div>
+        </div>
+
         @if ($errors->any())
             <div class="mt-6 p-4 rounded-xl bg-rose-900/40 border border-rose-500/40 text-rose-200 text-sm">
                 <ul class="list-disc list-inside">

@@ -126,6 +126,21 @@ class AdminDashboardController extends Controller
         return redirect('/admin')->with('status', "Announcement \"{$announcement->title}\" status updated.");
     }
 
+    public function downloadApk()
+    {
+        $apkPath = base_path('../Arca-debug.apk');
+        if (! file_exists($apkPath)) {
+            $apkPath = base_path('../android/app/build/outputs/apk/debug/app-debug.apk');
+        }
+
+        abort_unless(file_exists($apkPath), 404, 'Arca-debug.apk not found. Run ./test-devices.sh to build it.');
+
+        return response()->download($apkPath, 'Arca-debug.apk', [
+            'Content-Type' => 'application/vnd.android.package-archive',
+            'Cache-Control' => 'no-store, no-cache, must-revalidate',
+        ]);
+    }
+
     private function formatBytes(int $bytes): string
     {
         if ($bytes <= 0) {

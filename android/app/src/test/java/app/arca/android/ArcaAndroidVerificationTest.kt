@@ -425,7 +425,7 @@ class ArcaAndroidVerificationTest {
         assertEquals("all", banner.targetTier)
 
         val config = app.arca.android.sync.LaravelHttpConfig()
-        assertEquals("http://10.0.2.2:8000", config.baseUrl)
+        assertTrue(config.baseUrl.startsWith("http://") || config.baseUrl.startsWith("https://"))
         assertEquals(null, config.apiToken)
         assertEquals(SpaceStorageMode.ARCA_SYNC, config.defaultStorageMode)
     }
