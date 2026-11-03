@@ -1,0 +1,14 @@
+name: iOS relaunch and sync
+on:
+  workflow_dispatch:
+  push:
+    branches: [codex/ios-relaunch-sync]
+permissions:
+  contents: read
+jobs:
+  two-iphones:
+    runs-on: macos-15
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 ci/test_ios_sync.py
