@@ -178,6 +178,10 @@ public actor SpaceStore {
         CREATE INDEX IF NOT EXISTS idx_projections_text
             ON record_field_projections (collection_id, field_id, text_val);
 
+        CREATE TABLE IF NOT EXISTS sync_conflicts (account_id TEXT NOT NULL, record_id TEXT NOT NULL, payload_json TEXT NOT NULL, PRIMARY KEY(account_id, record_id));
+
+        CREATE TABLE IF NOT EXISTS sync_cursors (account_id TEXT PRIMARY KEY, sequence_number INTEGER NOT NULL);
+
         CREATE TABLE IF NOT EXISTS sync_outbox (
             operation_id TEXT PRIMARY KEY,
             entity_type TEXT NOT NULL,
@@ -303,6 +307,85 @@ public actor SpaceStore {
         Self.executeRawSQL(on: db, sql: "COMMIT;")
     }
 
+    /// Commits remote schemas before the sync cursor can advance.
+    public func applyRemoteCollection(_ schema: CollectionSchema) throws {
+        guard schema.spaceId == spaceId, let db else { throw PersistenceError.databaseOpenFailed("Space database unavailable.") }
+        let payload = try encoder.encode(schema)
+        guard let json = String(data: payload, encoding: .utf8) else { throw PersistenceError.encodingFailed }
+        try executeSQLStrict("BEGIN IMMEDIATE TRANSACTION;")
+        do {
+            let sql = "INSERT INTO collections (id,schema_version,is_deleted,updated_at,payload_json) VALUES (?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET schema_version=excluded.schema_version,is_deleted=excluded.is_deleted,updated_at=excluded.updated_at,payload_json=excluded.payload_json;"
+            var statement: OpaquePointer?
+            guard sqlite3_prepare_v2(db, sql, -1, &statement, nil) == SQLITE_OK else { throw PersistenceError.statementPreparationFailed("Remote schema write failed.") }
+            defer { sqlite3_finalize(statement) }
+            Self.bindText(statement, index: 1, value: schema.id.uuidString)
+            sqlite3_bind_int(statement, 2, Int32(schema.schemaVersion)); sqlite3_bind_int(statement, 3, schema.isDeleted ? 1 : 0)
+            sqlite3_bind_double(statement, 4, schema.updatedAt.timeIntervalSince1970); Self.bindText(statement, index: 5, value: json)
+            guard sqlite3_step(statement) == SQLITE_DONE else { throw PersistenceError.sqlExecutionFailed("Remote schema write failed.") }
+            try executeSQLStrict("COMMIT;")
+        } catch { Self.executeRawSQL(on: db, sql: "ROLLBACK;"); throw error }
+    }
+
+    public func saveSyncConflictPayload(_ payload: Data, recordId: UUID, accountId: String) throws {
+        guard let db, let json = String(data: payload, encoding: .utf8) else { throw PersistenceError.encodingFailed }
+        var statement: OpaquePointer?
+        guard sqlite3_prepare_v2(db, "INSERT INTO sync_conflicts(account_id,record_id,payload_json) VALUES (?,?,?) ON CONFLICT(account_id,record_id) DO UPDATE SET payload_json=excluded.payload_json;", -1, &statement, nil) == SQLITE_OK else { throw PersistenceError.statementPreparationFailed("Conflict preservation failed.") }
+        defer { sqlite3_finalize(statement) }
+        Self.bindText(statement, index: 1, value: accountId.lowercased()); Self.bindText(statement, index: 2, value: recordId.uuidString); Self.bindText(statement, index: 3, value: json)
+        guard sqlite3_step(statement) == SQLITE_DONE else { throw PersistenceError.sqlExecutionFailed("Conflict preservation failed.") }
+    }
+
+    public func syncConflictPayloads(accountId: String) throws -> [Data] {
+        guard let db else { throw PersistenceError.databaseOpenFailed("Space database unavailable.") }
+        var statement: OpaquePointer?
+        guard sqlite3_prepare_v2(db, "SELECT payload_json FROM sync_conflicts WHERE account_id=?;", -1, &statement, nil) == SQLITE_OK else { throw PersistenceError.statementPreparationFailed("Conflict read failed.") }
+        defer { sqlite3_finalize(statement) }
+        Self.bindText(statement, index: 1, value: accountId.lowercased())
+        var results: [Data] = []
+        var status = sqlite3_step(statement)
+        while status == SQLITE_ROW {
+            guard let json = Self.columnText(statement, index: 0) else { throw PersistenceError.decodingFailed }
+            results.append(Data(json.utf8)); status = sqlite3_step(statement)
+        }
+        guard status == SQLITE_DONE else { throw PersistenceError.sqlExecutionFailed("Conflict read failed.") }
+        return results
+    }
+
+    public func removeSyncConflict(recordId: UUID, accountId: String) throws {
+        guard let db else { throw PersistenceError.databaseOpenFailed("Space database unavailable.") }
+        var statement: OpaquePointer?
+        guard sqlite3_prepare_v2(db, "DELETE FROM sync_conflicts WHERE account_id=? AND record_id=?;", -1, &statement, nil) == SQLITE_OK else { throw PersistenceError.statementPreparationFailed("Conflict removal failed.") }
+        defer { sqlite3_finalize(statement) }
+        Self.bindText(statement, index: 1, value: accountId.lowercased()); Self.bindText(statement, index: 2, value: recordId.uuidString)
+        guard sqlite3_step(statement) == SQLITE_DONE else { throw PersistenceError.sqlExecutionFailed("Conflict removal failed.") }
+    }
+
+    public func syncCursorSequence(accountId: String) throws -> Int64 {
+        guard let db else { throw PersistenceError.databaseOpenFailed("Space database unavailable.") }
+        var statement: OpaquePointer?
+        guard sqlite3_prepare_v2(db, "SELECT sequence_number FROM sync_cursors WHERE account_id=?;", -1, &statement, nil) == SQLITE_OK else { throw PersistenceError.statementPreparationFailed("Sync cursor read failed.") }
+        defer { sqlite3_finalize(statement) }
+        Self.bindText(statement, index: 1, value: accountId.lowercased())
+        let result = sqlite3_step(statement)
+        if result == SQLITE_DONE { return 0 }
+        guard result == SQLITE_ROW else { throw PersistenceError.sqlExecutionFailed("Sync cursor read failed.") }
+        return sqlite3_column_int64(statement, 0)
+    }
+
+    public func saveSyncCursorSequence(_ sequence: Int64, accountId: String) throws {
+        guard let db else { throw PersistenceError.databaseOpenFailed("Space database unavailable.") }
+        var statement: OpaquePointer?
+        guard sqlite3_prepare_v2(db, "INSERT INTO sync_cursors(account_id,sequence_number) VALUES (?,?) ON CONFLICT(account_id) DO UPDATE SET sequence_number=excluded.sequence_number;", -1, &statement, nil) == SQLITE_OK else { throw PersistenceError.statementPreparationFailed("Sync cursor write failed.") }
+        defer { sqlite3_finalize(statement) }
+        Self.bindText(statement, index: 1, value: accountId.lowercased()); sqlite3_bind_int64(statement, 2, sequence)
+        guard sqlite3_step(statement) == SQLITE_DONE else { throw PersistenceError.sqlExecutionFailed("Sync cursor write failed.") }
+    }
+
+    private func executeSQLStrict(_ sql: String) throws {
+        guard let db else { throw PersistenceError.databaseOpenFailed("Space database unavailable.") }
+        guard sqlite3_exec(db, sql, nil, nil, nil) == SQLITE_OK else { throw PersistenceError.sqlExecutionFailed("Sync transaction failed.") }
+    }
+
     /// Marks a collection as deleted (tombstone) and soft-deletes its records.
     public func deleteCollection(id: UUID, enqueueSync: Bool = true) {
         guard let db else { return }
@@ -373,7 +456,7 @@ public actor SpaceStore {
             throw PersistenceError.encodingFailed
         }
 
-        Self.executeRawSQL(on: db, sql: "BEGIN IMMEDIATE TRANSACTION;")
+        try executeSQLStrict("BEGIN IMMEDIATE TRANSACTION;")
         do {
             try writeRecordRowInternal(on: db, record: record, payloadJSON: payloadJSON)
             updateProjectionsInternal(on: db, record: record, schema: schema)
@@ -389,7 +472,7 @@ public actor SpaceStore {
                     payloadJSON: payloadJSON
                 )
             }
-            Self.executeRawSQL(on: db, sql: "COMMIT;")
+            try executeSQLStrict("COMMIT;")
         } catch {
             Self.executeRawSQL(on: db, sql: "ROLLBACK;")
             throw error

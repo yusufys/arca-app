@@ -109,737 +109,190 @@ public enum ArcaEnvironmentConfig {
 
 // MARK: - Laravel HTTP Sync & Announcement Backend
 
-/// Production-ready Arca Sync Backend communicating with the Laravel + PostgreSQL backend
-/// over HTTP/REST JSON endpoints, with automated zero-knowledge E2EE payload transport
-/// and local in-memory fallback for offline or unauthenticated usage.
+/// Authenticated network transport. Failed requests always throw; they never acknowledge local outbox work.
 public final class LaravelArcaSyncBackend: ArcaSyncBackendProtocol, @unchecked Sendable {
     public let baseURL: URL
     public var apiToken: String?
     public let session: URLSession
-    public let fallback: InMemoryArcaSyncBackend
-
     private let jsonEncoder: JSONEncoder
     private let jsonDecoder: JSONDecoder
 
-    public init(
-        baseURL: URL = ArcaEnvironmentConfig.apiBaseURL,
-        apiToken: String? = ArcaEnvironmentConfig.apiToken,
-        session: URLSession = .shared,
-        fallback: InMemoryArcaSyncBackend = InMemoryArcaSyncBackend()
-    ) {
-        self.baseURL = baseURL
-        self.apiToken = apiToken
-        self.session = session
-        self.fallback = fallback
-
-        let enc = JSONEncoder()
-        enc.dateEncodingStrategy = .iso8601
-        self.jsonEncoder = enc
-
-        let dec = JSONDecoder()
-        dec.dateDecodingStrategy = .iso8601
-        self.jsonDecoder = dec
-    }
-
-    // MARK: - Internal HTTP Helper
-
-    private func createRequest(
-        path: String,
-        method: String,
-        body: Data? = nil,
-        queryItems: [URLQueryItem]? = nil
-    ) -> URLRequest {
-        let baseString = baseURL.absoluteString.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-        let trimmedPath = path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-        let fullURLString = "\(baseString)/\(trimmedPath)"
-
-        var components = URLComponents(string: fullURLString)
-        if let queryItems = queryItems, !queryItems.isEmpty {
-            components?.queryItems = queryItems
-        }
-
-        let finalURL = components?.url ?? URL(string: fullURLString)!
-        var req = URLRequest(url: finalURL)
-        req.httpMethod = method
-        req.setValue("application/json", forHTTPHeaderField: "Accept")
-
-        if let body = body {
-            req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-            req.httpBody = body
-        }
-        if let token = apiToken, !token.isEmpty {
-            req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        }
-        return req
-    }
-
-    // MARK: - 1. Authentication & Account Deletion
-
-    public func authenticate(
-        email: String,
-        credentialProof: String,
-        maxAllowedDevices: Int,
-        storageQuotaBytes: Int64
-    ) async throws -> SyncAuthSession {
-        guard let token = apiToken, !token.isEmpty else {
-            return try await fallback.authenticate(
-                email: email,
-                credentialProof: credentialProof,
-                maxAllowedDevices: maxAllowedDevices,
-                storageQuotaBytes: storageQuotaBytes
-            )
-        }
-
-        struct AuthPayload: Encodable {
-            let email: String
-            let credentialProof: String
-            let maxAllowedDevices: Int
-            let storageQuotaBytes: Int64
-        }
-
-        let body = try jsonEncoder.encode(AuthPayload(
-            email: email,
-            credentialProof: credentialProof,
-            maxAllowedDevices: maxAllowedDevices,
-            storageQuotaBytes: storageQuotaBytes
-        ))
-
-        let req = createRequest(path: "api/v1/auth/login", method: "POST", body: body)
-        do {
-            let (data, response) = try await session.data(for: req)
-            if let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) {
-                return try jsonDecoder.decode(SyncAuthSession.self, from: data)
-            }
-            return try await fallback.authenticate(
-                email: email,
-                credentialProof: credentialProof,
-                maxAllowedDevices: maxAllowedDevices,
-                storageQuotaBytes: storageQuotaBytes
-            )
-        } catch {
-            return try await fallback.authenticate(
-                email: email,
-                credentialProof: credentialProof,
-                maxAllowedDevices: maxAllowedDevices,
-                storageQuotaBytes: storageQuotaBytes
-            )
+    public init(baseURL: URL = ArcaEnvironmentConfig.apiBaseURL, apiToken: String? = ArcaEnvironmentConfig.apiToken,
+                session: URLSession = .shared, fallback: InMemoryArcaSyncBackend = InMemoryArcaSyncBackend()) {
+        self.baseURL = baseURL; self.apiToken = apiToken; self.session = session
+        jsonEncoder = JSONEncoder(); jsonEncoder.dateEncodingStrategy = .iso8601
+        jsonDecoder = JSONDecoder(); jsonDecoder.dateDecodingStrategy = .custom { decoder in
+            let value = try decoder.singleValueContainer().decode(String.self)
+            let formatter = ISO8601DateFormatter(); formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+            if let date = formatter.date(from: value) { return date }
+            formatter.formatOptions = [.withInternetDateTime]
+            if let date = formatter.date(from: value) { return date }
+            throw DecodingError.dataCorruptedError(in: try decoder.singleValueContainer(), debugDescription: "Invalid API timestamp")
         }
     }
 
+    private func createRequest(path: String, method: String, body: Data? = nil, queryItems: [URLQueryItem]? = nil) -> URLRequest {
+        var components = URLComponents(url: baseURL.appendingPathComponent(path), resolvingAgainstBaseURL: false)!
+        components.queryItems = queryItems
+        var request = URLRequest(url: components.url!); request.httpMethod = method; request.httpBody = body
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        if body != nil { request.setValue("application/json", forHTTPHeaderField: "Content-Type") }
+        if let apiToken { request.setValue("Bearer \(apiToken)", forHTTPHeaderField: "Authorization") }
+        return request
+    }
+    private func request(_ path: String, method: String = "GET", body: Data? = nil, deviceId: String? = nil,
+                         query: [URLQueryItem]? = nil, authenticated: Bool = true) async throws -> Data {
+        if authenticated && (apiToken?.isEmpty != false) { throw SyncServiceError.unauthenticated }
+        var req = createRequest(path: "api/v1/" + path, method: method, body: body, queryItems: query)
+        if let deviceId { req.setValue(deviceId, forHTTPHeaderField: "X-Device-Id") }
+        let (data, response) = try await session.data(for: req)
+        guard let http = response as? HTTPURLResponse else { throw URLError(.badServerResponse) }
+        guard (200...299).contains(http.statusCode) else {
+            // Do not propagate response bodies: they can contain echoed credentials or user content.
+            throw NSError(domain: "ArcaSync.HTTP", code: http.statusCode,
+                          userInfo: [NSLocalizedDescriptionKey: "Sync server request failed (HTTP \(http.statusCode))."])
+        }
+        return data
+    }
+    private struct AccountResponse: Decodable {
+        struct User: Decodable { let uuid: String; let email: String; let remote_storage_bytes_used: Int64 }
+        struct Entitlements: Decodable { let max_devices: Int; let max_storage_bytes: Int64 }
+        let user: User; let entitlements: Entitlements; let api_token: String?
+    }
+    private func authSession(_ data: Data) throws -> SyncAuthSession {
+        let value = try jsonDecoder.decode(AccountResponse.self, from: data)
+        if let token = value.api_token { apiToken = token }
+        guard let token = apiToken else { throw SyncServiceError.unauthenticated }
+        return SyncAuthSession(accountId: value.user.uuid, email: value.user.email, authToken: token,
+                               maxAllowedDevices: value.entitlements.max_devices, storageQuotaBytes: value.entitlements.max_storage_bytes)
+    }
+    public func signIn(email: String, password: String, name: String? = nil) async throws -> SyncAuthSession {
+        var payload = ["email": email, "password": password]
+        if let name { payload["name"] = name }
+        return try authSession(await request(name == nil ? "auth/login" : "auth/register", method: "POST",
+                                            body: jsonEncoder.encode(payload), authenticated: false))
+    }
+    public func authenticate(email: String, credentialProof: String, maxAllowedDevices: Int, storageQuotaBytes: Int64) async throws -> SyncAuthSession {
+        if apiToken?.isEmpty == false { return try authSession(await request("auth/me")) }
+        return try await signIn(email: email, password: credentialProof)
+    }
     public func deleteAccountAndRemoteData(accountId: String) async throws -> RemoteDeletionReceipt {
-        guard let token = apiToken, !token.isEmpty else {
-            return try await fallback.deleteAccountAndRemoteData(accountId: accountId)
-        }
-
-        struct DeletePayload: Encodable {
-            let accountId: String
-        }
-
-        let body = try jsonEncoder.encode(DeletePayload(accountId: accountId))
-        let req = createRequest(path: "api/v1/account", method: "DELETE", body: body)
-        do {
-            let (data, response) = try await session.data(for: req)
-            if let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) {
-                return try jsonDecoder.decode(RemoteDeletionReceipt.self, from: data)
-            }
-            return try await fallback.deleteAccountAndRemoteData(accountId: accountId)
-        } catch {
-            return try await fallback.deleteAccountAndRemoteData(accountId: accountId)
-        }
+        let receipt = try jsonDecoder.decode(RemoteDeletionReceipt.self, from: await request("account", method: "DELETE"))
+        apiToken = nil; return receipt
     }
-
-    // MARK: - 2. Device Enrollment & Revocation
-
-    /// Registers a device anonymously (or updates its registration) before user login/registration.
-    public func registerAnonymousDevice(
-        deviceId: UUID,
-        deviceToken: String,
-        deviceName: String,
-        platform: String,
-        publicKeyBase64: String? = nil
-    ) async throws {
-        struct RegisterPayload: Encodable {
-            let id: String
-            let device_id: String
-            let device_token: String
-            let device_name: String
-            let platform: String
-            let public_key_x25519: String?
-        }
-
-        let body = try jsonEncoder.encode(RegisterPayload(
-            id: deviceId.uuidString,
-            device_id: deviceId.uuidString,
-            device_token: deviceToken,
-            device_name: deviceName,
-            platform: platform,
-            public_key_x25519: publicKeyBase64
-        ))
-
-        let req = createRequest(path: "api/v1/devices/register", method: "POST", body: body)
-        let (data, response) = try await session.data(for: req)
-        guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else {
-            let errorText = String(data: data, encoding: .utf8) ?? "Device registration failed"
-            let code = (response as? HTTPURLResponse)?.statusCode ?? 500
-            throw NSError(domain: "LaravelArcaSyncBackend", code: code, userInfo: [NSLocalizedDescriptionKey: errorText])
-        }
+    private struct DeviceWire: Decodable {
+        let id: String; let device_name: String; let platform: String; let public_key_x25519: String?
+        let created_at: Date; let last_synced_at: Date?; let revoked_at: Date?
+        var model: EnrolledDevice { EnrolledDevice(deviceId: id, deviceName: device_name, platform: platform,
+            publicKeyBase64: public_key_x25519 ?? "", enrolledAt: created_at, lastSyncAt: last_synced_at,
+            isRevoked: revoked_at != nil, revokedAt: revoked_at) }
     }
-
-    /// Logs in and associates an existing or anonymous device with the user account, storing `api_token` in `self.apiToken`.
-    public func loginAndAssociateDevice(
-        email: String,
-        password: String,
-        deviceId: UUID,
-        deviceToken: String,
-        deviceName: String
-    ) async throws -> String {
-        struct LoginPayload: Encodable {
-            let email: String
-            let password: String
-            let device_id: String
-            let device_token: String
-            let device_name: String
-        }
-
-        let body = try jsonEncoder.encode(LoginPayload(
-            email: email,
-            password: password,
-            device_id: deviceId.uuidString,
-            device_token: deviceToken,
-            device_name: deviceName
-        ))
-
-        let req = createRequest(path: "api/v1/auth/login", method: "POST", body: body)
-        let (data, response) = try await session.data(for: req)
-        guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else {
-            let errorText = String(data: data, encoding: .utf8) ?? "Login and device association failed"
-            let code = (response as? HTTPURLResponse)?.statusCode ?? 401
-            throw NSError(domain: "LaravelArcaSyncBackend", code: code, userInfo: [NSLocalizedDescriptionKey: errorText])
-        }
-
-        struct LoginResponse: Decodable {
-            let api_token: String
-        }
-
-        let decoded = try jsonDecoder.decode(LoginResponse.self, from: data)
-        self.apiToken = decoded.api_token
-        return decoded.api_token
+    public func registerAnonymousDevice(deviceId: UUID, deviceToken: String, deviceName: String, platform: String, publicKeyBase64: String? = nil) async throws {
+        var payload = ["device_id": deviceId.uuidString, "device_token": deviceToken, "device_name": deviceName, "platform": platform.lowercased()]
+        payload["public_key_x25519"] = publicKeyBase64
+        _ = try await request("devices/register", method: "POST", body: jsonEncoder.encode(payload), authenticated: false)
     }
-
-    public func enrollDevice(
-        accountId: String,
-        device: EnrolledDevice,
-        maxAllowedDevices: Int,
-        wrappedMasterKey: DeviceWrappedMasterKey?
-    ) async throws -> DeviceEnrollmentReceipt {
-        guard let token = apiToken, !token.isEmpty else {
-            return try await fallback.enrollDevice(
-                accountId: accountId,
-                device: device,
-                maxAllowedDevices: maxAllowedDevices,
-                wrappedMasterKey: wrappedMasterKey
-            )
-        }
-
-        struct EnrollPayload: Encodable {
-            let accountId: String
-            let device: EnrolledDevice
-            let maxAllowedDevices: Int
-            let wrappedMasterKey: DeviceWrappedMasterKey?
-        }
-
-        let body = try jsonEncoder.encode(EnrollPayload(
-            accountId: accountId,
-            device: device,
-            maxAllowedDevices: maxAllowedDevices,
-            wrappedMasterKey: wrappedMasterKey
-        ))
-
-        let req = createRequest(path: "api/v1/devices/enroll", method: "POST", body: body)
-        do {
-            let (data, response) = try await session.data(for: req)
-            if let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) {
-                return try jsonDecoder.decode(DeviceEnrollmentReceipt.self, from: data)
-            }
-            return try await fallback.enrollDevice(
-                accountId: accountId,
-                device: device,
-                maxAllowedDevices: maxAllowedDevices,
-                wrappedMasterKey: wrappedMasterKey
-            )
-        } catch {
-            return try await fallback.enrollDevice(
-                accountId: accountId,
-                device: device,
-                maxAllowedDevices: maxAllowedDevices,
-                wrappedMasterKey: wrappedMasterKey
-            )
-        }
+    public func loginAndAssociateDevice(email: String, password: String, deviceId: UUID, deviceToken: String, deviceName: String) async throws -> String {
+        let payload = ["email": email, "password": password, "device_id": deviceId.uuidString, "device_token": deviceToken, "device_name": deviceName]
+        return try authSession(await request("auth/login", method: "POST", body: jsonEncoder.encode(payload), authenticated: false)).authToken
     }
-
-    public func listEnrolledDevices(accountId: String) async throws -> [EnrolledDevice] {
-        guard let token = apiToken, !token.isEmpty else {
-            return try await fallback.listEnrolledDevices(accountId: accountId)
-        }
-
-        let query = [URLQueryItem(name: "account_id", value: accountId)]
-        let req = createRequest(path: "api/v1/devices", method: "GET", queryItems: query)
-        do {
-            let (data, response) = try await session.data(for: req)
-            if let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) {
-                if let direct = try? jsonDecoder.decode([EnrolledDevice].self, from: data) {
-                    return direct
-                }
-                struct DeviceListResponse: Decodable {
-                    let devices: [EnrolledDevice]
-                }
-                if let wrapped = try? jsonDecoder.decode(DeviceListResponse.self, from: data) {
-                    return wrapped.devices
-                }
-            }
-            return try await fallback.listEnrolledDevices(accountId: accountId)
-        } catch {
-            return try await fallback.listEnrolledDevices(accountId: accountId)
-        }
-    }
-
-    public func revokeDevice(
-        accountId: String,
-        revokingDeviceId: String,
-        requestedByDeviceId: String,
-        rotatedSpaceKeys: [WrappedSpaceKeyRing]
-    ) async throws -> DeviceRevocationReceipt {
-        guard let token = apiToken, !token.isEmpty else {
-            return try await fallback.revokeDevice(
-                accountId: accountId,
-                revokingDeviceId: revokingDeviceId,
-                requestedByDeviceId: requestedByDeviceId,
-                rotatedSpaceKeys: rotatedSpaceKeys
-            )
-        }
-
-        struct RevokePayload: Encodable {
-            let accountId: String
-            let revokingDeviceId: String
-            let requestedByDeviceId: String
-            let rotatedSpaceKeys: [WrappedSpaceKeyRing]
-        }
-
-        let body = try jsonEncoder.encode(RevokePayload(
-            accountId: accountId,
-            revokingDeviceId: revokingDeviceId,
-            requestedByDeviceId: requestedByDeviceId,
-            rotatedSpaceKeys: rotatedSpaceKeys
-        ))
-
-        let req = createRequest(path: "api/v1/devices/revoke", method: "POST", body: body)
-        do {
-            let (data, response) = try await session.data(for: req)
-            if let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) {
-                return try jsonDecoder.decode(DeviceRevocationReceipt.self, from: data)
-            }
-            return try await fallback.revokeDevice(
-                accountId: accountId,
-                revokingDeviceId: revokingDeviceId,
-                requestedByDeviceId: requestedByDeviceId,
-                rotatedSpaceKeys: rotatedSpaceKeys
-            )
-        } catch {
-            return try await fallback.revokeDevice(
-                accountId: accountId,
-                revokingDeviceId: revokingDeviceId,
-                requestedByDeviceId: requestedByDeviceId,
-                rotatedSpaceKeys: rotatedSpaceKeys
-            )
-        }
-    }
-
-    // MARK: - 3. Space Key Ring Distribution
-
-    public func publishWrappedSpaceKey(
-        accountId: String,
-        deviceId: String,
-        wrappedSpaceKey: WrappedSpaceKeyRing
-    ) async throws {
-        guard let token = apiToken, !token.isEmpty else {
-            return try await fallback.publishWrappedSpaceKey(
-                accountId: accountId,
-                deviceId: deviceId,
-                wrappedSpaceKey: wrappedSpaceKey
-            )
-        }
-
-        struct KeyPayload: Encodable {
-            let accountId: String
-            let deviceId: String
-            let wrappedSpaceKey: WrappedSpaceKeyRing
-        }
-
-        let body = try jsonEncoder.encode(KeyPayload(
-            accountId: accountId,
-            deviceId: deviceId,
-            wrappedSpaceKey: wrappedSpaceKey
-        ))
-
-        let req = createRequest(path: "api/v1/spaces/keys", method: "POST", body: body)
-        do {
-            let (_, response) = try await session.data(for: req)
-            if let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) {
-                return
-            }
-            try await fallback.publishWrappedSpaceKey(accountId: accountId, deviceId: deviceId, wrappedSpaceKey: wrappedSpaceKey)
-        } catch {
-            try await fallback.publishWrappedSpaceKey(accountId: accountId, deviceId: deviceId, wrappedSpaceKey: wrappedSpaceKey)
-        }
-    }
-
-    public func fetchLatestWrappedSpaceKey(
-        accountId: String,
-        spaceId: UUID,
-        deviceId: String
-    ) async throws -> WrappedSpaceKeyRing? {
-        guard let token = apiToken, !token.isEmpty else {
-            return try await fallback.fetchLatestWrappedSpaceKey(accountId: accountId, spaceId: spaceId, deviceId: deviceId)
-        }
-
-        let query = [
-            URLQueryItem(name: "account_id", value: accountId),
-            URLQueryItem(name: "space_id", value: spaceId.uuidString),
-            URLQueryItem(name: "device_id", value: deviceId)
-        ]
-        let req = createRequest(path: "api/v1/spaces/keys", method: "GET", queryItems: query)
-        do {
-            let (data, response) = try await session.data(for: req)
-            if let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) {
-                return try? jsonDecoder.decode(WrappedSpaceKeyRing.self, from: data)
-            }
-            return try await fallback.fetchLatestWrappedSpaceKey(accountId: accountId, spaceId: spaceId, deviceId: deviceId)
-        } catch {
-            return try await fallback.fetchLatestWrappedSpaceKey(accountId: accountId, spaceId: spaceId, deviceId: deviceId)
-        }
-    }
-
-    // MARK: - 4. Idempotent Push & Resumable Incremental Pull
-
-    public func pushEncryptedOperations(
-        accountId: String,
-        spaceId: UUID,
-        deviceId: String,
-        operations: [EncryptedSyncOperation]
-    ) async throws -> SyncPushReceipt {
-        guard let token = apiToken, !token.isEmpty else {
-            return try await fallback.pushEncryptedOperations(
-                accountId: accountId,
-                spaceId: spaceId,
-                deviceId: deviceId,
-                operations: operations
-            )
-        }
-
-        struct PushPayload: Encodable {
-            let accountId: String
-            let spaceId: UUID
-            let deviceId: String
-            let operations: [EncryptedSyncOperation]
-        }
-
-        let body = try jsonEncoder.encode(PushPayload(
-            accountId: accountId,
-            spaceId: spaceId,
-            deviceId: deviceId,
-            operations: operations
-        ))
-
-        let req = createRequest(path: "api/v1/sync/push", method: "POST", body: body)
-        do {
-            let (data, response) = try await session.data(for: req)
-            if let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) {
-                return try jsonDecoder.decode(SyncPushReceipt.self, from: data)
-            }
-            return try await fallback.pushEncryptedOperations(
-                accountId: accountId,
-                spaceId: spaceId,
-                deviceId: deviceId,
-                operations: operations
-            )
-        } catch {
-            return try await fallback.pushEncryptedOperations(
-                accountId: accountId,
-                spaceId: spaceId,
-                deviceId: deviceId,
-                operations: operations
-            )
-        }
-    }
-
-    public func pullEncryptedOperations(
-        accountId: String,
-        spaceId: UUID,
-        deviceId: String,
-        sinceCursor: SyncCursor?,
-        limit: Int
-    ) async throws -> SyncPullBatch {
-        guard let token = apiToken, !token.isEmpty else {
-            return try await fallback.pullEncryptedOperations(
-                accountId: accountId,
-                spaceId: spaceId,
-                deviceId: deviceId,
-                sinceCursor: sinceCursor,
-                limit: limit
-            )
-        }
-
-        var query = [
-            URLQueryItem(name: "account_id", value: accountId),
-            URLQueryItem(name: "space_id", value: spaceId.uuidString),
-            URLQueryItem(name: "device_id", value: deviceId),
-            URLQueryItem(name: "limit", value: String(limit))
-        ]
-        if let cursor = sinceCursor {
-            query.append(URLQueryItem(name: "since_sequence", value: String(cursor.sequenceNumber)))
-        }
-
-        let req = createRequest(path: "api/v1/sync/pull", method: "GET", queryItems: query)
-        do {
-            let (data, response) = try await session.data(for: req)
-            if let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) {
-                return try jsonDecoder.decode(SyncPullBatch.self, from: data)
-            }
-            return try await fallback.pullEncryptedOperations(
-                accountId: accountId,
-                spaceId: spaceId,
-                deviceId: deviceId,
-                sinceCursor: sinceCursor,
-                limit: limit
-            )
-        } catch {
-            return try await fallback.pullEncryptedOperations(
-                accountId: accountId,
-                spaceId: spaceId,
-                deviceId: deviceId,
-                sinceCursor: sinceCursor,
-                limit: limit
-            )
-        }
-    }
-
-    // MARK: - 5. Encrypted Attachment Upload & Download
-
-    public func uploadEncryptedAttachment(
-        accountId: String,
-        deviceId: String,
-        blob: EncryptedAttachmentBlob
-    ) async throws {
-        guard let token = apiToken, !token.isEmpty else {
-            return try await fallback.uploadEncryptedAttachment(
-                accountId: accountId,
-                deviceId: deviceId,
-                blob: blob
-            )
-        }
-
-        struct UploadPayload: Encodable {
-            let accountId: String
-            let deviceId: String
-            let blob: EncryptedAttachmentBlob
-        }
-
-        let body = try jsonEncoder.encode(UploadPayload(
-            accountId: accountId,
-            deviceId: deviceId,
-            blob: blob
-        ))
-
-        let req = createRequest(path: "api/v1/attachments/upload", method: "POST", body: body)
-        do {
-            let (_, response) = try await session.data(for: req)
-            if let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) {
-                return
-            }
-            try await fallback.uploadEncryptedAttachment(accountId: accountId, deviceId: deviceId, blob: blob)
-        } catch {
-            try await fallback.uploadEncryptedAttachment(accountId: accountId, deviceId: deviceId, blob: blob)
-        }
-    }
-
-    public func downloadEncryptedAttachment(
-        accountId: String,
-        spaceId: UUID,
-        attachmentId: UUID,
-        deviceId: String
-    ) async throws -> EncryptedAttachmentBlob {
-        guard let token = apiToken, !token.isEmpty else {
-            return try await fallback.downloadEncryptedAttachment(
-                accountId: accountId,
-                spaceId: spaceId,
-                attachmentId: attachmentId,
-                deviceId: deviceId
-            )
-        }
-
-        let query = [
-            URLQueryItem(name: "account_id", value: accountId),
-            URLQueryItem(name: "space_id", value: spaceId.uuidString),
-            URLQueryItem(name: "attachment_id", value: attachmentId.uuidString),
-            URLQueryItem(name: "device_id", value: deviceId)
-        ]
-
-        let req = createRequest(path: "api/v1/attachments/download", method: "GET", queryItems: query)
-        do {
-            let (data, response) = try await session.data(for: req)
-            if let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) {
-                return try jsonDecoder.decode(EncryptedAttachmentBlob.self, from: data)
-            }
-            return try await fallback.downloadEncryptedAttachment(
-                accountId: accountId,
-                spaceId: spaceId,
-                attachmentId: attachmentId,
-                deviceId: deviceId
-            )
-        } catch {
-            return try await fallback.downloadEncryptedAttachment(
-                accountId: accountId,
-                spaceId: spaceId,
-                attachmentId: attachmentId,
-                deviceId: deviceId
-            )
-        }
-    }
-
-    // MARK: - 6. Remote Space Deletion
-
-    public func deleteRemoteSpaceData(
-        accountId: String,
-        spaceId: UUID,
-        requestedByDeviceId: String
-    ) async throws -> RemoteDeletionReceipt {
-        guard let token = apiToken, !token.isEmpty else {
-            return try await fallback.deleteRemoteSpaceData(
-                accountId: accountId,
-                spaceId: spaceId,
-                requestedByDeviceId: requestedByDeviceId
-            )
-        }
-
-        struct DeleteSpacePayload: Encodable {
-            let accountId: String
-            let spaceId: UUID
-            let requestedByDeviceId: String
-        }
-
-        let body = try jsonEncoder.encode(DeleteSpacePayload(
-            accountId: accountId,
-            spaceId: spaceId,
-            requestedByDeviceId: requestedByDeviceId
-        ))
-
-        let req = createRequest(path: "api/v1/spaces", method: "DELETE", body: body)
-        do {
-            let (data, response) = try await session.data(for: req)
-            if let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) {
-                return try jsonDecoder.decode(RemoteDeletionReceipt.self, from: data)
-            }
-            return try await fallback.deleteRemoteSpaceData(
-                accountId: accountId,
-                spaceId: spaceId,
-                requestedByDeviceId: requestedByDeviceId
-            )
-        } catch {
-            return try await fallback.deleteRemoteSpaceData(
-                accountId: accountId,
-                spaceId: spaceId,
-                requestedByDeviceId: requestedByDeviceId
-            )
-        }
-    }
-
-    // MARK: - Convenience & Aliased Sync Helpers
-
-    public func activeDeviceCount(accountId: String) async throws -> Int {
+    public func enrollDevice(accountId: String, device: EnrolledDevice, maxAllowedDevices: Int, wrappedMasterKey: DeviceWrappedMasterKey?) async throws -> DeviceEnrollmentReceipt {
+        let payload = ["device_id": device.deviceId, "device_name": device.deviceName, "platform": device.platform.lowercased(), "public_key_x25519": device.publicKeyBase64]
+        struct Response: Decodable { let device: DeviceWire }
+        let enrolled = try jsonDecoder.decode(Response.self, from: await request("devices/enroll", method: "POST", body: jsonEncoder.encode(payload))).device.model
         let devices = try await listEnrolledDevices(accountId: accountId)
-        return devices.filter { !$0.isRevoked }.count
+        return DeviceEnrollmentReceipt(accountId: accountId, enrolledDevice: enrolled, activeDevices: devices.filter { !$0.isRevoked }, maxAllowedDevices: maxAllowedDevices, wrappedMasterKey: wrappedMasterKey)
     }
-
-    public func registerSpace(
-        accountId: String,
-        spaceId: UUID,
-        deviceId: String,
-        wrappedSpaceKey: WrappedSpaceKeyRing
-    ) async throws {
-        try await publishWrappedSpaceKey(
-            accountId: accountId,
-            deviceId: deviceId,
-            wrappedSpaceKey: wrappedSpaceKey
-        )
+    public func listEnrolledDevices(accountId: String) async throws -> [EnrolledDevice] {
+        struct Response: Decodable { let devices: [DeviceWire] }
+        return try jsonDecoder.decode(Response.self, from: await request("devices")).devices.map(\.model)
     }
-
-    public func updateSpaceKeyEnvelopes(
-        accountId: String,
-        deviceId: String,
-        envelopes: [WrappedSpaceKeyRing]
-    ) async throws {
-        for envelope in envelopes {
-            try await publishWrappedSpaceKey(
-                accountId: accountId,
-                deviceId: deviceId,
-                wrappedSpaceKey: envelope
-            )
+    public func revokeDevice(accountId: String, revokingDeviceId: String, requestedByDeviceId: String, rotatedSpaceKeys: [WrappedSpaceKeyRing]) async throws -> DeviceRevocationReceipt {
+        struct Response: Decodable { let device: DeviceWire }
+        let device = try jsonDecoder.decode(Response.self, from: await request("devices/\(revokingDeviceId)/revoke", method: "POST", deviceId: requestedByDeviceId)).device.model
+        for key in rotatedSpaceKeys { try await publishWrappedSpaceKey(accountId: accountId, deviceId: requestedByDeviceId, wrappedSpaceKey: key) }
+        return DeviceRevocationReceipt(accountId: accountId, revokedDevice: device, remainingActiveDevices: try await listEnrolledDevices(accountId: accountId).filter { !$0.isRevoked }, rotatedSpaceKeys: rotatedSpaceKeys)
+    }
+    public func publishWrappedSpaceKey(accountId: String, deviceId: String, wrappedSpaceKey: WrappedSpaceKeyRing) async throws {
+        if let existing = try await fetchLatestWrappedSpaceKey(accountId: accountId, spaceId: wrappedSpaceKey.spaceId, deviceId: deviceId),
+           existing.keyGeneration == wrappedSpaceKey.keyGeneration && existing.keyId == wrappedSpaceKey.keyId { return }
+        _ = try await request("spaces/\(wrappedSpaceKey.spaceId.uuidString)/keys", method: "POST", body: jsonEncoder.encode(wrappedSpaceKey), deviceId: deviceId)
+    }
+    public func fetchLatestWrappedSpaceKey(accountId: String, spaceId: UUID, deviceId: String) async throws -> WrappedSpaceKeyRing? {
+        struct Response: Decodable { let key: WrappedSpaceKeyRing? }
+        return try jsonDecoder.decode(Response.self, from: await request("spaces/\(spaceId.uuidString)/keys", deviceId: deviceId)).key
+    }
+    public func fetchRecoveryBundle(deviceId: String = "") async throws -> WrappedRecoveryBundle? {
+        struct Response: Decodable { let bundle: WrappedRecoveryBundle? }
+        return try jsonDecoder.decode(Response.self, from: await request("sync/recovery")).bundle
+    }
+    public func publishRecoveryBundle(_ bundle: WrappedRecoveryBundle, deviceId: String) async throws -> WrappedRecoveryBundle {
+        struct Response: Decodable { let bundle: WrappedRecoveryBundle }
+        return try jsonDecoder.decode(Response.self, from: await request("sync/recovery", method: "POST", body: jsonEncoder.encode(bundle), deviceId: deviceId)).bundle
+    }
+    public struct RemoteSpace: Decodable, Sendable {
+        public let id: UUID
+        public let current_key_version: Int
+        public let wrapped_space_keys_json: [WrappedSpaceKeyRing]?
+    }
+    public func listRemoteSpaces(deviceId: String) async throws -> [RemoteSpace] {
+        struct Response: Decodable { let spaces: [RemoteSpace] }
+        return try jsonDecoder.decode(Response.self, from: await request("spaces", deviceId: deviceId)).spaces
+    }
+    private struct OperationEnvelope: Codable { let operation: EncryptedSyncOperation }
+    private struct PushOperation: Encodable {
+        let operation_id: UUID; let entity_id: UUID; let entity_type: String; let base_revision: Int64
+        let new_revision: Int64; let key_version: Int; let schema_version = 1; let ciphertext_bytes: Int
+        let encrypted_envelope: OperationEnvelope
+    }
+    public func pushEncryptedOperations(accountId: String, spaceId: UUID, deviceId: String, operations: [EncryptedSyncOperation]) async throws -> SyncPushReceipt {
+        struct Payload: Encodable { let operations: [PushOperation] }
+        let wire = try operations.map { op -> PushOperation in
+            guard op.spaceId == spaceId && op.authorDeviceId == deviceId else { throw SyncServiceError.invalidOperationEnvelope("Operation identity mismatch.") }
+            let envelope = OperationEnvelope(operation: op)
+            return PushOperation(operation_id: op.operationId, entity_id: op.entityId, entity_type: op.entityType == .collectionSchema ? "schema" : "record",
+                                 base_revision: op.baseRevision, new_revision: op.targetRevision, key_version: op.keyGeneration,
+                                 ciphertext_bytes: try jsonEncoder.encode(envelope).count, encrypted_envelope: envelope)
         }
+        struct Response: Decodable { let acknowledged_operation_ids: [UUID]; let latest_cursor: Int64; let remote_storage_bytes_used: Int64? }
+        let value = try jsonDecoder.decode(Response.self, from: await request("spaces/\(spaceId.uuidString)/push", method: "POST", body: jsonEncoder.encode(Payload(operations: wire)), deviceId: deviceId))
+        return SyncPushReceipt(spaceId: spaceId, acceptedOperationIds: value.acknowledged_operation_ids, deduplicatedOperationIds: [], latestCursor: SyncCursor(sequenceNumber: value.latest_cursor), totalAccountBytesUsed: value.remote_storage_bytes_used ?? 0)
     }
-
-    public func pushOperations(
-        accountId: String,
-        spaceId: UUID,
-        deviceId: String,
-        operations: [EncryptedSyncOperation]
-    ) async throws -> SyncPushReceipt {
-        try await pushEncryptedOperations(
-            accountId: accountId,
-            spaceId: spaceId,
-            deviceId: deviceId,
-            operations: operations
-        )
+    public func pullEncryptedOperations(accountId: String, spaceId: UUID, deviceId: String, sinceCursor: SyncCursor?, limit: Int) async throws -> SyncPullBatch {
+        struct Wire: Decodable { let server_cursor: Int64; let encrypted_envelope_json: OperationEnvelope }
+        struct Response: Decodable { let operations: [Wire]; let latest_cursor: Int64; let has_more: Bool? }
+        let value = try jsonDecoder.decode(Response.self, from: await request("spaces/\(spaceId.uuidString)/pull", deviceId: deviceId, query: [URLQueryItem(name: "since_cursor", value: String(sinceCursor?.sequenceNumber ?? 0)), URLQueryItem(name: "limit", value: String(max(1, min(500, limit))))]))
+        let operations = try value.operations.map { wire -> EncryptedSyncOperation in
+            var op = wire.encrypted_envelope_json.operation
+            guard op.spaceId == spaceId else { throw SyncServiceError.invalidOperationEnvelope("Remote operation space mismatch.") }
+            op.serverSequenceNumber = wire.server_cursor; return op
+        }
+        return SyncPullBatch(spaceId: spaceId, operations: operations, nextCursor: SyncCursor(sequenceNumber: value.latest_cursor), hasMore: value.has_more ?? false)
     }
-
-    public func pullOperations(
-        accountId: String,
-        spaceId: UUID,
-        deviceId: String,
-        sinceCursor: SyncCursor?,
-        limit: Int
-    ) async throws -> SyncPullBatch {
-        try await pullEncryptedOperations(
-            accountId: accountId,
-            spaceId: spaceId,
-            deviceId: deviceId,
-            sinceCursor: sinceCursor,
-            limit: limit
-        )
+    public func uploadEncryptedAttachment(accountId: String, deviceId: String, blob: EncryptedAttachmentBlob) async throws {
+        throw SyncServiceError.invalidOperationEnvelope("Remote attachment transport is not enabled on this server.")
     }
-
-    public func deleteAllRemoteDataForSpace(
-        accountId: String,
-        spaceId: UUID,
-        requestedByDeviceId: String
-    ) async throws -> RemoteDeletionReceipt {
-        try await deleteRemoteSpaceData(
-            accountId: accountId,
-            spaceId: spaceId,
-            requestedByDeviceId: requestedByDeviceId
-        )
+    public func downloadEncryptedAttachment(accountId: String, spaceId: UUID, attachmentId: UUID, deviceId: String) async throws -> EncryptedAttachmentBlob {
+        throw SyncServiceError.invalidOperationEnvelope("Remote attachment transport is not enabled on this server.")
     }
-
-    public func remoteBytesUsed(accountId: String, spaceId: UUID? = nil) async throws -> Int64 {
-        // Return 0 or simulated count when using fallback
-        return 0
+    public func deleteRemoteSpaceData(accountId: String, spaceId: UUID, requestedByDeviceId: String) async throws -> RemoteDeletionReceipt {
+        struct Payload: Encodable { let target_mode = "local_only"; let delete_remote_ciphertext = true }
+        struct Receipt: Decodable { let deleted_operation_count: Int; let deleted_attachment_count: Int; let freed_storage_bytes: Int64; let verified_zero_remaining: Bool; let deleted_at: Date }
+        struct Response: Decodable { let receipt: Receipt }
+        let value = try jsonDecoder.decode(Response.self, from: await request("spaces/\(spaceId.uuidString)/migrate-mode", method: "POST", body: jsonEncoder.encode(Payload()), deviceId: requestedByDeviceId)).receipt
+        return RemoteDeletionReceipt(accountId: accountId, deletedSpaceId: spaceId, didDeleteEntireAccount: false, purgedOperationsCount: value.deleted_operation_count, purgedAttachmentsCount: value.deleted_attachment_count, purgedBytesCount: value.freed_storage_bytes, verifiedZeroRemainingRecords: value.verified_zero_remaining, deletedAt: value.deleted_at)
     }
+    public func activeDeviceCount(accountId: String) async throws -> Int { try await listEnrolledDevices(accountId: accountId).filter { !$0.isRevoked }.count }
+    public func registerSpace(accountId: String, spaceId: UUID, deviceId: String, wrappedSpaceKey: WrappedSpaceKeyRing) async throws { try await publishWrappedSpaceKey(accountId: accountId, deviceId: deviceId, wrappedSpaceKey: wrappedSpaceKey) }
+    public func updateSpaceKeyEnvelopes(accountId: String, deviceId: String, envelopes: [WrappedSpaceKeyRing]) async throws { for key in envelopes { try await publishWrappedSpaceKey(accountId: accountId, deviceId: deviceId, wrappedSpaceKey: key) } }
+    public func pushOperations(accountId: String, spaceId: UUID, deviceId: String, operations: [EncryptedSyncOperation]) async throws -> SyncPushReceipt { try await pushEncryptedOperations(accountId: accountId, spaceId: spaceId, deviceId: deviceId, operations: operations) }
+    public func pullOperations(accountId: String, spaceId: UUID, deviceId: String, sinceCursor: SyncCursor?, limit: Int) async throws -> SyncPullBatch { try await pullEncryptedOperations(accountId: accountId, spaceId: spaceId, deviceId: deviceId, sinceCursor: sinceCursor, limit: limit) }
+    public func deleteAllRemoteDataForSpace(accountId: String, spaceId: UUID, requestedByDeviceId: String) async throws -> RemoteDeletionReceipt { try await deleteRemoteSpaceData(accountId: accountId, spaceId: spaceId, requestedByDeviceId: requestedByDeviceId) }
+    public func remoteBytesUsed(accountId: String, spaceId: UUID? = nil) async throws -> Int64 { try jsonDecoder.decode(AccountResponse.self, from: await request("auth/me")).user.remote_storage_bytes_used }
 
     // MARK: - 7. App Feed / Announcement Banners
 
     public func fetchAppFeed(platform: String, tier: SubscriptionTier) async throws -> [AppAnnouncementBanner] {
-        guard let token = apiToken, !token.isEmpty else {
-            return defaultAnnouncements(for: platform, tier: tier)
-        }
 
         let query = [
             URLQueryItem(name: "platform", value: platform),

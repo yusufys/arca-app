@@ -1948,7 +1948,7 @@ public actor SyncCoordinator {
 
         var pushedCount = 0
         var deduplicatedCount = 0
-        var finalCursor = pullBatch.nextCursor
+        let finalCursor = pullBatch.nextCursor
 
         if !eligibleItems.isEmpty {
             let opsToPush = eligibleItems.map(\.operation)
@@ -1966,16 +1966,6 @@ public actor SyncCoordinator {
                 remaining.removeAll { completedSet.contains($0.operation.operationId) }
                 outboxBySpace[spaceId] = remaining
 
-                // Pull again to advance cursor past our own newly pushed operations
-                let postPushPull = try await backend.pullEncryptedOperations(
-                    accountId: accountId,
-                    spaceId: spaceId,
-                    deviceId: deviceIdentity.deviceId,
-                    sinceCursor: cursorsBySpace[spaceId],
-                    limit: 500
-                )
-                finalCursor = postPushPull.nextCursor
-                cursorsBySpace[spaceId] = finalCursor
             } catch {
                 // Record attempt & schedule exponential backoff without losing any outbox items
                 var updatedOutbox = outboxBySpace[spaceId] ?? []
@@ -2020,8 +2010,12 @@ public actor SyncCoordinator {
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
 
+        let storedConflicts = try await spaceStore.syncConflictPayloads(accountId: accountId)
+        conflictsBySpace[spaceId] = try storedConflicts.map { try decoder.decode(SyncConflict.self, from: $0) }
+        let conflictEncoder = JSONEncoder(); conflictEncoder.dateEncodingStrategy = .iso8601
+
         // 1. Pull remote operations since last cursor
-        let currentCursor = cursorsBySpace[spaceId]
+        let currentCursor = SyncCursor(sequenceNumber: try await spaceStore.syncCursorSequence(accountId: accountId))
         let pullBatch = try await backend.pullEncryptedOperations(
             accountId: accountId,
             spaceId: spaceId,
@@ -2050,7 +2044,7 @@ public actor SyncCoordinator {
                 let remoteSchema = try remoteOp.decryptSchema(using: keyRing)
                 let localSchema = await spaceStore.fetchCollection(id: remoteSchema.id)
                 if localSchema == nil || remoteSchema.revision >= (localSchema?.revision ?? 0) {
-                    await spaceStore.saveCollection(remoteSchema, enqueueSync: false)
+                    try await spaceStore.applyRemoteCollection(remoteSchema)
                 }
 
             case .record:
@@ -2076,20 +2070,20 @@ public actor SyncCoordinator {
                     break
 
                 case .cleanRemoteApplied(let applied):
-                    if let schema = await spaceStore.fetchCollection(id: applied.collectionId) {
-                        try? await spaceStore.saveRecord(applied, schema: schema, enqueueSync: false)
+                    guard let schema = await spaceStore.fetchCollection(id: applied.collectionId) else {
+                        throw SyncServiceError.invalidOperationEnvelope("Remote record schema is missing; cursor retained for retry.")
                     }
+                    try await spaceStore.saveRecord(applied, schema: schema, enqueueSync: false)
 
                 case .cleanFieldLevelMerge(let mergedRecord):
                     cleanlyMergedCount += 1
-                    for item in matchingOutbox {
-                        await spaceStore.removeOutboxItem(operationId: item.operationId)
+                    guard let schema = await spaceStore.fetchCollection(id: mergedRecord.collectionId) else {
+                        throw SyncServiceError.invalidOperationEnvelope("Merged record schema is missing; cursor retained for retry.")
                     }
-                    if let schema = await spaceStore.fetchCollection(id: mergedRecord.collectionId) {
-                        try? await spaceStore.saveRecord(mergedRecord, schema: schema, enqueueSync: true)
-                    }
+                    try await spaceStore.saveRecord(mergedRecord, schema: schema, enqueueSync: true)
 
                 case .conflictPreserved(let conflict):
+                    try await spaceStore.saveSyncConflictPayload(conflictEncoder.encode(conflict), recordId: conflict.recordId, accountId: accountId)
                     var spaceConflicts = conflictsBySpace[spaceId] ?? []
                     spaceConflicts.removeAll { $0.recordId == conflict.recordId }
                     spaceConflicts.append(conflict)
@@ -2105,6 +2099,7 @@ public actor SyncCoordinator {
             }
         }
 
+        try await spaceStore.saveSyncCursorSequence(pullBatch.nextCursor.sequenceNumber, accountId: accountId)
         cursorsBySpace[spaceId] = pullBatch.nextCursor
 
         // 2. Encrypt and push remaining `SpaceStore` outbox items
@@ -2146,7 +2141,7 @@ public actor SyncCoordinator {
 
         var pushedCount = 0
         var deduplicatedCount = 0
-        var finalCursor = pullBatch.nextCursor
+        let finalCursor = pullBatch.nextCursor
 
         if !encryptedOps.isEmpty {
             do {
@@ -2163,15 +2158,6 @@ public actor SyncCoordinator {
                     await spaceStore.removeOutboxItem(operationId: completedId)
                 }
 
-                let postPushPull = try await backend.pullEncryptedOperations(
-                    accountId: accountId,
-                    spaceId: spaceId,
-                    deviceId: deviceIdentity.deviceId,
-                    sinceCursor: cursorsBySpace[spaceId],
-                    limit: 500
-                )
-                finalCursor = postPushPull.nextCursor
-                cursorsBySpace[spaceId] = finalCursor
             } catch {
                 for op in encryptedOps {
                     await spaceStore.markOutboxFailure(operationId: op.operationId, error: error.localizedDescription)
@@ -2203,8 +2189,7 @@ public actor SyncCoordinator {
               let idx = spaceConflicts.firstIndex(where: { $0.id == conflictId }) else {
             throw SyncServiceError.invalidOperationEnvelope("Conflict not found.")
         }
-        let conflict = spaceConflicts.remove(at: idx)
-        conflictsBySpace[spaceId] = spaceConflicts
+        let conflict = spaceConflicts[idx]
 
         let resolvedRecord = SyncConflictEngine.resolveConflict(
             conflict,
@@ -2212,9 +2197,12 @@ public actor SyncCoordinator {
             resolvedByDeviceId: deviceIdentity.deviceId
         )
 
-        if let schema = await spaceStore.fetchCollection(id: resolvedRecord.collectionId) {
-            try await spaceStore.saveRecord(resolvedRecord, schema: schema, enqueueSync: true)
+        guard let schema = await spaceStore.fetchCollection(id: resolvedRecord.collectionId) else {
+            throw SyncServiceError.invalidOperationEnvelope("Conflict record schema is missing.")
         }
+        try await spaceStore.saveRecord(resolvedRecord, schema: schema, enqueueSync: true)
+        try await spaceStore.removeSyncConflict(recordId: conflict.recordId, accountId: accountId)
+        spaceConflicts.remove(at: idx); conflictsBySpace[spaceId] = spaceConflicts
         return resolvedRecord
     }
 
