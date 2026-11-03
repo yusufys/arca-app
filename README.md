@@ -8,7 +8,9 @@ A cross-platform monorepo for **Arca** featuring:
 - **Android (`Kotlin` / `Jetpack Compose`)**
 - **Backend (`Laravel 13` + `PostgreSQL` + `FilamentPHP Admin Panel` + `RevenueCat Webhooks`)**
 
-By default, new Spaces use **Arca Sync (Cloud DB, End-to-End Encrypted)** while allowing users to switch any Space to **Local-Only (On Device)** at any time (and defaulting sensitive **Medical Visits** spaces to Local-Only with disclosure).
+New Spaces default to Arca Sync and can be set to Local-Only. The iOS starter menus offer vehicles, warranties and home inventory.
+
+[Download or open the standalone iOS release roadmap](ROADMAP.html) for finished work, open tasks and the sensitive-data design. Open the file locally to view the formatted page offline.
 
 ---
 

@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Arca · iOS release roadmap</title>
+<style>
+:root{color-scheme:light;--paper:#f7f5ef;--ink:#172c29;--line:#c5cfc7;--green:#205647;--amber:#85500f}
+*{box-sizing:border-box}html{background:var(--paper);color:var(--ink);font:100%/1.55 system-ui,sans-serif}
+body{max-width:54rem;margin:auto;padding:2rem clamp(1rem,5vw,3rem) 4rem}
+header{border-top:5px solid var(--green);padding-top:1rem}.meta,footer{font-size:.85rem;color:#4d615a}
+h1,h2{font-family:Georgia,serif;line-height:1.12}h1{font-size:clamp(2.4rem,7vw,4.25rem);margin:.55rem 0}
+h2{font-size:2rem;margin:2.4rem 0 .85rem}p{margin:.5rem 0}.decision{background:#eee1c8;padding:1rem 1.2rem;border-left:4px solid var(--amber);margin:1.2rem 0}
+nav{display:flex;flex-wrap:wrap;gap:.5rem 1.25rem;border-block:1px solid var(--line);padding:.75rem 0}
+a{color:var(--green);text-underline-offset:.2em}a:focus-visible{outline:3px solid var(--amber);outline-offset:3px}
+ul,ol{padding-left:1.55rem}li{margin:.75rem 0;padding-left:.2rem}.done li::marker{color:var(--green)}.open li::marker{color:var(--amber);font-weight:bold}
+strong{font-weight:680}dl{margin:0}dt{font-weight:680;margin-top:1rem}dd{margin:0}
+.note{border:1px solid var(--line);padding:1rem 1.2rem;background:#fffdf8}
+footer{border-top:1px solid var(--line);margin-top:2rem;padding-top:.8rem}
+@media print{body{max-width:none;padding:0;font-size:10pt}nav{display:none}h2{break-after:avoid}li,dt,dd,.note{break-inside:avoid}}
+</style>
+</head>
+<body>
+<header>
+<div class="meta">ARCA &nbsp;/&nbsp; PRODUCT &amp; ENGINEERING &nbsp;·&nbsp; <time datetime="2026-11-04">4 November 2026</time></div>
+<h1>iOS release roadmap</h1>
+<p>Arca keeps personal records in collections you can design yourself. Save a warranty, find it again, and choose which Spaces stay on your phone.</p>
+<p class="decision"><strong>Public release on hold.</strong> Records and keys survived a force-quit on a real iPhone, and encrypted record sync passed in both directions. The next release work is protecting local access and backups.</p>
+</header>
+<nav aria-label="Roadmap sections"><a href="#finished">Finished</a><a href="#unfinished">Unfinished</a><a href="#privacy">Sensitive data</a><a href="#features">Feature inventory</a></nav>
+<main>
+<section id="finished">
+<h2>Finished</h2>
+<ul class="done">
+<li><strong>Deployed the Laravel backend.</strong> Arca runs over HTTPS at arca-api.on-forge.com on thekernel with its own PostgreSQL database. Live checks covered health, the public feed, denial of unauthorized admin access, and disposable account deletion. An isolated database restore recovered 16 tables.</li>
+<li><strong>Fixed relaunch data loss.</strong> The app uses a stable workspace and keeps its encryption keys and device identity in the iOS Keychain. Failed saves stay visible. A surviving legacy workspace can be migrated, but keys already lost by older builds cannot be reconstructed.</li>
+<li><strong>Connected iOS to Forge.</strong> Account sign-in, device enrollment, key recovery, encrypted collection and record changes, and saved sync progress use the live API. The initial sync also publishes existing local records whose old queue was empty.</li>
+<li><strong>Installed Arca 1.0 on an iPhone 12.</strong> The signed development app launched. In a separate test install, an abrupt process kill preserved the record ID, text, favorite flag and device identity. After relaunch, the app decrypted its test proof with the saved Space key and recovered the same master key.</li>
+<li><strong>Verified a sync round trip.</strong> A separate iPhone simulator recovered the phone’s test record through Forge, edited it, and published the edit. The physical iPhone received it after relaunch. The disposable account and test app were removed.</li>
+<li><strong>Removed medical demos from iOS starter menus.</strong> Onboarding and the template picker offer vehicles, warranties and home inventory. Examples are labeled fictional. Existing user collections keep their original identifiers.</li>
+</ul>
+</section>
+<section id="unfinished">
+<h2>Unfinished · in release order</h2>
+<ol class="open">
+<li><strong>Authenticate the app lock.</strong> Replace the simulated unlock with system authentication. Verify on a real phone that success opens records and cancellation or failure keeps them hidden, including after relaunch.</li>
+<li><strong>Protect exports and prove recovery.</strong> An empty password can currently produce plaintext when encryption was selected. Reject it, then restore an encrypted archive through Files on a clean install. Verify the recovered records and attachments and reject wrong passwords and damaged files.</li>
+<li><strong>Implement sensitive fields and collections.</strong> The consent flow below is planned. Verify that local-only content never appears in a queued or uploaded payload while ordinary sibling fields continue syncing.</li>
+<li><strong>Finish backend recovery and device access checks.</strong> Configure scheduled backups and restore one in isolation. Verify revoked devices lose access, including attempts to reuse a device identifier with an account token. Exercise offline edits, conflicting updates and remote deletion.</li>
+<li><strong>Settle the paid launch scope.</strong> If selling Pro, remove the demo grant, configure RevenueCat and prove StoreKit purchase and restore, expiry and server entitlement updates. Otherwise keep paid actions out of the release.</li>
+<li><strong>Finish or hide incomplete cloud features.</strong> Cloud attachment routes are disabled and the form adds a sample receipt. Public sharing is a preview. Verify real file uploads and snapshot publication/revocation before offering them. Validate iCloud Drive and Google Drive recovery before promising either.</li>
+<li><strong>Prepare the iOS beta and App Store submission.</strong> Ship the icon, privacy policy and accurate privacy disclosures. Exercise account deletion through the app, VoiceOver, large text, Turkish and Arabic layouts. Run a signed TestFlight beta with fictional records and resolve its findings before public release.</li>
+</ol>
+</section>
+<section id="privacy">
+<h2>Sensitive data · planned behavior</h2>
+<div class="note"><strong>“Do you want to sync this sensitive field to the cloud?”</strong>
+<p>Name the field or whole collection and offer two choices: <strong>Keep on this device</strong> or <strong>Sync securely</strong>. Pause sync for the selected data as soon as it is marked sensitive.</p></div>
+<dl>
+<dt>Keep on this device</dt><dd>Allow local edits. Exclude the field’s name, defaults, values and attachments from outgoing schemas and records. For a local-only collection, exclude all rows and fields. Closing the prompt keeps the selection local.</dd>
+<dt>Sync securely</dt><dd>Require the master password and verify it on the device before enabling encrypted sync. Require password setup first if needed. A wrong password or cancellation leaves sync off. The password never goes to Forge or into logs.</dd>
+<dt>Apply the most restrictive choice</dt><dd>A local-only Space overrides every collection. A local-only collection overrides its fields. Other collections and ordinary sibling fields can still sync. Preserve local-only values when merging remote edits.</dd>
+<dt>Handle data already synced</dt><dd>Remove stale queued payloads and rebuild eligible changes. Request deletion of remote copies and show it as pending until confirmed. Explain that an offline device may already hold a copy.</dd>
+<dt>Prove the boundary</dt><dd>Inspect decoded test payloads after retries, offline edits and schema changes. Check automatic cloud backups, public snapshots, file uploads and derived labels. An explicit local export needs a separate choice and encryption.</dd>
+</dl>
+</section>
+<section id="features">
+<h2>Feature inventory</h2>
+<p>These are the current product surfaces. The finished list records which release checks have passed.</p>
+<dl>
+<dt>Spaces and collections</dt><dd>Choose local-only storage or Arca Sync, start from a template, or build a custom schema. Import and validate a pasted JSON schema.</dd>
+<dt>Fields and forms</dt><dd>Eleven field types cover short and long text, number, currency, date, date and time, yes/no, single and multiple choice, rating and attachment. Set required fields, reorder or rename them, preview conversions and recover archived fields.</dd>
+<dt>Records and search</dt><dd>Create, edit, duplicate, delete and favorite records. Browse recent items, search text, sort, and filter by favorites, options or attachments. Each Space has its own SQLite store and index.</dd>
+<dt>Insights</dt><dd>View record counts, numeric and currency summaries, monthly spending, category distributions and upcoming warranty expirations.</dd>
+<dt>Appearance and languages</dt><dd>Appearance controls and English, Turkish and Arabic support, including right-to-left layout. Some screens still use hard-coded English.</dd>
+<dt>Backup, sharing and subscriptions</dt><dd>The archive engine can verify an export and restore it into a separate Space. Sharing includes a local identifier and a selected-field snapshot preview. Free and Pro tiers define device and storage limits. Release checks for these features are listed above.</dd>
+</dl>
+</section>
+</main>
+<footer>Verification baseline · app commit <code>e926c96</code> · iPhone 12 on iOS 27.0.1 and an independent iPhone simulator · development build 1.0 (1).</footer>
+</body>
+</html>
