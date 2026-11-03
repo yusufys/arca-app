@@ -113,19 +113,18 @@ class SyncController extends Controller
 
         $validated = $request->validate([
             'storage_mode' => 'nullable|string|in:arca_sync,local_only',
-            'current_key_version' => 'nullable|integer|min:1',
-            'wrapped_space_keys_json' => 'nullable|array',
+            'current_key_version' => 'nullable|integer|in:1',
+            'wrapped_space_keys_json' => 'prohibited',
         ]);
 
-        $space = SyncedSpace::updateOrCreate(
+        $space = SyncedSpace::firstOrCreate(
             [
                 'id' => $spaceId,
                 'user_id' => $user->id,
             ],
             [
                 'storage_mode' => $validated['storage_mode'] ?? config('arca.default_space_storage_mode', 'arca_sync'),
-                'current_key_version' => $validated['current_key_version'] ?? 1,
-                'wrapped_space_keys_json' => $validated['wrapped_space_keys_json'] ?? null,
+                'current_key_version' => 1,
             ]
         );
 
