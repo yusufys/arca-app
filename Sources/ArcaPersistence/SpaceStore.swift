@@ -748,6 +748,34 @@ public actor SpaceStore {
         return items
     }
 
+    /// Commits acknowledgements for one uploaded batch. A failed transaction preserves the entire batch for retry.
+    public func acknowledgeOutboxOperations(_ operationIds: [UUID]) throws {
+        guard let db else {
+            throw PersistenceError.databaseOpenFailed("Space database unavailable.")
+        }
+        guard !operationIds.isEmpty else { return }
+        try executeSQLStrict("BEGIN IMMEDIATE TRANSACTION;")
+        do {
+            var statement: OpaquePointer?
+            guard sqlite3_prepare_v2(db, "DELETE FROM sync_outbox WHERE operation_id = ?;", -1, &statement, nil) == SQLITE_OK else {
+                throw PersistenceError.statementPreparationFailed("Sync acknowledgement failed.")
+            }
+            defer { sqlite3_finalize(statement) }
+            for operationId in operationIds {
+                sqlite3_reset(statement)
+                sqlite3_clear_bindings(statement)
+                Self.bindText(statement, index: 1, value: operationId.uuidString)
+                guard sqlite3_step(statement) == SQLITE_DONE else {
+                    throw PersistenceError.sqlExecutionFailed("Sync acknowledgement failed.")
+                }
+            }
+            try executeSQLStrict("COMMIT;")
+        } catch {
+            Self.executeRawSQL(on: db, sql: "ROLLBACK;")
+            throw error
+        }
+    }
+
     /// Removes a completed operation from `sync_outbox`.
     public func removeOutboxItem(operationId: UUID) {
         guard let db else { return }

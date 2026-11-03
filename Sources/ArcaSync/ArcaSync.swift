@@ -1857,127 +1857,139 @@ public actor SyncCoordinator {
             throw SyncServiceError.spaceIsNotConfiguredForSync(spaceId: spaceId)
         }
 
-        // 1. Pull remote operations since our last cursor first so we can detect concurrent edits cleanly
-        let currentCursor = cursorsBySpace[spaceId]
-        let pullBatch = try await backend.pullEncryptedOperations(
-            accountId: accountId,
-            spaceId: spaceId,
-            deviceId: deviceIdentity.deviceId,
-            sinceCursor: currentCursor,
-            limit: 500
-        )
-
+        var currentCursor = cursorsBySpace[spaceId] ?? .initial
+        var pulledCount = 0
         var cleanlyMergedCount = 0
         var newConflicts: [SyncConflict] = []
 
-        for remoteOp in pullBatch.operations {
-            // Skip operations authored by this device that we already applied locally
-            if remoteOp.authorDeviceId == deviceIdentity.deviceId {
-                continue
+        // Reconcile every incoming page before publishing local mutations.
+        while true {
+            let pullBatch = try await backend.pullEncryptedOperations(
+                accountId: accountId,
+                spaceId: spaceId,
+                deviceId: deviceIdentity.deviceId,
+                sinceCursor: currentCursor,
+                limit: 500
+            )
+            guard pullBatch.spaceId == spaceId,
+                  pullBatch.nextCursor.sequenceNumber >= currentCursor.sequenceNumber,
+                  !pullBatch.hasMore || pullBatch.nextCursor.sequenceNumber > currentCursor.sequenceNumber else {
+                throw SyncServiceError.invalidOperationEnvelope("Invalid pull page or nonadvancing cursor.")
             }
 
-            let keyRing = try resolveKeyRing(for: spaceId, keyGeneration: remoteOp.keyGeneration, keyId: remoteOp.encryptedEnvelope.keyId)
+            for remoteOp in pullBatch.operations {
+                // Skip operations authored by this device that we already applied locally
+                if remoteOp.authorDeviceId == deviceIdentity.deviceId {
+                    continue
+                }
 
-            switch remoteOp.entityType {
-            case .collectionSchema:
-                let remoteSchema = try remoteOp.decryptSchema(using: keyRing)
-                var spaceSchemas = schemasBySpace[spaceId] ?? [:]
-                if let localSchema = spaceSchemas[remoteSchema.id] {
-                    if remoteSchema.revision >= localSchema.revision {
+                let keyRing = try resolveKeyRing(for: spaceId, keyGeneration: remoteOp.keyGeneration, keyId: remoteOp.encryptedEnvelope.keyId)
+
+                switch remoteOp.entityType {
+                case .collectionSchema:
+                    let remoteSchema = try remoteOp.decryptSchema(using: keyRing)
+                    var spaceSchemas = schemasBySpace[spaceId] ?? [:]
+                    if let localSchema = spaceSchemas[remoteSchema.id] {
+                        if remoteSchema.revision >= localSchema.revision {
+                            spaceSchemas[remoteSchema.id] = remoteSchema
+                        }
+                    } else {
                         spaceSchemas[remoteSchema.id] = remoteSchema
                     }
-                } else {
-                    spaceSchemas[remoteSchema.id] = remoteSchema
+                    schemasBySpace[spaceId] = spaceSchemas
+
+                case .record:
+                    let remoteRecord = try remoteOp.decryptRecord(using: keyRing)
+                    var spaceRecords = recordsBySpace[spaceId] ?? [:]
+                    let localRecord = spaceRecords[remoteRecord.id]
+
+                    let pendingLocalItem = (outboxBySpace[spaceId] ?? []).first {
+                        $0.operation.entityType == .record && $0.operation.entityId == remoteRecord.id
+                    }
+                    let hasUncommittedLocal = pendingLocalItem != nil
+
+                    let outcome = SyncConflictEngine.reconcileRecord(
+                        localRecord: localRecord,
+                        remoteRecord: remoteRecord,
+                        baseRecordSnapshot: pendingLocalItem?.baseRecordSnapshot,
+                        localBaseRevision: pendingLocalItem?.operation.baseRevision,
+                        hasUncommittedLocalEdits: hasUncommittedLocal
+                    )
+
+                    switch outcome {
+                    case .cleanNoChange(let kept):
+                        spaceRecords[remoteRecord.id] = kept
+
+                    case .cleanRemoteApplied(let applied):
+                        spaceRecords[remoteRecord.id] = applied
+
+                    case .cleanFieldLevelMerge(let mergedRecord):
+                        spaceRecords[remoteRecord.id] = mergedRecord
+                        cleanlyMergedCount += 1
+                        // Replace the pending outbox operation with the cleanly merged record so the server receives the combined result
+                        replacePendingRecordOutboxOperation(with: mergedRecord, baseRevision: remoteRecord.revision, in: spaceId)
+
+                    case .conflictPreserved(let conflict):
+                        var spaceConflicts = conflictsBySpace[spaceId] ?? []
+                        spaceConflicts.removeAll { $0.recordId == conflict.recordId }
+                        spaceConflicts.append(conflict)
+                        conflictsBySpace[spaceId] = spaceConflicts
+                        newConflicts.append(conflict)
+                        // Hold push of the conflicting record until the user explicitly chooses a resolution
+                        removePendingRecordFromOutbox(recordId: conflict.recordId, in: spaceId)
+                    }
+                    recordsBySpace[spaceId] = spaceRecords
+
+                case .attachment, .spaceMetadata:
+                    break
                 }
-                schemasBySpace[spaceId] = spaceSchemas
+            }
 
-            case .record:
-                let remoteRecord = try remoteOp.decryptRecord(using: keyRing)
-                var spaceRecords = recordsBySpace[spaceId] ?? [:]
-                let localRecord = spaceRecords[remoteRecord.id]
-
-                let pendingLocalItem = (outboxBySpace[spaceId] ?? []).first {
-                    $0.operation.entityType == .record && $0.operation.entityId == remoteRecord.id
-                }
-                let hasUncommittedLocal = pendingLocalItem != nil
-
-                let outcome = SyncConflictEngine.reconcileRecord(
-                    localRecord: localRecord,
-                    remoteRecord: remoteRecord,
-                    baseRecordSnapshot: pendingLocalItem?.baseRecordSnapshot,
-                    localBaseRevision: pendingLocalItem?.operation.baseRevision,
-                    hasUncommittedLocalEdits: hasUncommittedLocal
-                )
-
-                switch outcome {
-                case .cleanNoChange(let kept):
-                    spaceRecords[remoteRecord.id] = kept
-
-                case .cleanRemoteApplied(let applied):
-                    spaceRecords[remoteRecord.id] = applied
-
-                case .cleanFieldLevelMerge(let mergedRecord):
-                    spaceRecords[remoteRecord.id] = mergedRecord
-                    cleanlyMergedCount += 1
-                    // Replace the pending outbox operation with the cleanly merged record so the server receives the combined result
-                    replacePendingRecordOutboxOperation(with: mergedRecord, baseRevision: remoteRecord.revision, in: spaceId)
-
-                case .conflictPreserved(let conflict):
-                    var spaceConflicts = conflictsBySpace[spaceId] ?? []
-                    spaceConflicts.removeAll { $0.recordId == conflict.recordId }
-                    spaceConflicts.append(conflict)
-                    conflictsBySpace[spaceId] = spaceConflicts
-                    newConflicts.append(conflict)
-                    // Hold push of the conflicting record until the user explicitly chooses a resolution
-                    removePendingRecordFromOutbox(recordId: conflict.recordId, in: spaceId)
-                }
-                recordsBySpace[spaceId] = spaceRecords
-
-            case .attachment, .spaceMetadata:
+            currentCursor = pullBatch.nextCursor
+            cursorsBySpace[spaceId] = currentCursor
+            pulledCount += pullBatch.operations.count
+            if !pullBatch.hasMore {
                 break
             }
         }
 
-        cursorsBySpace[spaceId] = pullBatch.nextCursor
-
         // 2. Push eligible outbox operations
         let currentOutbox = outboxBySpace[spaceId] ?? []
         let eligibleItems = currentOutbox.filter {
-            $0.nextEligibleAttemptAt <= referenceDate && backoffPolicy.shouldRetry(attempt: $0.attemptCount + 1)
+            $0.nextEligibleAttemptAt <= referenceDate
         }
 
         var pushedCount = 0
         var deduplicatedCount = 0
-        let finalCursor = pullBatch.nextCursor
+        let finalCursor = currentCursor
 
-        if !eligibleItems.isEmpty {
-            let opsToPush = eligibleItems.map(\.operation)
+        for batchStart in stride(from: 0, to: eligibleItems.count, by: 500) {
+            let batchItems = Array(eligibleItems[batchStart..<min(batchStart + 500, eligibleItems.count)])
+            let batch = batchItems.map(\.operation)
             do {
-                let pushReceipt = try await backend.pushEncryptedOperations(
+                let receipt = try await backend.pushEncryptedOperations(
                     accountId: accountId,
                     spaceId: spaceId,
                     deviceId: deviceIdentity.deviceId,
-                    operations: opsToPush
+                    operations: batch
                 )
-                pushedCount = pushReceipt.acceptedOperationIds.count
-                deduplicatedCount = pushReceipt.deduplicatedOperationIds.count
-                let completedSet = Set(pushReceipt.acceptedOperationIds).union(pushReceipt.deduplicatedOperationIds)
-                var remaining = outboxBySpace[spaceId] ?? []
-                remaining.removeAll { completedSet.contains($0.operation.operationId) }
-                outboxBySpace[spaceId] = remaining
-
+                let completedIds = try validatedAcknowledgements(receipt, for: batch, spaceId: spaceId)
+                outboxBySpace[spaceId]?.removeAll { completedIds.contains($0.operation.operationId) }
+                pushedCount += receipt.acceptedOperationIds.count
+                deduplicatedCount += receipt.deduplicatedOperationIds.count
+                guard completedIds.count == batch.count else {
+                    throw SyncServiceError.invalidOperationEnvelope("Server did not acknowledge the complete upload batch.")
+                }
             } catch {
-                // Record attempt & schedule exponential backoff without losing any outbox items
+                let attemptedIds = Set(batchItems.map(\.id))
                 var updatedOutbox = outboxBySpace[spaceId] ?? []
-                for idx in updatedOutbox.indices {
-                    if eligibleItems.contains(where: { $0.id == updatedOutbox[idx].id }) {
-                        updatedOutbox[idx].attemptCount += 1
-                        updatedOutbox[idx].nextEligibleAttemptAt = backoffPolicy.nextRetryDate(
-                            forAttempt: updatedOutbox[idx].attemptCount,
-                            from: referenceDate
-                        )
-                        updatedOutbox[idx].lastErrorDescription = error.localizedDescription
-                    }
+                for index in updatedOutbox.indices where attemptedIds.contains(updatedOutbox[index].id) {
+                    updatedOutbox[index].attemptCount += 1
+                    updatedOutbox[index].nextEligibleAttemptAt = backoffPolicy.nextRetryDate(
+                        forAttempt: updatedOutbox[index].attemptCount,
+                        from: referenceDate
+                    )
+                    updatedOutbox[index].lastErrorDescription = error.localizedDescription
                 }
                 outboxBySpace[spaceId] = updatedOutbox
                 throw error
@@ -1988,7 +2000,7 @@ public actor SyncCoordinator {
             spaceId: spaceId,
             pushedOperationsCount: pushedCount,
             deduplicatedOperationsCount: deduplicatedCount,
-            pulledOperationsCount: pullBatch.operations.count,
+            pulledOperationsCount: pulledCount,
             cleanlyMergedRecordsCount: cleanlyMergedCount,
             newlyDetectedConflicts: newConflicts,
             updatedCursor: finalCursor
@@ -2012,102 +2024,114 @@ public actor SyncCoordinator {
 
         let storedConflicts = try await spaceStore.syncConflictPayloads(accountId: accountId)
         conflictsBySpace[spaceId] = try storedConflicts.map { try decoder.decode(SyncConflict.self, from: $0) }
-        let conflictEncoder = JSONEncoder(); conflictEncoder.dateEncodingStrategy = .iso8601
+        let conflictEncoder = JSONEncoder()
+        conflictEncoder.dateEncodingStrategy = .iso8601
 
-        // 1. Pull remote operations since last cursor
-        let currentCursor = SyncCursor(sequenceNumber: try await spaceStore.syncCursorSequence(accountId: accountId))
-        let pullBatch = try await backend.pullEncryptedOperations(
-            accountId: accountId,
-            spaceId: spaceId,
-            deviceId: deviceIdentity.deviceId,
-            sinceCursor: currentCursor,
-            limit: 500
-        )
-
-        let initialOutbox = await spaceStore.pendingOutboxItems()
+        var currentCursor = SyncCursor(sequenceNumber: try await spaceStore.syncCursorSequence(accountId: accountId))
+        var pulledCount = 0
         var cleanlyMergedCount = 0
         var newConflicts: [SyncConflict] = []
 
-        for remoteOp in pullBatch.operations {
-            if remoteOp.authorDeviceId == deviceIdentity.deviceId {
-                continue
+        // Reconcile every incoming page before publishing local mutations.
+        while true {
+            let pullBatch = try await backend.pullEncryptedOperations(
+                accountId: accountId,
+                spaceId: spaceId,
+                deviceId: deviceIdentity.deviceId,
+                sinceCursor: currentCursor,
+                limit: 500
+            )
+            guard pullBatch.spaceId == spaceId,
+                  pullBatch.nextCursor.sequenceNumber >= currentCursor.sequenceNumber,
+                  !pullBatch.hasMore || pullBatch.nextCursor.sequenceNumber > currentCursor.sequenceNumber else {
+                throw SyncServiceError.invalidOperationEnvelope("Invalid pull page or nonadvancing cursor.")
             }
 
-            let keyRing = try resolveKeyRing(
-                for: spaceId,
-                keyGeneration: remoteOp.keyGeneration,
-                keyId: remoteOp.encryptedEnvelope.keyId
-            )
-
-            switch remoteOp.entityType {
-            case .collectionSchema:
-                let remoteSchema = try remoteOp.decryptSchema(using: keyRing)
-                let localSchema = await spaceStore.fetchCollection(id: remoteSchema.id)
-                if localSchema == nil || remoteSchema.revision >= (localSchema?.revision ?? 0) {
-                    try await spaceStore.applyRemoteCollection(remoteSchema)
+            for remoteOp in pullBatch.operations {
+                if remoteOp.authorDeviceId == deviceIdentity.deviceId {
+                    continue
                 }
 
-            case .record:
-                let remoteRecord = try remoteOp.decryptRecord(using: keyRing)
-                let localRecord = await spaceStore.fetchRecord(id: remoteRecord.id)
-                let matchingOutbox = initialOutbox.filter {
-                    ($0.parsedEntityType == .recordUpsert || $0.parsedEntityType == .recordTombstone) &&
-                    $0.entityId == remoteRecord.id
-                }
-                let hasUncommittedLocal = !matchingOutbox.isEmpty
-                let earliestBaseRev = matchingOutbox.first?.baseRevision
-
-                let outcome = SyncConflictEngine.reconcileRecord(
-                    localRecord: localRecord,
-                    remoteRecord: remoteRecord,
-                    baseRecordSnapshot: nil,
-                    localBaseRevision: earliestBaseRev,
-                    hasUncommittedLocalEdits: hasUncommittedLocal
+                let keyRing = try resolveKeyRing(
+                    for: spaceId,
+                    keyGeneration: remoteOp.keyGeneration,
+                    keyId: remoteOp.encryptedEnvelope.keyId
                 )
 
-                switch outcome {
-                case .cleanNoChange:
+                switch remoteOp.entityType {
+                case .collectionSchema:
+                    let remoteSchema = try remoteOp.decryptSchema(using: keyRing)
+                    let localSchema = await spaceStore.fetchCollection(id: remoteSchema.id)
+                    if localSchema == nil || remoteSchema.revision >= (localSchema?.revision ?? 0) {
+                        try await spaceStore.applyRemoteCollection(remoteSchema)
+                    }
+
+                case .record:
+                    let remoteRecord = try remoteOp.decryptRecord(using: keyRing)
+                    let localRecord = await spaceStore.fetchRecord(id: remoteRecord.id)
+                    let matchingOutbox = await spaceStore.pendingOutboxItems().filter {
+                        ($0.parsedEntityType == .recordUpsert || $0.parsedEntityType == .recordTombstone) &&
+                        $0.entityId == remoteRecord.id
+                    }
+                    let hasUncommittedLocal = !matchingOutbox.isEmpty
+                    let earliestBaseRev = matchingOutbox.first?.baseRevision
+
+                    let outcome = SyncConflictEngine.reconcileRecord(
+                        localRecord: localRecord,
+                        remoteRecord: remoteRecord,
+                        baseRecordSnapshot: nil,
+                        localBaseRevision: earliestBaseRev,
+                        hasUncommittedLocalEdits: hasUncommittedLocal
+                    )
+
+                    switch outcome {
+                    case .cleanNoChange:
+                        break
+
+                    case .cleanRemoteApplied(let applied):
+                        guard let schema = await spaceStore.fetchCollection(id: applied.collectionId) else {
+                            throw SyncServiceError.invalidOperationEnvelope("Remote record schema is missing; cursor retained for retry.")
+                        }
+                        try await spaceStore.saveRecord(applied, schema: schema, enqueueSync: false)
+
+                    case .cleanFieldLevelMerge(let mergedRecord):
+                        cleanlyMergedCount += 1
+                        guard let schema = await spaceStore.fetchCollection(id: mergedRecord.collectionId) else {
+                            throw SyncServiceError.invalidOperationEnvelope("Merged record schema is missing; cursor retained for retry.")
+                        }
+                        try await spaceStore.saveRecord(mergedRecord, schema: schema, enqueueSync: true)
+                        try await spaceStore.acknowledgeOutboxOperations(matchingOutbox.map(\.operationId))
+
+                    case .conflictPreserved(let conflict):
+                        try await spaceStore.saveSyncConflictPayload(conflictEncoder.encode(conflict), recordId: conflict.recordId, accountId: accountId)
+                        var spaceConflicts = conflictsBySpace[spaceId] ?? []
+                        spaceConflicts.removeAll { $0.recordId == conflict.recordId }
+                        spaceConflicts.append(conflict)
+                        conflictsBySpace[spaceId] = spaceConflicts
+                        newConflicts.append(conflict)
+                        try await spaceStore.acknowledgeOutboxOperations(matchingOutbox.map(\.operationId))
+                    }
+
+                case .attachment, .spaceMetadata:
                     break
-
-                case .cleanRemoteApplied(let applied):
-                    guard let schema = await spaceStore.fetchCollection(id: applied.collectionId) else {
-                        throw SyncServiceError.invalidOperationEnvelope("Remote record schema is missing; cursor retained for retry.")
-                    }
-                    try await spaceStore.saveRecord(applied, schema: schema, enqueueSync: false)
-
-                case .cleanFieldLevelMerge(let mergedRecord):
-                    cleanlyMergedCount += 1
-                    guard let schema = await spaceStore.fetchCollection(id: mergedRecord.collectionId) else {
-                        throw SyncServiceError.invalidOperationEnvelope("Merged record schema is missing; cursor retained for retry.")
-                    }
-                    try await spaceStore.saveRecord(mergedRecord, schema: schema, enqueueSync: true)
-
-                case .conflictPreserved(let conflict):
-                    try await spaceStore.saveSyncConflictPayload(conflictEncoder.encode(conflict), recordId: conflict.recordId, accountId: accountId)
-                    var spaceConflicts = conflictsBySpace[spaceId] ?? []
-                    spaceConflicts.removeAll { $0.recordId == conflict.recordId }
-                    spaceConflicts.append(conflict)
-                    conflictsBySpace[spaceId] = spaceConflicts
-                    newConflicts.append(conflict)
-                    for item in matchingOutbox {
-                        await spaceStore.removeOutboxItem(operationId: item.operationId)
-                    }
                 }
+            }
 
-            case .attachment, .spaceMetadata:
+            try await spaceStore.saveSyncCursorSequence(pullBatch.nextCursor.sequenceNumber, accountId: accountId)
+            currentCursor = pullBatch.nextCursor
+            cursorsBySpace[spaceId] = currentCursor
+            pulledCount += pullBatch.operations.count
+            if !pullBatch.hasMore {
                 break
             }
         }
-
-        try await spaceStore.saveSyncCursorSequence(pullBatch.nextCursor.sequenceNumber, accountId: accountId)
-        cursorsBySpace[spaceId] = pullBatch.nextCursor
 
         // 2. Encrypt and push remaining `SpaceStore` outbox items
         let remainingOutbox = await spaceStore.pendingOutboxItems()
         let keyRing = activeSpaceKeyRing(for: spaceId)
         var encryptedOps: [EncryptedSyncOperation] = []
 
-        for item in remainingOutbox where backoffPolicy.shouldRetry(attempt: item.retryCount + 1) {
+        for item in remainingOutbox {
             guard let payloadData = item.payloadJSON.data(using: .utf8) else { continue }
             switch item.parsedEntityType {
             case .collectionUpsert, .collectionTombstone:
@@ -2141,26 +2165,28 @@ public actor SyncCoordinator {
 
         var pushedCount = 0
         var deduplicatedCount = 0
-        let finalCursor = pullBatch.nextCursor
+        let finalCursor = currentCursor
 
-        if !encryptedOps.isEmpty {
+        for batchStart in stride(from: 0, to: encryptedOps.count, by: 500) {
+            let batch = Array(encryptedOps[batchStart..<min(batchStart + 500, encryptedOps.count)])
             do {
                 let receipt = try await backend.pushEncryptedOperations(
                     accountId: accountId,
                     spaceId: spaceId,
                     deviceId: deviceIdentity.deviceId,
-                    operations: encryptedOps
+                    operations: batch
                 )
-                pushedCount = receipt.acceptedOperationIds.count
-                deduplicatedCount = receipt.deduplicatedOperationIds.count
-                let completedIds = Set(receipt.acceptedOperationIds).union(receipt.deduplicatedOperationIds)
-                for completedId in completedIds {
-                    await spaceStore.removeOutboxItem(operationId: completedId)
+                let completedIds = try validatedAcknowledgements(receipt, for: batch, spaceId: spaceId)
+                try await spaceStore.acknowledgeOutboxOperations(Array(completedIds))
+                pushedCount += receipt.acceptedOperationIds.count
+                deduplicatedCount += receipt.deduplicatedOperationIds.count
+                guard completedIds.count == batch.count else {
+                    throw SyncServiceError.invalidOperationEnvelope("Server did not acknowledge the complete upload batch.")
                 }
-
             } catch {
-                for op in encryptedOps {
-                    await spaceStore.markOutboxFailure(operationId: op.operationId, error: error.localizedDescription)
+                // Earlier batches remain acknowledged. This batch retains stable operation IDs for retry.
+                for operation in batch {
+                    await spaceStore.markOutboxFailure(operationId: operation.operationId, error: error.localizedDescription)
                 }
                 throw error
             }
@@ -2170,7 +2196,7 @@ public actor SyncCoordinator {
             spaceId: spaceId,
             pushedOperationsCount: pushedCount,
             deduplicatedOperationsCount: deduplicatedCount,
-            pulledOperationsCount: pullBatch.operations.count,
+            pulledOperationsCount: pulledCount,
             cleanlyMergedRecordsCount: cleanlyMergedCount,
             newlyDetectedConflicts: newConflicts,
             updatedCursor: finalCursor
@@ -2329,6 +2355,23 @@ public actor SyncCoordinator {
     }
 
     // MARK: - Private Helpers
+
+    private func validatedAcknowledgements(
+        _ receipt: SyncPushReceipt,
+        for operations: [EncryptedSyncOperation],
+        spaceId: UUID
+    ) throws -> Set<UUID> {
+        let submittedIds = Set(operations.map(\.operationId))
+        let acceptedIds = Set(receipt.acceptedOperationIds)
+        let deduplicatedIds = Set(receipt.deduplicatedOperationIds)
+        let completedIds = acceptedIds.union(deduplicatedIds)
+        guard receipt.spaceId == spaceId,
+              acceptedIds.isDisjoint(with: deduplicatedIds),
+              completedIds.isSubset(of: submittedIds) else {
+            throw SyncServiceError.invalidOperationEnvelope("Server acknowledged operations outside the upload batch.")
+        }
+        return completedIds
+    }
 
     private func appendToOutbox(_ item: PendingSyncOutboxItem, for spaceId: UUID) {
         var queue = outboxBySpace[spaceId] ?? []
