@@ -540,6 +540,8 @@ public struct AddEditRecordSheetView: View {
 
     @ViewState private var draftValues: [UUID: FieldValue] = [:]
     @ViewState private var isFavorite: Bool = false
+    @ViewState private var saveError: String?
+    @ViewState private var saving = false
     @ViewState private var validationErrors: [RecordValidationError] = []
     @ViewState private var currencyTextInputs: [UUID: String] = [:]
     @ViewState private var numberTextInputs: [UUID: String] = [:]
@@ -563,6 +565,7 @@ public struct AddEditRecordSheetView: View {
 
             ScrollView(showsIndicators: false) {
                 VStack(alignment: .leading, spacing: 16) {
+                    if let saveError { Text(saveError).foregroundStyle(ArcaTheme.dangerRed) }
                     if !validationErrors.isEmpty {
                         ArcaSectionCard(title: "Please Check These Fields", icon: "exclamationmark.triangle.fill", iconTint: ArcaTheme.dangerRed) {
                             ForEach(validationErrors) { err in
@@ -877,19 +880,22 @@ public struct AddEditRecordSheetView: View {
     }
 
     private func saveDraft() {
+        guard !saving else { return }
         let errs = SchemaEngine.validate(values: draftValues, against: schema)
         if !errs.isEmpty {
             validationErrors = errs
             return
         }
+        saving = true
         Task {
-            await viewModel.saveRecord(
-                existingRecord: existingRecord,
-                schema: schema,
-                values: draftValues,
-                isFavorite: isFavorite
-            )
-            dismiss()
+            defer { saving = false }
+            do {
+                try await viewModel.saveRecord(existingRecord: existingRecord, schema: schema,
+                                               values: draftValues, isFavorite: isFavorite)
+                dismiss()
+            } catch {
+                saveError = "Could not save this record. " + error.localizedDescription
+            }
         }
     }
 }

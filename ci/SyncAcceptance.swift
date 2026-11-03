@@ -28,7 +28,7 @@ enum SyncAcceptance {
             let field = FieldDefinition(label: "Title", type: .shortText, isPrimaryTitle: true)
             await vm.createCustomCollection(name: label, iconName: "list.bullet", fields: [field])
             guard let schema = vm.collectionsInCurrentSpace.first else { throw failure("No schema") }
-            await vm.saveRecord(existingRecord: nil, schema: schema, values: [field.id: .shortText(original)], isFavorite: true)
+            try await vm.saveRecord(existingRecord: nil, schema: schema, values: [field.id: .shortText(original)], isFavorite: true)
             guard let record = vm.recordsInCurrentSpace.first else { throw failure("No record after save") }
             let ring = try identity.activeSpaceKeyRing(for: schema.spaceId)
             let cipher = try ClientCryptoEngine.encryptCodable(record.id, using: ring.symmetricKey, keyId: ring.keyId, contextAAD: "quit-proof")
@@ -64,7 +64,7 @@ enum SyncAcceptance {
             await vm.selectSpace(record.spaceId)
             var values = record.values
             values[field.id] = .shortText(updated)
-            await vm.saveRecord(existingRecord: record, schema: schema, values: values, isFavorite: true)
+            try await vm.saveRecord(existingRecord: record, schema: schema, values: values, isFavorite: true)
             try await vm.syncCloudSpaces()
         }
         return ["record":record.id.uuidString]

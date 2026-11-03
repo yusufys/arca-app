@@ -79,7 +79,6 @@ public final class ArcaAppViewModel {
     private var identityStore: WorkspaceIdentityStore?
     public private(set) var storageStartupError: String?
     private var masterAccountKey: SymmetricKey? { identityStore?.masterAccountKey }
-    private var spaceKeyRings: [UUID: SpaceKeyRing] = [:]
     private var currentDeviceIdentity: DeviceIdentity? { identityStore?.deviceIdentity }
     private var accountId: String = "acct-local-default"
     private var isBootstrapped: Bool = false
@@ -138,9 +137,7 @@ public final class ArcaAppViewModel {
         guard let identityStore, storageStartupError == nil else {
             throw PersistenceError.ioError(storageStartupError ?? "Workspace encryption identity is unavailable")
         }
-        let ring = try identityStore.activeSpaceKeyRing(for: spaceId)
-        spaceKeyRings[spaceId] = ring
-        return ring
+        return try identityStore.activeSpaceKeyRing(for: spaceId)
     }
 
     // MARK: - Computed Properties for Views
@@ -560,7 +557,8 @@ public final class ArcaAppViewModel {
         schema: CollectionSchema,
         values: [UUID: FieldValue],
         isFavorite: Bool
-    ) async {
+    ) async throws {
+        guard let currentDeviceIdentity, storageStartupError == nil else { throw PersistenceError.ioError("Workspace identity unavailable.") }
         let store = await spaceStore(for: schema.spaceId)
         let recordToSave: RecordItem
         if var existing = existingRecord {
@@ -569,7 +567,7 @@ public final class ArcaAppViewModel {
             existing.schemaVersionAtWrite = schema.schemaVersion
             existing.updatedAt = Date()
             existing.revision += 1
-            existing.lastModifiedByDeviceId = currentDeviceIdentity?.deviceId ?? "unavailable"
+            existing.lastModifiedByDeviceId = currentDeviceIdentity.deviceId
             recordToSave = existing
         } else {
             recordToSave = RecordItem(
@@ -578,11 +576,11 @@ public final class ArcaAppViewModel {
                 schemaVersionAtWrite: schema.schemaVersion,
                 values: values,
                 isFavorite: isFavorite,
-                lastModifiedByDeviceId: currentDeviceIdentity?.deviceId ?? "unavailable"
+                lastModifiedByDeviceId: currentDeviceIdentity.deviceId
             )
         }
-        let enqueue = currentSpace?.storageMode == .arcaSync
-        try? await store.saveRecord(recordToSave, schema: schema, enqueueSync: enqueue)
+        let enqueue = spaces.first(where: { $0.id == schema.spaceId })?.storageMode == .arcaSync
+        try await store.saveRecord(recordToSave, schema: schema, enqueueSync: enqueue)
         await reloadSpaceFromDisk(schema.spaceId)
     }
 

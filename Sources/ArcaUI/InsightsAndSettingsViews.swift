@@ -657,7 +657,7 @@ public struct SyncStatusAndConflictsScreenView: View {
                     iconTint: ArcaTheme.plumSensitive
                 ) {
                     if viewModel.syncConflicts.isEmpty {
-                        Text("No unresolved conflicts. You can simulate a concurrent edit collision below to test conflict resolution.")
+                        Text("No unresolved conflicts.")
                             .font(.system(size: 12))
                             .foregroundStyle(.secondary)
                     } else {
@@ -685,12 +685,6 @@ public struct SyncStatusAndConflictsScreenView: View {
                         }
                     }
 
-                    Button {
-                        viewModel.simulateConcurrentConflict()
-                    } label: {
-                        Label("Simulate Concurrent Edit Conflict", systemImage: "bolt.horizontal.circle")
-                    }
-                    .buttonStyle(ArcaSecondaryButtonStyle(tint: ArcaTheme.plumSensitive, isFullWidth: true))
                 }
             }
             .padding(18)
