@@ -604,7 +604,12 @@ enum ArcaVerificationSuite {
 if #available(macOS 14.0, iOS 17.0, *) {
     Task { @MainActor in
         do {
-            try await ArcaVerificationSuite.runAll()
+            if CommandLine.arguments.count == 4, CommandLine.arguments[1] == "--workspace-restart" {
+                try await verifyWorkspaceRestart(mode: CommandLine.arguments[2], path: CommandLine.arguments[3])
+            } else {
+                try verifyWorkspaceIdentityFailureModes()
+                try await ArcaVerificationSuite.runAll()
+            }
             exit(0)
         } catch {
             fputs("VERIFICATION FAILED: \(error)\n", stderr)

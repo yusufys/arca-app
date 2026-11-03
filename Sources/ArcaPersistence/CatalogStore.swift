@@ -94,7 +94,7 @@ public actor CatalogStore {
         return appSupport.appendingPathComponent("Arca", isDirectory: true)
     }
 
-    public init(baseDirectoryURL: URL = CatalogStore.defaultBaseDirectoryURL()) {
+    public init(baseDirectoryURL: URL = CatalogStore.defaultBaseDirectoryURL(), readOnly: Bool = false) {
         self.baseDirectoryURL = baseDirectoryURL
         self.catalogDatabaseURL = baseDirectoryURL.appendingPathComponent("catalog.sqlite", isDirectory: false)
         self.spacesRootDirectoryURL = baseDirectoryURL.appendingPathComponent("Spaces", isDirectory: true)
@@ -108,30 +108,35 @@ public actor CatalogStore {
         dec.dateDecodingStrategy = .iso8601
         self.decoder = dec
 
-        try? FileManager.default.createDirectory(at: baseDirectoryURL, withIntermediateDirectories: true)
-        try? FileManager.default.createDirectory(at: spacesRootDirectoryURL, withIntermediateDirectories: true)
-
-        DataProtectionConfigurator.applyProtection(at: baseDirectoryURL, isSensitiveLocalOnly: false)
-        DataProtectionConfigurator.applyProtection(at: spacesRootDirectoryURL, isSensitiveLocalOnly: false)
+        if !readOnly {
+            try? FileManager.default.createDirectory(at: baseDirectoryURL, withIntermediateDirectories: true)
+            try? FileManager.default.createDirectory(at: spacesRootDirectoryURL, withIntermediateDirectories: true)
+            DataProtectionConfigurator.applyProtection(at: baseDirectoryURL, isSensitiveLocalOnly: false)
+            DataProtectionConfigurator.applyProtection(at: spacesRootDirectoryURL, isSensitiveLocalOnly: false)
+        }
 
         var handle: OpaquePointer?
-        let flags = SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_FULLMUTEX
+        let flags = readOnly ? SQLITE_OPEN_READONLY | SQLITE_OPEN_FULLMUTEX : SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_FULLMUTEX
         if sqlite3_open_v2(catalogDatabaseURL.path, &handle, flags, nil) == SQLITE_OK, let opened = handle {
             self.db = opened
             sqlite3_busy_timeout(opened, 5_000)
-            Self.executeRawSQL(on: opened, sql: "PRAGMA foreign_keys = ON;")
-            Self.executeRawSQL(on: opened, sql: "PRAGMA journal_mode = WAL;")
-            Self.executeRawSQL(
-                on: opened,
-                sql: """
-                CREATE TABLE IF NOT EXISTS spaces (
-                    id TEXT PRIMARY KEY,
-                    payload_json TEXT NOT NULL,
-                    updated_at REAL NOT NULL
-                );
-                """
-            )
-            DataProtectionConfigurator.applyProtection(at: catalogDatabaseURL, isSensitiveLocalOnly: false)
+            if !readOnly {
+                Self.executeRawSQL(on: opened, sql: "PRAGMA foreign_keys = ON;")
+                Self.executeRawSQL(on: opened, sql: "PRAGMA journal_mode = WAL;")
+                Self.executeRawSQL(
+                    on: opened,
+                    sql: """
+                    CREATE TABLE IF NOT EXISTS spaces (
+                        id TEXT PRIMARY KEY,
+                        payload_json TEXT NOT NULL,
+                        updated_at REAL NOT NULL
+                    );
+                    """
+                )
+                DataProtectionConfigurator.applyProtection(at: catalogDatabaseURL, isSensitiveLocalOnly: false)
+            }
+        } else if let handle {
+            sqlite3_close_v2(handle)
         }
     }
 

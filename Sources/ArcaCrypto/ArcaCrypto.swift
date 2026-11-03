@@ -1001,7 +1001,12 @@ public final class SystemKeychainKeyStore: KeychainKeyStore, Sendable {
             kSecAttrService as String: serviceName,
             kSecAttrAccount as String: identifier
         ]
-        SecItemDelete(baseQuery as CFDictionary)
+        // Update atomically: deleting first could lose existing keys if the subsequent write fails.
+        let updateStatus = SecItemUpdate(baseQuery as CFDictionary, [kSecValueData as String: data] as CFDictionary)
+        if updateStatus == errSecSuccess { return }
+        guard updateStatus == errSecItemNotFound else {
+            throw ArcaCryptoError.keychainFailure(status: updateStatus)
+        }
 
         var addQuery = baseQuery
         addQuery[kSecValueData as String] = data
@@ -1030,7 +1035,10 @@ public final class SystemKeychainKeyStore: KeychainKeyStore, Sendable {
         guard status == errSecSuccess else {
             throw ArcaCryptoError.keychainFailure(status: status)
         }
-        return item as? Data
+        guard let data = item as? Data else {
+            throw ArcaCryptoError.corruptedEnvelopeField("keychainData")
+        }
+        return data
     }
 
     public func deleteKeyData(forIdentifier identifier: String) throws {

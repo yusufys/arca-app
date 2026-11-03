@@ -10,7 +10,6 @@ public struct OnboardingContainerView: View {
     @ViewState private var currentStep: Int = 1
     @ViewState private var selectedMode: SpaceStorageMode = .arcaSync
     @ViewState private var acceptedCloudTerms: Bool = false
-    @ViewState private var emailInput: String = ""
     @ViewState private var selectedTemplates: Set<StarterTemplateID> = [.vehicleMaintenance, .homeInventory, .warranties]
     @Environment(\.colorScheme) private var colorScheme
 
@@ -208,40 +207,15 @@ public struct OnboardingContainerView: View {
                         .foregroundStyle(.secondary)
                 }
 
-                ArcaSectionCard(title: "Account Sign-In Email", icon: "envelope.fill") {
-                    ArcaStyledTextField("you@example.com", text: $emailInput, icon: "at")
-                }
-
-                ArcaSectionCard(
-                    title: "Emergency E2EE Recovery Key",
-                    subtitle: "Resetting your account password cannot decrypt your synced records because Arca servers never hold your keys. Save this Recovery Key in a password manager.",
-                    icon: "key.fill",
-                    iconTint: ArcaTheme.warmAmber
-                ) {
-                    Text(viewModel.recoveryKeyPhrase)
-                        .font(.system(size: 12, weight: .semibold, design: .monospaced))
-                        .foregroundStyle(.primary)
-                        .padding(12)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(
-                            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                .fill(ArcaTheme.warmAmber.opacity(0.10))
-                        )
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                .strokeBorder(ArcaTheme.warmAmber.opacity(0.30), lineWidth: 1)
-                        )
+                CloudAccountForm(viewModel: viewModel) {
+                    if viewModel.spaces.isEmpty {
+                        withAnimation { currentStep = 4 }
+                    } else {
+                        viewModel.hasCompletedOnboarding = true
+                    }
                 }
 
                 VStack(spacing: 10) {
-                    Button {
-                        viewModel.completeCloudAccountEnrollment(email: emailInput.isEmpty ? "alex@example.com" : emailInput)
-                        withAnimation(.spring(response: 0.32, dampingFraction: 0.84)) { currentStep = 4 }
-                    } label: {
-                        Label("Enroll This Device & Continue", systemImage: "checkmark.shield.fill")
-                    }
-                    .buttonStyle(ArcaPrimaryButtonStyle())
-
                     HStack(spacing: 10) {
                         Button("Back") {
                             withAnimation { currentStep = 2 }
@@ -583,5 +557,54 @@ public struct StorageModeComparisonStepView: View {
             .shadow(color: isSelected ? tint.opacity(0.12) : .clear, radius: 8, x: 0, y: 4)
         }
         .buttonStyle(.plain)
+    }
+}
+
+@available(macOS 14.0, iOS 17.0, *)
+struct CloudAccountForm: View {
+    @Bindable var viewModel: ArcaAppViewModel
+    var didConnect: () -> Void = {}
+    @ViewState private var createAccount = false
+    @ViewState private var email = ""
+    @ViewState private var password = ""
+    @ViewState private var recoveryPhrase = ""
+    @ViewState private var errorMessage: String?
+    @ViewState private var working = false
+
+    var body: some View {
+        ArcaSectionCard(title: "Arca Sync account", icon: "icloud") {
+            Picker("Account", selection: $createAccount) {
+                Text("Sign in").tag(false)
+                Text("Create account").tag(true)
+            }
+            .pickerStyle(.segmented)
+            ArcaStyledTextField("Email", text: $email, icon: "envelope")
+            ArcaStyledTextField("Account password", text: $password, icon: "lock", isSecure: true)
+            if createAccount {
+                Text("Save this recovery key before continuing. You will need it on your next device.")
+                Text(viewModel.recoveryKeyPhrase).font(.system(.body, design: .monospaced)).textSelection(.enabled)
+            } else {
+                ArcaStyledTextField("Recovery key from your first device", text: $recoveryPhrase, icon: "key", isSecure: true)
+            }
+            if let errorMessage { Text(errorMessage).foregroundStyle(ArcaTheme.dangerRed) }
+            Button(working ? "Connecting…" : (createAccount ? "Create account" : "Connect this device")) {
+                Task {
+                    working = true
+                    defer { working = false }
+                    do {
+                        try await viewModel.connectCloudAccount(email: email, password: password,
+                            createAccount: createAccount, recoveryPhrase: recoveryPhrase)
+                        password = ""
+                        recoveryPhrase = ""
+                        errorMessage = nil
+                        didConnect()
+                    } catch {
+                        errorMessage = error.localizedDescription
+                    }
+                }
+            }
+            .buttonStyle(ArcaPrimaryButtonStyle())
+            .disabled(working || password.isEmpty || email.isEmpty || (!createAccount && recoveryPhrase.isEmpty))
+        }
     }
 }

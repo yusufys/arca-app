@@ -43,7 +43,13 @@ public struct ArcaRootContainerView: View {
             ArcaTheme.canvasBackground(for: effectiveColorScheme)
                 .ignoresSafeArea()
 
-            if viewModel.biometricLockEnabled && viewModel.isAppLocked {
+            if let error = viewModel.storageStartupError {
+                VStack(spacing: 12) {
+                    Text("Your workspace could not be opened").font(.headline)
+                    Text(error)
+                    Text("Unlock the device and reopen Arca to try again.")
+                }.padding()
+            } else if viewModel.biometricLockEnabled && viewModel.isAppLocked {
                 biometricLockScreen
             } else if !viewModel.hasCompletedOnboarding {
                 OnboardingContainerView(viewModel: viewModel)

@@ -74,36 +74,73 @@ public final class ArcaAppViewModel {
     public let rootDirectoryURL: URL
     public let catalogStore: CatalogStore
     private var spaceStores: [UUID: SpaceStore] = [:]
-    public let syncBackend: InMemoryArcaSyncBackend
+    public private(set) var syncBackend: LaravelArcaSyncBackend
     public let billingManager: BillingManager
-    private let masterAccountKey: SymmetricKey
+    private var identityStore: WorkspaceIdentityStore?
+    public private(set) var storageStartupError: String?
+    private var masterAccountKey: SymmetricKey? { identityStore?.masterAccountKey }
     private var spaceKeyRings: [UUID: SpaceKeyRing] = [:]
-    private let currentDeviceIdentity: DeviceIdentity
+    private var currentDeviceIdentity: DeviceIdentity? { identityStore?.deviceIdentity }
     private var accountId: String = "acct-local-default"
     private var isBootstrapped: Bool = false
 
     public init(rootDirectoryURL: URL? = nil, startWithCompletedOnboarding: Bool = false) {
-        let baseDir = rootDirectoryURL ?? FileManager.default.temporaryDirectory
-            .appendingPathComponent("ArcaWorkspace-\(UUID().uuidString.prefix(8))", isDirectory: true)
+        let baseDir = rootDirectoryURL ?? CatalogStore.defaultBaseDirectoryURL()
         self.rootDirectoryURL = baseDir
-        self.catalogStore = CatalogStore(baseDirectoryURL: baseDir)
-        self.syncBackend = InMemoryArcaSyncBackend()
+        self.syncBackend = LaravelArcaSyncBackend(apiToken: nil)
         self.billingManager = BillingManager()
-
-        let mak = SymmetricKey(size: .bits256)
-        self.masterAccountKey = mak
-        let cred = RecoveryKeyCredential.generate()
-        self.recoveryKeyPhrase = cred.formattedPhrase
-        self.currentDeviceIdentity = DeviceIdentity(deviceId: "dev-primary-iphone", deviceName: "My iPhone")
-        self.enrolledDevices = [
-            DeviceSummaryItem(
-                deviceId: currentDeviceIdentity.deviceId,
-                deviceName: currentDeviceIdentity.deviceName,
-                enrolledAt: Date(),
-                isCurrentDevice: true
-            )
-        ]
+        self.recoveryKeyPhrase = ""
+        var startupError: String?
+        var restoredBearer: String?
+        do {
+            if rootDirectoryURL == nil { try Self.preserveLegacyWorkspace(at: baseDir) }
+            let namespace = rootDirectoryURL == nil ? "default" : SHA256.hash(data: Data(baseDir.standardizedFileURL.path.utf8)).map { String(format: "%02x", $0) }.joined()
+            let identity = try WorkspaceIdentityStore(directory: baseDir, namespace: namespace)
+            self.identityStore = identity
+            restoredBearer = identity.cloudSession?.bearer
+            self.recoveryKeyPhrase = identity.recoveryPhrase
+            self.accountId = identity.cloudSession?.accountId ?? "acct-local-default"
+            let device = identity.deviceIdentity
+            self.enrolledDevices = [DeviceSummaryItem(deviceId: device.deviceId, deviceName: device.deviceName, enrolledAt: device.enrolledAt, isCurrentDevice: true)]
+        } catch {
+            startupError = error.localizedDescription
+            self.bannerState = .restoreValidationFailed(reason: "Local encryption keys are unavailable: \(error.localizedDescription)")
+        }
+        self.catalogStore = CatalogStore(baseDirectoryURL: baseDir, readOnly: startupError != nil)
+        self.storageStartupError = startupError
+        self.syncBackend.apiToken = restoredBearer
         self.hasCompletedOnboarding = startWithCompletedOnboarding
+    }
+
+    /// Keep the original intact. Only migrate before a durable catalog exists, choosing the newest legacy workspace.
+    private static func preserveLegacyWorkspace(at destination: URL) throws {
+        let fm = FileManager.default
+        guard !fm.fileExists(atPath: destination.appendingPathComponent("catalog.sqlite").path) else { return }
+        let candidates = try fm.contentsOfDirectory(at: fm.temporaryDirectory, includingPropertiesForKeys: [.contentModificationDateKey])
+            .filter { $0.lastPathComponent.hasPrefix("ArcaWorkspace-") && fm.fileExists(atPath: $0.appendingPathComponent("catalog.sqlite").path) }
+            .sorted { ((try? $0.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate ?? .distantPast) > ((try? $1.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate ?? .distantPast) }
+        guard let source = candidates.first else { return }
+        // Copy through a sibling staging directory so an interrupted copy never becomes the active catalog.
+        let staging = destination.deletingLastPathComponent().appendingPathComponent("ArcaMigration-\(UUID().uuidString)")
+        try fm.createDirectory(at: destination.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try fm.copyItem(at: source, to: staging)
+        if fm.fileExists(atPath: destination.path) {
+            guard try fm.contentsOfDirectory(atPath: destination.path).isEmpty else {
+                try? fm.removeItem(at: staging)
+                throw PersistenceError.ioError("Cannot migrate legacy workspace into a nonempty directory")
+            }
+            try fm.removeItem(at: destination)
+        }
+        try fm.moveItem(at: staging, to: destination)
+    }
+
+    private func persistedSpaceKeyRing(for spaceId: UUID) throws -> SpaceKeyRing {
+        guard let identityStore, storageStartupError == nil else {
+            throw PersistenceError.ioError(storageStartupError ?? "Workspace encryption identity is unavailable")
+        }
+        let ring = try identityStore.activeSpaceKeyRing(for: spaceId)
+        spaceKeyRings[spaceId] = ring
+        return ring
     }
 
     // MARK: - Computed Properties for Views
@@ -177,7 +214,7 @@ public final class ArcaAppViewModel {
     // MARK: - Bootstrap & Onboarding
 
     public func bootstrapIfNeeded() async {
-        guard !isBootstrapped else { return }
+        guard !isBootstrapped, storageStartupError == nil else { return }
         isBootstrapped = true
 
         let existing = await catalogStore.listSpaces()
@@ -185,6 +222,12 @@ public final class ArcaAppViewModel {
             self.spaces = existing
             self.currentSpaceId = existing.first?.id
             for sp in existing {
+                do { _ = try persistedSpaceKeyRing(for: sp.id) }
+                catch {
+                    storageStartupError = error.localizedDescription
+                    bannerState = .restoreValidationFailed(reason: error.localizedDescription)
+                    return
+                }
                 await reloadSpaceFromDisk(sp.id)
             }
             self.hasCompletedOnboarding = true
@@ -197,30 +240,60 @@ public final class ArcaAppViewModel {
         }
     }
 
-    public func completeCloudAccountEnrollment(email: String) {
-        Task {
-            let maxDevs = isProSubscriber
-                ? ArcaCommercialConfig.proMaxActiveDevices
-                : ArcaCommercialConfig.freeMaxActiveDevices
-            let quota = isProSubscriber
-                ? ArcaCommercialConfig.proCloudStorageQuotaBytes
-                : ArcaCommercialConfig.freeCloudStorageQuotaBytes
-            let session = try? await syncBackend.authenticate(
-                email: email,
-                credentialProof: "enrollment-token",
-                maxAllowedDevices: maxDevs,
-                storageQuotaBytes: quota
-            )
-            if let acct = session?.accountId {
-                self.accountId = acct
-                let enrolledDev = EnrolledDevice(descriptor: currentDeviceIdentity.descriptor)
-                _ = try? await syncBackend.enrollDevice(
-                    accountId: acct,
-                    device: enrolledDev,
-                    maxAllowedDevices: maxDevs,
-                    wrappedMasterKey: nil
-                )
-            }
+    public private(set) var syncStatus = "No sync has run yet."
+    public private(set) var isSyncing = false
+    public private(set) var needsCloudSignIn = false
+    public var cloudAccountConnected: Bool { syncBackend.apiToken != nil && identityStore?.cloudSession != nil }
+    private var connecting = false
+
+    public func connectCloudAccount(email: String, password: String, createAccount: Bool, recoveryPhrase: String) async throws {
+        guard let identityStore, !connecting, !isSyncing else {
+            throw PersistenceError.ioError(storageStartupError ?? "Another account operation is in progress.")
+        }
+        connecting = true
+        defer { connecting = false }
+        let device = identityStore.deviceIdentity
+        let client = LaravelArcaSyncBackend(baseURL: syncBackend.baseURL, apiToken: nil)
+        let session = try await client.signIn(email: email.trimmingCharacters(in: .whitespacesAndNewlines),
+                                              password: password, name: createAccount ? "Arca user" : nil)
+        if let bound = identityStore.cloudSession, bound.accountId != session.accountId {
+            throw PersistenceError.ioError("This workspace belongs to another account.")
+        }
+        let phrase = createAccount ? identityStore.recoveryPhrase : recoveryPhrase
+        let credential = try RecoveryKeyCredential(formattedPhrase: phrase)
+        let existingBundle = try await client.fetchRecoveryBundle(deviceId: device.deviceId)
+        if let bundle = existingBundle {
+            guard bundle.accountId == session.accountId else { throw SyncServiceError.unauthenticated }
+            _ = try RecoveryKeyCredential.restoreMasterAccountKey(fromPhrase: phrase, bundle: bundle)
+        } else if !createAccount && credential.formattedPhrase != identityStore.recoveryPhrase {
+            throw PersistenceError.ioError("Finish setting up recovery on the original device first.")
+        }
+        let receipt = try await client.enrollDevice(accountId: session.accountId, device: EnrolledDevice(descriptor: device.descriptor),
+                                                    maxAllowedDevices: session.maxAllowedDevices, wrappedMasterKey: nil)
+        let bundle: WrappedRecoveryBundle
+        if let existingBundle {
+            bundle = existingBundle
+        } else {
+            let wrapped = try credential.wrapMasterAccountKey(identityStore.masterAccountKey, accountId: session.accountId)
+            bundle = try await client.publishRecoveryBundle(wrapped, deviceId: device.deviceId)
+        }
+        guard bundle.accountId == session.accountId else { throw SyncServiceError.unauthenticated }
+        let master = try RecoveryKeyCredential.restoreMasterAccountKey(fromPhrase: phrase, bundle: bundle)
+        try identityStore.bindCloudAccount(accountId: session.accountId, bearer: session.authToken,
+                                           masterAccountKey: master, recoveryPhrase: credential.formattedPhrase)
+        self.accountId = session.accountId
+        self.recoveryKeyPhrase = credential.formattedPhrase
+        self.syncBackend = client
+        needsCloudSignIn = false
+        setDevices(receipt.activeDevices, currentId: device.deviceId)
+        // New devices can hydrate their existing Spaces before onboarding offers demo collections.
+        try await syncCloudSpaces()
+    }
+
+    private func setDevices(_ devices: [EnrolledDevice], currentId: String) {
+        enrolledDevices = devices.filter { !$0.isRevoked }.map {
+            DeviceSummaryItem(deviceId: $0.deviceId, deviceName: $0.deviceName, enrolledAt: $0.enrolledAt,
+                              isCurrentDevice: $0.deviceId.caseInsensitiveCompare(currentId) == .orderedSame)
         }
     }
 
@@ -247,6 +320,12 @@ public final class ArcaAppViewModel {
     }
 
     private func persistSeededBundle(_ bundle: SampleDataFactory.SeededSpaceBundle) async {
+        do { _ = try persistedSpaceKeyRing(for: bundle.space.id) }
+        catch {
+            storageStartupError = error.localizedDescription
+            bannerState = .restoreValidationFailed(reason: error.localizedDescription)
+            return
+        }
         await catalogStore.saveSpace(bundle.space)
         let store = await spaceStore(for: bundle.space.id)
         let enqueue = bundle.space.storageMode == .arcaSync
@@ -268,9 +347,6 @@ public final class ArcaAppViewModel {
         }
         let store = SpaceStore(spaceId: spaceId, baseDirectoryURL: rootDirectoryURL)
         spaceStores[spaceId] = store
-        if spaceKeyRings[spaceId] == nil {
-            spaceKeyRings[spaceId] = SpaceKeyRing(spaceId: spaceId)
-        }
         return store
     }
 
@@ -310,6 +386,12 @@ public final class ArcaAppViewModel {
             storageMode: storageMode,
             cloudSyncAcceptedAt: storageMode == .arcaSync ? Date() : nil
         )
+        do { _ = try persistedSpaceKeyRing(for: space.id) }
+        catch {
+            storageStartupError = error.localizedDescription
+            bannerState = .restoreValidationFailed(reason: error.localizedDescription)
+            return
+        }
         await catalogStore.saveSpace(space)
         spaces = await catalogStore.listSpaces()
         await selectSpace(space.id)
@@ -486,7 +568,7 @@ public final class ArcaAppViewModel {
             existing.schemaVersionAtWrite = schema.schemaVersion
             existing.updatedAt = Date()
             existing.revision += 1
-            existing.lastModifiedByDeviceId = currentDeviceIdentity.deviceId
+            existing.lastModifiedByDeviceId = currentDeviceIdentity?.deviceId ?? "unavailable"
             recordToSave = existing
         } else {
             recordToSave = RecordItem(
@@ -495,7 +577,7 @@ public final class ArcaAppViewModel {
                 schemaVersionAtWrite: schema.schemaVersion,
                 values: values,
                 isFavorite: isFavorite,
-                lastModifiedByDeviceId: currentDeviceIdentity.deviceId
+                lastModifiedByDeviceId: currentDeviceIdentity?.deviceId ?? "unavailable"
             )
         }
         let enqueue = currentSpace?.storageMode == .arcaSync
@@ -515,7 +597,7 @@ public final class ArcaAppViewModel {
 
     public func duplicateRecord(_ record: RecordItem) async {
         guard let col = schema(for: record.collectionId) else { return }
-        let copy = record.duplicated(byDeviceId: currentDeviceIdentity.deviceId)
+        let copy = record.duplicated(byDeviceId: currentDeviceIdentity?.deviceId ?? "unavailable")
         let store = await spaceStore(for: record.spaceId)
         try? await store.saveRecord(copy, schema: col, enqueueSync: currentSpace?.storageMode == .arcaSync)
         await reloadSpaceFromDisk(record.spaceId)
@@ -657,23 +739,69 @@ public final class ArcaAppViewModel {
     // MARK: - Sync, Conflicts, Devices & Storage Migration
 
     public func synchronizeCurrentSpaceNow() async {
-        guard !isOfflineSimulated, let space = currentSpace, space.storageMode == .arcaSync else { return }
-        let store = await spaceStore(for: space.id)
-        let keyRing = spaceKeyRings[space.id] ?? SpaceKeyRing(spaceId: space.id)
-        spaceKeyRings[space.id] = keyRing
+        do { try await syncCloudSpaces() }
+        catch {
+            if (error as NSError).code == 401 { needsCloudSignIn = true }
+            syncStatus = "Sync paused. " + error.localizedDescription
+        }
+    }
 
-        let coordinator = SyncCoordinator(
-            accountId: accountId,
-            deviceIdentity: currentDeviceIdentity,
-            masterAccountKey: masterAccountKey,
-            backend: syncBackend
-        )
-        await coordinator.registerSpaceKeyRing(keyRing)
-        _ = try? await coordinator.synchronizeSpaceStore(
-            store,
-            spaceMode: space.storageMode
-        )
-        await reloadSpaceFromDisk(space.id)
+    /// Discover remote Spaces, decrypt their keys locally, then exchange the SQLite outboxes.
+    public func syncCloudSpaces() async throws {
+        guard let identityStore, let session = identityStore.cloudSession, !isOfflineSimulated else {
+            throw SyncServiceError.unauthenticated
+        }
+        guard !isSyncing else { throw PersistenceError.ioError("Sync is already running.") }
+        isSyncing = true
+        defer { isSyncing = false }
+        syncStatus = "Syncing…"
+        let device = identityStore.deviceIdentity
+        let remote = try await syncBackend.listRemoteSpaces(deviceId: device.deviceId)
+        for space in remote {
+            if let local = await catalogStore.fetchSpace(id: space.id), local.storageMode != .arcaSync { continue }
+            for wrapped in space.wrapped_space_keys_json ?? [] {
+                guard wrapped.spaceId == space.id else { throw SyncServiceError.invalidOperationEnvelope("Space key mismatch.") }
+                try identityStore.saveSpaceKeyRing(SpaceKeyRing.unwrap(wrapped, usingMasterAccountKey: identityStore.masterAccountKey))
+            }
+            if await catalogStore.fetchSpace(id: space.id) == nil {
+                guard !(try identityStore.spaceKeyRings(for: space.id)).isEmpty else {
+                    throw PersistenceError.ioError("A synced Space has no recoverable key.")
+                }
+                let local = SpaceMetadata(id: space.id, name: "Synced Space " + String(space.id.uuidString.prefix(6)),
+                                          storageMode: .arcaSync, cloudSyncAcceptedAt: Date())
+                await catalogStore.saveSpace(local)
+            }
+        }
+        spaces = await catalogStore.listSpaces()
+        let coordinator = SyncCoordinator(accountId: session.accountId, deviceIdentity: device,
+                                          masterAccountKey: identityStore.masterAccountKey, backend: syncBackend)
+        var pushed = 0
+        var pulled = 0
+        for space in spaces where space.storageMode == .arcaSync {
+            let ring = try persistedSpaceKeyRing(for: space.id)
+            let remoteSpace = remote.first { $0.id == space.id }
+            if let requiredGeneration = remoteSpace?.current_key_version, ring.keyGeneration < requiredGeneration {
+                throw PersistenceError.ioError("Waiting for the current Space key from an enrolled device.")
+            }
+            if !(remoteSpace?.wrapped_space_keys_json ?? []).contains(where: { $0.keyId == ring.keyId }) {
+                let wrapped = try ring.wrap(usingMasterAccountKey: identityStore.masterAccountKey, makKeyId: ring.keyId)
+                try await syncBackend.publishWrappedSpaceKey(accountId: session.accountId, deviceId: device.deviceId, wrappedSpaceKey: wrapped)
+            }
+            for key in try identityStore.spaceKeyRings(for: space.id) { await coordinator.registerSpaceKeyRing(key) }
+            let store = await spaceStore(for: space.id)
+            let report = try await coordinator.synchronizeSpaceStore(store, spaceMode: space.storageMode)
+            pushed += report.pushedOperationsCount
+            pulled += report.pulledOperationsCount
+            for conflict in report.newlyDetectedConflicts where !syncConflicts.contains(where: { $0.recordId == conflict.recordId }) {
+                syncConflicts.append(ConflictSummaryItem(id: conflict.id, recordId: conflict.recordId,
+                    localRecord: conflict.localRecord, remoteRecord: conflict.remoteRecord,
+                    conflictingFieldIds: conflict.conflictingFieldIds, summary: space.name))
+            }
+            await reloadSpaceFromDisk(space.id)
+        }
+        if currentSpaceId == nil { currentSpaceId = spaces.first?.id }
+        setDevices(try await syncBackend.listEnrolledDevices(accountId: session.accountId), currentId: device.deviceId)
+        syncStatus = "Synced at " + Date().formatted(date: .omitted, time: .standard) + " · Sent " + String(pushed) + ", received " + String(pulled)
     }
 
     public func simulateConcurrentConflict() {
@@ -729,13 +857,20 @@ public final class ArcaAppViewModel {
     }
 
     public func revokeDevice(deviceId: String) async {
-        enrolledDevices.removeAll { $0.deviceId == deviceId && !$0.isCurrentDevice }
-        for (spaceId, ring) in spaceKeyRings {
-            spaceKeyRings[spaceId] = ring.rotated()
-        }
-        if case .thirdDeviceLimitBlocked = bannerState, enrolledDevices.count <= maxAllowedDevices {
-            bannerState = .normal
-        }
+        guard let identityStore, let session = identityStore.cloudSession else { return }
+        do {
+            let remote = try await syncBackend.listRemoteSpaces(deviceId: identityStore.deviceIdentity.deviceId)
+            let rotations = try remote.map { space -> WrappedSpaceKeyRing in
+                guard let current = space.wrapped_space_keys_json?.max(by: { $0.keyGeneration < $1.keyGeneration }) else {
+                    throw PersistenceError.ioError("Missing key for a synced Space.")
+                }
+                let ring = try SpaceKeyRing.unwrap(current, usingMasterAccountKey: identityStore.masterAccountKey).rotated()
+                return try ring.wrap(usingMasterAccountKey: identityStore.masterAccountKey, makKeyId: current.wrappedKeyEnvelope.keyId)
+            }
+            let receipt = try await syncBackend.revokeDevice(accountId: session.accountId, revokingDeviceId: deviceId,
+                requestedByDeviceId: identityStore.deviceIdentity.deviceId, rotatedSpaceKeys: rotations)
+            setDevices(receipt.remainingActiveDevices, currentId: identityStore.deviceIdentity.deviceId)
+        } catch { syncStatus = "Could not complete revocation. " + error.localizedDescription }
     }
 
     public func computeStorageMigrationPreview(
@@ -758,11 +893,16 @@ public final class ArcaAppViewModel {
         deleteRemoteCopies: Bool
     ) async {
         if deleteRemoteCopies {
-            _ = try? await syncBackend.deleteRemoteSpaceData(
+            do {
+                _ = try await syncBackend.deleteRemoteSpaceData(
                 accountId: accountId,
                 spaceId: spaceId,
-                requestedByDeviceId: currentDeviceIdentity.deviceId
-            )
+                requestedByDeviceId: currentDeviceIdentity?.deviceId ?? "unavailable"
+                )
+            } catch {
+                syncStatus = "Remote deletion failed. " + error.localizedDescription
+                return
+            }
         }
         _ = await catalogStore.updateStorageMode(
             id: spaceId,

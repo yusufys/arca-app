@@ -625,16 +625,12 @@ public struct SyncStatusAndConflictsScreenView: View {
                     subtitle: "Idempotent outbox operations & non-destructive conflict preservation"
                 )
 
-                ArcaSectionCard(title: "Sync Engine Status", icon: "arrow.triangle.2.circlepath.icloud.fill") {
-                    HStack {
-                        Text("Network Status")
-                            .font(.system(size: 14, weight: .medium))
-                        Spacer()
-                        Text(viewModel.isOfflineSimulated ? "Offline (Queuing Locally)" : "Connected")
-                            .font(.system(size: 13, weight: .bold, design: .rounded))
-                            .foregroundStyle(viewModel.isOfflineSimulated ? ArcaTheme.warmAmber : ArcaTheme.secondaryEmerald)
-                    }
-
+                if !viewModel.cloudAccountConnected || viewModel.needsCloudSignIn {
+                    CloudAccountForm(viewModel: viewModel)
+                }
+                ArcaSectionCard(title: "Sync status", icon: "arrow.triangle.2.circlepath.icloud.fill") {
+                    Text(viewModel.syncStatus)
+                        .font(.system(size: 14, weight: .medium))
                     HStack {
                         Text("Durable Local Outbox")
                             .font(.system(size: 14, weight: .medium))
@@ -644,16 +640,14 @@ public struct SyncStatusAndConflictsScreenView: View {
                             .foregroundStyle(.secondary)
                     }
 
-                    Toggle("Simulate Offline Network", isOn: $viewModel.isOfflineSimulated)
-                        .font(.system(size: 14, weight: .medium))
 
                     Button {
                         Task { await viewModel.synchronizeCurrentSpaceNow() }
                     } label: {
-                        Label("Synchronize Current Space Now", systemImage: "arrow.triangle.2.circlepath")
+                        Label("Sync my cloud Spaces", systemImage: "arrow.triangle.2.circlepath")
                     }
                     .buttonStyle(ArcaPrimaryButtonStyle())
-                    .disabled(viewModel.isOfflineSimulated)
+                    .disabled(viewModel.isSyncing || !viewModel.cloudAccountConnected)
                 }
 
                 ArcaSectionCard(
@@ -715,8 +709,6 @@ public struct ActiveDeviceManagementScreenView: View {
     @Bindable var viewModel: ArcaAppViewModel
     @Environment(\.colorScheme) private var colorScheme
 
-    @ViewState private var newDeviceName = ""
-    @ViewState private var enrollmentError: String?
 
     public var body: some View {
         ScrollView(showsIndicators: false) {
@@ -757,32 +749,9 @@ public struct ActiveDeviceManagementScreenView: View {
                     }
                 }
 
-                ArcaSectionCard(
-                    title: "Test Device Limit & Revocation",
-                    subtitle: "Try enrolling a 3rd device on the Free plan to verify 2-device limit enforcement.",
-                    icon: "plus.circle.fill"
-                ) {
-                    ArcaStyledTextField("Device Name (e.g., iPad Air, Work iPhone)", text: $newDeviceName, icon: "iphone")
+                Text("To add a device, sign in there with your account password and recovery key.")
+                    .foregroundStyle(.secondary)
 
-                    if let enrollmentError {
-                        Text(enrollmentError)
-                            .font(.system(size: 12, weight: .semibold))
-                            .foregroundStyle(ArcaTheme.dangerRed)
-                    }
-
-                    Button("Enroll Simulated Device") {
-                        Task {
-                            do {
-                                try await viewModel.enrollSimulatedDevice(name: newDeviceName.isEmpty ? "Secondary iPhone" : newDeviceName)
-                                newDeviceName = ""
-                                enrollmentError = nil
-                            } catch {
-                                enrollmentError = error.localizedDescription
-                            }
-                        }
-                    }
-                    .buttonStyle(ArcaPrimaryButtonStyle())
-                }
             }
             .padding(18)
         }
