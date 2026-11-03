@@ -266,7 +266,7 @@ public struct HomeScreenView: View {
                     }
                     Text("No Collections in This Space Yet")
                         .font(.system(size: 16, weight: .bold, design: .rounded))
-                    Text("Start with a ready-made template for Vehicle Maintenance, Warranties, Home Inventory, or Medical Visits—or build custom fields.")
+                    Text("Start with a ready-made template for Vehicle Maintenance, Warranties, or Home Inventory. You can also build custom fields.")
                         .font(.system(size: 12))
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
@@ -539,7 +539,6 @@ public struct ManageSpacesSheetView: View {
         ("Folder", "folder.fill"),
         ("Home", "house.fill"),
         ("Vehicle", "car.fill"),
-        ("Health", "cross.case.fill"),
         ("Work", "briefcase.fill")
     ]
 
@@ -744,14 +743,14 @@ public struct TemplateGallerySheetView: View {
         VStack(spacing: 0) {
             ArcaSheetHeaderBar(
                 title: "Starter Templates",
-                subtitle: "Ready-Made Collections",
+                subtitle: "Demo collections you can customize",
                 leadingLabel: "Close",
                 leadingAction: { dismiss() }
             )
 
             ScrollView(showsIndicators: false) {
                 VStack(alignment: .leading, spacing: 16) {
-                    ForEach(StarterTemplateCatalog.all) { template in
+                    ForEach(StarterTemplateCatalog.visibleDemos) { template in
                         let tint = ArcaTheme.color(fromHex: template.colorHex)
                         VStack(alignment: .leading, spacing: 12) {
                             HStack(spacing: 12) {

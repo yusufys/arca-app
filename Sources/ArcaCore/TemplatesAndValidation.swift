@@ -57,6 +57,9 @@ public enum StarterTemplateCatalog {
         medicalVisits
     ]
 
+    /// Starter collections offered by the iOS app. Older archives may contain other templates.
+    public static let visibleDemos = all.filter { $0.id != .medicalVisits }
+
     public static func template(for id: StarterTemplateID) -> StarterTemplate {
         switch id {
         case .vehicleMaintenance: return vehicleMaintenance

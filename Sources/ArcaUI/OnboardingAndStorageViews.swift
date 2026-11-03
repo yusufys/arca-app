@@ -12,7 +12,6 @@ public struct OnboardingContainerView: View {
     @ViewState private var acceptedCloudTerms: Bool = false
     @ViewState private var emailInput: String = ""
     @ViewState private var selectedTemplates: Set<StarterTemplateID> = [.vehicleMaintenance, .homeInventory, .warranties]
-    @ViewState private var includeSensitiveMedicalLocalSpace: Bool = false
     @Environment(\.colorScheme) private var colorScheme
 
     public init(viewModel: ArcaAppViewModel) {
@@ -149,7 +148,7 @@ public struct OnboardingContainerView: View {
                             icon: "slider.horizontal.3",
                             tint: ArcaTheme.secondaryEmerald,
                             title: "Friendly Forms, No Database Jargon",
-                            subtitle: "Start with ready-made templates for vehicles, warranties, home inventory, or health visits—or customize fields any time."
+                            subtitle: "Start with ready-made templates for vehicles, warranties, or home inventory. You can customize their fields."
                         )
                         Divider().opacity(0.5)
                         featureRow(
@@ -269,20 +268,17 @@ public struct OnboardingContainerView: View {
                     Text("Choose Starter Collections")
                         .font(.system(size: 22, weight: .bold, design: .rounded))
 
-                    Text("We’ll create your default Space right away with realistic sample records so you can explore immediately.")
+                    Text("These demo collections contain fictional records so you can try Arca.")
                         .font(.system(size: 13))
                         .foregroundStyle(.secondary)
                 }
 
-                ForEach(StarterTemplateCatalog.all) { template in
-                    let isMedical = template.id == .medicalVisits
-                    let isSelected = isMedical ? includeSensitiveMedicalLocalSpace : selectedTemplates.contains(template.id)
+                ForEach(StarterTemplateCatalog.visibleDemos) { template in
+                    let isSelected = selectedTemplates.contains(template.id)
                     let tintColor = ArcaTheme.color(fromHex: template.colorHex)
 
                     Button {
-                        if isMedical {
-                            includeSensitiveMedicalLocalSpace.toggle()
-                        } else if selectedTemplates.contains(template.id) {
+                        if selectedTemplates.contains(template.id) {
                             selectedTemplates.remove(template.id)
                         } else {
                             selectedTemplates.insert(template.id)
@@ -300,19 +296,9 @@ public struct OnboardingContainerView: View {
                                 }
 
                                 VStack(alignment: .leading, spacing: 3) {
-                                    HStack(spacing: 6) {
-                                        Text(template.name)
-                                            .font(.system(size: 15, weight: .bold, design: .rounded))
-                                            .foregroundStyle(.primary)
-                                        if isMedical {
-                                            Text("Local-Only Default")
-                                                .font(.system(size: 10, weight: .bold, design: .rounded))
-                                                .padding(.horizontal, 7)
-                                                .padding(.vertical, 3)
-                                                .background(Capsule().fill(ArcaTheme.plumSensitive.opacity(0.15)))
-                                                .foregroundStyle(ArcaTheme.plumSensitive)
-                                        }
-                                    }
+                                    Text(template.name)
+                                        .font(.system(size: 15, weight: .bold, design: .rounded))
+                                        .foregroundStyle(.primary)
                                     Text(template.subtitle)
                                         .font(.system(size: 12))
                                         .foregroundStyle(.secondary)
@@ -362,8 +348,7 @@ public struct OnboardingContainerView: View {
                             await viewModel.finishOnboarding(
                                 defaultMode: selectedMode == .personalCloudBackup ? .localOnly : selectedMode,
                                 acceptedCloudTerms: acceptedCloudTerms,
-                                selectedTemplates: Array(selectedTemplates),
-                                createSeparateMedicalLocalSpace: includeSensitiveMedicalLocalSpace
+                                selectedTemplates: Array(selectedTemplates)
                             )
                         }
                     } label: {
@@ -459,7 +444,7 @@ public struct StorageModeComparisonStepView: View {
                     title: "Local-Only (On This Device)",
                     bullets: [
                         "Always-available option for users who want records never to leave their phone.",
-                        "Zero account required. Sensitive Medical Visits spaces default to Local-Only with explicit disclosure.",
+                        "You can use a Local-Only Space without an account.",
                         "Full offline SQLite storage, FTS5 search, insights, and manual .arcaarchive backups included free."
                     ]
                 )

@@ -574,15 +574,12 @@ enum ArcaVerificationSuite {
         await vm.finishOnboarding(
             defaultMode: .arcaSync,
             acceptedCloudTerms: true,
-            selectedTemplates: [.vehicleMaintenance, .homeInventory, .warranties],
-            createSeparateMedicalLocalSpace: true
+            selectedTemplates: [.vehicleMaintenance, .homeInventory, .warranties]
         )
         try check(vm.hasCompletedOnboarding, "Onboarding should complete")
-        try checkEqual(vm.spaces.count, 3, "Should seed Personal, Vehicles, and Local Health Notes spaces")
-
-        // Verify sensitive Medical Visits space defaulted to Local-Only
-        let healthSpace = vm.spaces.first(where: { $0.containsSensitiveHealthTemplate })
-        try checkEqual(healthSpace?.storageMode, .localOnly, "Sensitive health template space must default to .localOnly")
+        try checkEqual(vm.spaces.count, 2, "Onboarding should seed Personal and Vehicles demo spaces")
+        try check(!vm.spaces.contains { $0.containsSensitiveHealthTemplate }, "Onboarding must not seed a medical demo")
+        try check(!StarterTemplateCatalog.visibleDemos.contains { $0.id == .medicalVisits }, "Medical demos must stay out of both template pickers")
 
         // Verify SpaceMetadata constructor defaults
         let regularDefaultSpace = SpaceMetadata(name: "Regular Project")

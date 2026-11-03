@@ -192,8 +192,7 @@ public final class ArcaAppViewModel {
             await finishOnboarding(
                 defaultMode: .arcaSync,
                 acceptedCloudTerms: true,
-                selectedTemplates: [.vehicleMaintenance, .homeInventory, .warranties],
-                createSeparateMedicalLocalSpace: true
+                selectedTemplates: [.vehicleMaintenance, .homeInventory, .warranties]
             )
         }
     }
@@ -228,8 +227,7 @@ public final class ArcaAppViewModel {
     public func finishOnboarding(
         defaultMode: SpaceStorageMode,
         acceptedCloudTerms: Bool,
-        selectedTemplates: [StarterTemplateID],
-        createSeparateMedicalLocalSpace: Bool
+        selectedTemplates: [StarterTemplateID]
     ) async {
         let effectiveMode: SpaceStorageMode = (defaultMode == .arcaSync && acceptedCloudTerms) ? .arcaSync : .localOnly
 
@@ -241,12 +239,6 @@ public final class ArcaAppViewModel {
         if selectedTemplates.contains(.vehicleMaintenance) {
             let vehicleBundle = SampleDataFactory.createVehiclesSpace(storageMode: effectiveMode)
             await persistSeededBundle(vehicleBundle)
-        }
-
-        // 3. Seed Sensitive Medical Notes Space (Always defaults to Local-Only!)
-        if createSeparateMedicalLocalSpace || selectedTemplates.contains(.medicalVisits) {
-            let medicalBundle = SampleDataFactory.createSensitiveHealthNotesSpace()
-            await persistSeededBundle(medicalBundle)
         }
 
         self.currentSpaceId = spaces.first?.id
