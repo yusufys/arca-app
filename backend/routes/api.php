@@ -42,6 +42,12 @@ Route::prefix('v1')->middleware('throttle:120,1')->group(function () {
         Route::post('/devices/enroll', [DeviceController::class, 'enroll']);
         Route::post('/devices/{deviceId}/revoke', [DeviceController::class, 'revoke']);
 
+        Route::get('/sync/recovery', [SyncController::class, 'recovery']);
+        Route::post('/sync/recovery', [SyncController::class, 'storeRecovery']);
+        Route::get('/spaces', [SyncController::class, 'index']);
+        Route::get('/spaces/{spaceId}/keys', [SyncController::class, 'keys']);
+        Route::post('/spaces/{spaceId}/keys', [SyncController::class, 'storeKey']);
+
         // E2EE Sync operations & spaces
         Route::post('/spaces/{spaceId}/register', [SyncController::class, 'registerSpace']);
         Route::post('/spaces/{spaceId}/push', [SyncController::class, 'push']);

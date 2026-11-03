@@ -32,6 +32,7 @@ class User extends Authenticatable
         'remote_storage_bytes_used',
         'is_admin',
         'api_token',
+        'sync_recovery_bundle',
     ];
 
     /**
@@ -43,6 +44,7 @@ class User extends Authenticatable
         'password',
         'remember_token',
         'api_token',
+        'sync_recovery_bundle',
     ];
 
     /**
@@ -53,6 +55,7 @@ class User extends Authenticatable
     protected function casts(): array
     {
         return [
+            'sync_recovery_bundle' => 'array',
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
             'subscription_expires_at' => 'datetime',
@@ -104,12 +107,14 @@ class User extends Authenticatable
     public function maxAllowedDevices(): int
     {
         $tier = $this->subscription_tier ?: 'free';
+
         return (int) config("arca.quotas.{$tier}.max_devices", 2);
     }
 
     public function maxAllowedStorageBytes(): int
     {
         $tier = $this->subscription_tier ?: 'free';
+
         return (int) config("arca.quotas.{$tier}.max_storage_bytes", 262144000);
     }
 

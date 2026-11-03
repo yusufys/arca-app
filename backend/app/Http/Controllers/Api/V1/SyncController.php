@@ -25,6 +25,87 @@ class SyncController extends Controller
         'notes',
     ];
 
+    private function authorizeDevice(Request $request): void
+    {
+        $deviceId = $request->header('X-Device-Id');
+        abort_unless($deviceId && $request->user()->enrolledDevices()->whereKey($deviceId)->whereNull('revoked_at')->exists(), 403);
+    }
+
+    public function index(Request $request): JsonResponse
+    {
+        $this->authorizeDevice($request);
+
+        return response()->json(['spaces' => $request->user()->syncedSpaces()->where('storage_mode', 'arca_sync')->orderBy('id')->get()]);
+    }
+
+    public function recovery(Request $request): JsonResponse
+    {
+        return response()->json(['bundle' => $request->user()->sync_recovery_bundle]);
+    }
+
+    public function storeRecovery(Request $request): JsonResponse
+    {
+        $this->authorizeDevice($request);
+        $validated = $request->validate([
+            'accountId' => 'required|uuid', 'makKeyId' => 'required|uuid',
+            'hkdfSaltBase64' => 'required|string|max:1024', 'wrappedMAKEnvelope' => 'required|array',
+            'createdAt' => 'required|date',
+        ]);
+        abort_unless(strcasecmp($validated['accountId'], $request->user()->uuid) === 0, 403);
+        abort_if($this->findPlaintextViolation($validated['wrappedMAKEnvelope']) !== null, 422);
+
+        return DB::transaction(function () use ($request, $validated) {
+            $user = User::whereKey($request->user()->id)->lockForUpdate()->firstOrFail();
+            if ($user->sync_recovery_bundle === null) {
+                $user->sync_recovery_bundle = $validated;
+                $user->save();
+            }
+
+            return response()->json(['bundle' => $user->sync_recovery_bundle]);
+        });
+    }
+
+    public function keys(Request $request, string $spaceId): JsonResponse
+    {
+        $this->authorizeDevice($request);
+        $space = $request->user()->syncedSpaces()->whereKey($spaceId)->first();
+        $keys = $space?->wrapped_space_keys_json ?? [];
+
+        return response()->json(['key' => $keys === [] ? null : $keys[count($keys) - 1]]);
+    }
+
+    public function storeKey(Request $request, string $spaceId): JsonResponse
+    {
+        $this->authorizeDevice($request);
+        $validated = $request->validate([
+            'spaceId' => 'required|uuid', 'keyId' => 'required|uuid',
+            'keyGeneration' => 'required|integer|min:1', 'wrappedKeyEnvelope' => 'required|array',
+        ]);
+        abort_unless(strcasecmp($validated['spaceId'], $spaceId) === 0, 422);
+        abort_if($this->findPlaintextViolation($validated['wrappedKeyEnvelope']) !== null, 422);
+
+        return DB::transaction(function () use ($request, $validated, $spaceId) {
+            $user = User::whereKey($request->user()->id)->lockForUpdate()->firstOrFail();
+            abort_if(SyncedSpace::whereKey($spaceId)->where('user_id', '!=', $user->id)->exists(), 403);
+            $space = $user->syncedSpaces()->firstOrCreate(['id' => $spaceId], ['storage_mode' => 'arca_sync', 'current_key_version' => 1]);
+            $keys = $space->wrapped_space_keys_json ?? [];
+            foreach ($keys as $key) {
+                if ($key['keyGeneration'] === $validated['keyGeneration']) {
+                    abort_unless($key == $validated, 409, 'Key generation already exists.');
+
+                    return response()->json(['key' => $key]);
+                }
+            }
+            abort_unless($validated['keyGeneration'] === count($keys) + 1, 409, 'Key generation must be sequential.');
+            $keys[] = $validated;
+            $space->wrapped_space_keys_json = $keys;
+            $space->current_key_version = $validated['keyGeneration'];
+            $space->save();
+
+            return response()->json(['key' => $validated]);
+        });
+    }
+
     public function registerSpace(Request $request, string $spaceId): JsonResponse
     {
         /** @var User $user */
@@ -148,8 +229,9 @@ class SyncController extends Controller
                 // Deduplicate idempotently by operation_id
                 $existing = SyncOperation::where('operation_id', $opId)->first();
                 if ($existing) {
-                    abort_unless($existing->user_id === $user->id && $existing->space_id === $spaceId, 409);
+                    abort_unless($existing->user_id === $user->id && strcasecmp($existing->space_id, $spaceId) === 0, 409);
                     $acknowledgedIds[] = $opId;
+
                     continue;
                 }
 
@@ -188,6 +270,7 @@ class SyncController extends Controller
                 'acknowledged_operation_ids' => $acknowledgedIds,
                 'latest_cursor' => $latestCursor,
                 'operations_processed' => count($validated['operations']),
+                'remote_storage_bytes_used' => (int) $user->remote_storage_bytes_used,
             ]);
         });
     }
@@ -201,7 +284,8 @@ class SyncController extends Controller
         abort_unless($deviceId && $user->enrolledDevices()->whereKey($deviceId)->whereNull('revoked_at')->exists(), 403);
         abort_unless($user->postExpiryPolicy()['canPullRemoteSync'], 403);
 
-        $sinceCursor = (int) $request->query('since_cursor', 0);
+        $sinceCursor = max(0, (int) $request->query('since_cursor', 0));
+        $limit = max(1, min(500, (int) $request->query('limit', 500)));
 
         $space = SyncedSpace::where('id', $spaceId)
             ->where('user_id', $user->id)
@@ -211,13 +295,17 @@ class SyncController extends Controller
             ->where('user_id', $user->id)
             ->where('server_cursor', '>', $sinceCursor)
             ->orderBy('server_cursor', 'asc')
+            ->limit($limit + 1)
             ->get();
+        $hasMore = $operations->count() > $limit;
+        $operations = $operations->take($limit)->values();
 
-        $latestCursor = (int) (SyncOperation::where('space_id', $spaceId)->where('user_id', $user->id)->max('server_cursor') ?? 0);
+        $latestCursor = (int) ($operations->last()?->server_cursor ?? $sinceCursor);
 
         return response()->json([
             'space_id' => $spaceId,
             'since_cursor' => $sinceCursor,
+            'has_more' => $hasMore,
             'latest_cursor' => $latestCursor,
             'operations' => $operations,
             'space_metadata' => $space,
