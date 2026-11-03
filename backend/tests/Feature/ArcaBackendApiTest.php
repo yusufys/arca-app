@@ -17,6 +17,29 @@ class ArcaBackendApiTest extends TestCase
 {
     use RefreshDatabase;
 
+    public function test_account_deletion_removes_devices_and_invalidates_the_token(): void
+    {
+        $user = User::factory()->create();
+        $device = $user->enrolledDevices()->create(['device_name' => 'iPhone', 'platform' => 'ios']);
+        $this->withToken($user->api_token)->deleteJson('/api/v1/account')
+            ->assertOk()->assertJsonPath('didDeleteEntireAccount', true);
+        $this->assertDatabaseMissing('users', ['id' => $user->id]);
+        $this->assertDatabaseMissing('enrolled_devices', ['id' => $device->id]);
+        $this->getJson('/api/v1/auth/me')->assertUnauthorized();
+    }
+
+    public function test_another_account_cannot_claim_or_rekey_a_registered_device(): void
+    {
+        $owner = User::factory()->create();
+        $attacker = User::factory()->create();
+        $device = $owner->enrolledDevices()->create(['device_name' => 'iPhone', 'platform' => 'ios', 'public_key_x25519' => 'original']);
+        $body = ['id' => $device->id, 'device_token' => 'untrusted', 'device_name' => 'other', 'platform' => 'ios', 'public_key_x25519' => 'new'];
+        $this->postJson('/api/v1/devices/register', $body)->assertForbidden();
+        $this->withToken($attacker->api_token)->postJson('/api/v1/devices/enroll', $body)->assertForbidden();
+        $this->assertSame('original', $device->fresh()->public_key_x25519);
+        $this->assertSame($owner->id, $device->fresh()->user_id);
+    }
+
     /**
      * 1. User registration, login, and default arca_sync storage mode config.
      */
@@ -378,7 +401,8 @@ class ArcaBackendApiTest extends TestCase
             'subscription_state' => 'active',
             'remote_storage_bytes_used' => 0,
         ]);
-        $webhookSecret = config('arca.revenuecat.webhook_secret', 'arca-rc-secret-dev');
+        $webhookSecret = 'webhook-test-only';
+        config(['arca.revenuecat.webhook_secret' => $webhookSecret]);
         $webhookHeader = ['Authorization' => "Bearer {$webhookSecret}"];
 
         // 5a. INITIAL_PURCHASE webhook -> upgrades to Pro active
@@ -550,6 +574,10 @@ class ArcaBackendApiTest extends TestCase
         $this->assertNotContains('iOS Free Promo', $androidTitles);
 
         // 6c. Admin dashboard rendering
+        $this->getJson('/admin')->assertUnauthorized();
+        $this->actingAs(User::factory()->create())->getJson('/admin')->assertForbidden();
+        $admin = User::factory()->create(['is_admin' => true]);
+        $this->actingAs($admin);
         $adminResp = $this->get('/admin');
         $adminResp->assertStatus(200)
             ->assertSee('Arca System Administration')

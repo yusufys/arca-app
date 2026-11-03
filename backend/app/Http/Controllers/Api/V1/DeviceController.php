@@ -57,9 +57,10 @@ class DeviceController extends Controller
         }
 
         if ($device) {
-            EnrolledDevice::where('device_token', $deviceToken)
-                ->where('id', '!=', $device->id)
-                ->update(['device_token' => null]);
+            if (($device->user_id !== null && $device->user_id !== $authenticatedUser?->id)
+                || ($device->user_id === null && ! hash_equals((string) $device->device_token, $deviceToken))) {
+                abort(403);
+            }
 
             $device->device_token = $deviceToken;
             $device->device_name = $validated['device_name'];
@@ -92,8 +93,6 @@ class DeviceController extends Controller
         if ($authenticatedUser && $authenticatedUser->activeEnrolledDevicesCount() < $authenticatedUser->maxAllowedDevices()) {
             $userId = $authenticatedUser->id;
         }
-
-        EnrolledDevice::where('device_token', $deviceToken)->update(['device_token' => null]);
 
         $device = EnrolledDevice::create([
             'id' => $deviceId ?: (string) Str::uuid(),
@@ -138,9 +137,6 @@ class DeviceController extends Controller
 
         if ($existingDevice) {
             if ($deviceToken) {
-                EnrolledDevice::where('device_token', $deviceToken)
-                    ->where('id', '!=', $existingDevice->id)
-                    ->update(['device_token' => null]);
                 $existingDevice->device_token = $deviceToken;
             }
             $existingDevice->device_name = $validated['device_name'];
@@ -178,10 +174,10 @@ class DeviceController extends Controller
         }
 
         if ($preExistingDevice) {
+            if ($preExistingDevice->user_id !== null || ! $deviceToken || ! hash_equals((string) $preExistingDevice->device_token, $deviceToken)) {
+                abort(403);
+            }
             if ($deviceToken) {
-                EnrolledDevice::where('device_token', $deviceToken)
-                    ->where('id', '!=', $preExistingDevice->id)
-                    ->update(['device_token' => null]);
                 $preExistingDevice->device_token = $deviceToken;
             }
             $preExistingDevice->user_id = $user->id;
@@ -200,10 +196,6 @@ class DeviceController extends Controller
                 'message' => 'Device enrolled successfully.',
                 'device' => $preExistingDevice,
             ], 201);
-        }
-
-        if ($deviceToken) {
-            EnrolledDevice::where('device_token', $deviceToken)->update(['device_token' => null]);
         }
 
         $device = $user->enrolledDevices()->create([

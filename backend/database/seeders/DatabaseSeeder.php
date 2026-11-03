@@ -3,11 +3,8 @@
 namespace Database\Seeders;
 
 use App\Models\AppAnnouncement;
-use App\Models\User;
 use Illuminate\Database\Console\Seeds\WithoutModelEvents;
 use Illuminate\Database\Seeder;
-use Illuminate\Support\Facades\Hash;
-use Illuminate\Support\Str;
 
 class DatabaseSeeder extends Seeder
 {
@@ -18,21 +15,6 @@ class DatabaseSeeder extends Seeder
      */
     public function run(): void
     {
-        // 1. Seed Admin User
-        User::firstOrCreate(
-            ['email' => 'admin@arca.app'],
-            [
-                'name' => 'Arca Admin',
-                'password' => Hash::make('ArcaAdmin2026!'),
-                'uuid' => (string) Str::uuid(),
-                'subscription_tier' => 'pro',
-                'subscription_state' => 'active',
-                'is_admin' => true,
-                'api_token' => Str::random(60),
-                'remote_storage_bytes_used' => 0,
-            ]
-        );
-
         // 2. Seed Default Active App Announcement Banner
         AppAnnouncement::firstOrCreate(
             ['title' => 'Welcome to Arca Zero-Knowledge Sync'],

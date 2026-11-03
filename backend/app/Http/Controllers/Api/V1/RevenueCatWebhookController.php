@@ -14,10 +14,10 @@ class RevenueCatWebhookController extends Controller
 {
     public function handle(Request $request): JsonResponse
     {
-        $secret = config('arca.revenuecat.webhook_secret', 'arca-rc-secret-dev');
+        $secret = config('arca.revenuecat.webhook_secret');
         $bearer = $request->bearerToken();
 
-        if (! $bearer || ! hash_equals($secret, $bearer)) {
+        if (! $secret || ! $bearer || ! hash_equals($secret, $bearer)) {
             return response()->json([
                 'error' => 'UNAUTHORIZED_WEBHOOK',
                 'message' => 'Invalid or missing RevenueCat webhook secret.',

@@ -55,13 +55,13 @@ Copy `backend/.env.example` to `backend/.env` on your server (or local Laravel H
   AWS_ENDPOINT=https://<account_id>.r2.cloudflarestorage.com
   ```
 
-- [ ] **Run Migrations & Seed Default Admin**
+- [ ] **Run Migrations**
   ```bash
   cd backend
   composer install --optimize-autoloader --no-dev
-  php artisan migrate --seed
+  php artisan migrate --force
   ```
-  - Default Admin login seeded in `DatabaseSeeder.php`: `admin@arca.app` (update password in production).
+  - Provision an administrator separately. The dashboard requires HTTP Basic authentication and the admin role.
   - Admin Dashboard URL: `https://api.yourdomain.com/admin`
 
 ---

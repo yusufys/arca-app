@@ -15,10 +15,10 @@ use Illuminate\Support\Facades\Route;
 |--------------------------------------------------------------------------
 */
 
-Route::prefix('v1')->group(function () {
+Route::prefix('v1')->middleware('throttle:120,1')->group(function () {
     // Public Auth endpoints
-    Route::post('/auth/register', [AuthController::class, 'register']);
-    Route::post('/auth/login', [AuthController::class, 'login']);
+    Route::post('/auth/register', [AuthController::class, 'register'])->middleware('throttle:10,1');
+    Route::post('/auth/login', [AuthController::class, 'login'])->middleware('throttle:10,1');
 
     // Public Anonymous & Authenticated Device Registration
     Route::post('/devices/register', [DeviceController::class, 'registerDevice']);
@@ -34,6 +34,7 @@ Route::prefix('v1')->group(function () {
 
     // Authenticated Endpoints (Bearer api_token)
     Route::middleware('arca.auth')->group(function () {
+        Route::delete('/account', [AuthController::class, 'destroy']);
         Route::get('/auth/me', [AuthController::class, 'me']);
 
         // Devices
@@ -48,8 +49,10 @@ Route::prefix('v1')->group(function () {
         Route::post('/spaces/{spaceId}/migrate-mode', [SyncController::class, 'migrateMode']);
 
         // Encrypted Attachments
-        Route::post('/spaces/{spaceId}/attachments', [AttachmentController::class, 'store']);
-        Route::get('/spaces/{spaceId}/attachments/{attachmentId}', [AttachmentController::class, 'show']);
+        if (! app()->environment('production')) {
+            Route::post('/spaces/{spaceId}/attachments', [AttachmentController::class, 'store']);
+            Route::get('/spaces/{spaceId}/attachments/{attachmentId}', [AttachmentController::class, 'show']);
+        }
 
         // Public Snapshots Management
         Route::post('/snapshots', [PublicSnapshotController::class, 'store']);

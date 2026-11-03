@@ -44,7 +44,7 @@ return [
     |--------------------------------------------------------------------------
     */
     'revenuecat' => [
-        'webhook_secret' => env('REVENUECAT_WEBHOOK_SECRET', 'arca-rc-secret-dev'),
+        'webhook_secret' => env('REVENUECAT_WEBHOOK_SECRET'),
         'pro_entitlement_id' => env('REVENUECAT_PRO_ENTITLEMENT_ID', 'arca_pro'),
     ],
 

@@ -7,6 +7,7 @@ use App\Models\EnrolledDevice;
 use App\Models\User;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
 
@@ -137,7 +138,6 @@ class AuthController extends Controller
         if ($device) {
             if ($device->user_id === $user->id) {
                 if ($deviceToken) {
-                    EnrolledDevice::where('device_token', $deviceToken)->where('id', '!=', $device->id)->update(['device_token' => null]);
                     $device->device_token = $deviceToken;
                 }
                 if (! empty($data['device_name'])) {
@@ -157,9 +157,11 @@ class AuthController extends Controller
                 return $device;
             }
 
+            if ($device->user_id !== null || ! $deviceToken || ! hash_equals((string) $device->device_token, $deviceToken)) {
+                return null;
+            }
             if ($user->activeEnrolledDevicesCount() < $user->maxAllowedDevices()) {
                 if ($deviceToken) {
-                    EnrolledDevice::where('device_token', $deviceToken)->where('id', '!=', $device->id)->update(['device_token' => null]);
                     $device->device_token = $deviceToken;
                 }
                 $device->user_id = $user->id;
@@ -184,10 +186,6 @@ class AuthController extends Controller
         }
 
         if ($user->activeEnrolledDevicesCount() < $user->maxAllowedDevices()) {
-            if ($deviceToken) {
-                EnrolledDevice::where('device_token', $deviceToken)->update(['device_token' => null]);
-            }
-
             $device = EnrolledDevice::create([
                 'id' => $deviceId ?: (string) Str::uuid(),
                 'user_id' => $user->id,
@@ -203,6 +201,29 @@ class AuthController extends Controller
         }
 
         return null;
+    }
+
+    public function destroy(Request $request): JsonResponse
+    {
+        $user = $request->user();
+        return DB::transaction(function () use ($user) {
+            $user = User::whereKey($user->id)->lockForUpdate()->firstOrFail();
+            $receipt = [
+                'receiptId' => (string) Str::uuid(),
+                'accountId' => $user->uuid,
+                'deletedSpaceId' => null,
+                'didDeleteEntireAccount' => true,
+                'purgedOperationsCount' => DB::table('sync_operations')->where('user_id', $user->id)->count(),
+                'purgedAttachmentsCount' => DB::table('encrypted_attachments')->where('user_id', $user->id)->count(),
+                'purgedBytesCount' => (int) $user->remote_storage_bytes_used,
+                'deletedAt' => now()->toIso8601String(),
+            ];
+            $user->enrolledDevices()->delete();
+            $user->delete();
+            $receipt['verifiedZeroRemainingRecords'] = ! DB::table('sync_operations')->where('user_id', $user->id)->exists()
+                && ! DB::table('encrypted_attachments')->where('user_id', $user->id)->exists();
+            return response()->json($receipt);
+        });
     }
 
     public function me(Request $request): JsonResponse
