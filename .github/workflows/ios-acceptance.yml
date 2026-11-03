@@ -11,4 +11,7 @@ jobs:
     timeout-minutes: 35
     steps:
       - uses: actions/checkout@v4
-      - run: python3 ci/test_ios_sync.py
+      - name: Shared Swift tests
+        run: swift test -Xlinker -lsqlite3
+      - name: Verify relaunch and bidirectional sync
+        run: python3 ci/test_ios_sync.py

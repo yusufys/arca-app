@@ -90,7 +90,13 @@ open Arca.xcodeproj
 ```
 Select your iPhone or Simulator target and press **`Cmd + R`**.
 
-### 2. Run the Automated 9-Suite Verification Runner (CLI)
+### 2. Connect two iPhones
+
+On the first device, choose **Arca Sync**, create an account and save the recovery key. On the second device, sign in with the same email, password and recovery key. Use **Settings → Sync Status, Outbox & Conflicts → Sync my cloud Spaces** to sync immediately. The app also checks for changes while it is in the foreground. Only Spaces configured for Arca Sync participate. Remote attachment uploads are currently disabled.
+
+To run the force-quit and bidirectional sync check on a Mac with Xcode and an iOS Simulator runtime, run `python3 ci/test_ios_sync.py`. It creates two disposable simulators and a temporary account on the live Forge backend, then deletes them.
+
+### 3. Run the Automated 9-Suite Verification Runner (CLI)
 ```bash
 swift run --disable-sandbox -Xlinker -lsqlite3 ArcaVerificationRunner
 ```

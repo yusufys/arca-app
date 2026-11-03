@@ -260,7 +260,7 @@ public struct SettingsHubScreenView: View {
                                     icon: "arrow.triangle.2.circlepath.icloud.fill",
                                     tint: ArcaTheme.accent,
                                     title: "Sync Status, Outbox & Conflicts",
-                                    subtitle: viewModel.isOfflineSimulated ? "Offline (Queuing locally)" : "Connected • \(viewModel.pendingOutboxCount) queued",
+                                    subtitle: viewModel.cloudAccountConnected ? viewModel.syncStatus : "Sign in to sync your cloud Spaces",
                                     badge: viewModel.syncConflicts.isEmpty ? nil : "\(viewModel.syncConflicts.count) conflict"
                                 )
                             }
