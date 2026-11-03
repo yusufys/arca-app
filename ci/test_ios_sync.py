@@ -57,6 +57,7 @@ def simulator_build(work):
                     if let stage = ProcessInfo.processInfo.environment["ARCA_TEST_STAGE"] {
                         await SyncAcceptance.writeResult(viewModel, mode: stage,
                             to: FileManager.default.temporaryDirectory.appendingPathComponent("acceptance.json"))
+                        return
                     }""") + '\n' + (REPO / 'ci/SyncAcceptance.swift').read_text())
     subprocess.run(['xcodebuild','-project',str(project/'Arca.xcodeproj'),'-scheme','Arca',
                     '-configuration','Debug','-destination','generic/platform=iOS Simulator','-derivedDataPath',str(work/'build'),

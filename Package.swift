@@ -1,8 +1,9 @@
-// swift-tools-version:4.0
+// swift-tools-version:5.9
 import PackageDescription
 
 let package = Package(
     name: "Arca",
+    platforms: [.iOS(.v17), .macOS(.v14)],
     products: [
         .library(name: "ArcaCore", targets: ["ArcaCore"]),
         .library(name: "ArcaCrypto", targets: ["ArcaCrypto"]),
@@ -56,11 +57,11 @@ let package = Package(
                 "ArcaCloudAdapters"
             ]
         ),
-        .target(
+        .executableTarget(
             name: "ArcaApp",
             dependencies: ["ArcaUI"]
         ),
-        .target(
+        .executableTarget(
             name: "ArcaVerificationRunner",
             dependencies: [
                 "ArcaCore",

@@ -317,6 +317,7 @@ public final class ArcaAppViewModel {
         self.currentSpaceId = spaces.first?.id
         self.hasCompletedOnboarding = true
         await refreshOutboxCount()
+        if effectiveMode == .arcaSync && cloudAccountConnected { await synchronizeCurrentSpaceNow() }
     }
 
     private func persistSeededBundle(_ bundle: SampleDataFactory.SeededSpaceBundle) async {
@@ -792,7 +793,8 @@ public final class ArcaAppViewModel {
             let report = try await coordinator.synchronizeSpaceStore(store, spaceMode: space.storageMode)
             pushed += report.pushedOperationsCount
             pulled += report.pulledOperationsCount
-            for conflict in report.newlyDetectedConflicts where !syncConflicts.contains(where: { $0.recordId == conflict.recordId }) {
+            syncConflicts.removeAll { $0.localRecord.spaceId == space.id }
+            for conflict in await coordinator.activeConflicts(for: space.id) {
                 syncConflicts.append(ConflictSummaryItem(id: conflict.id, recordId: conflict.recordId,
                     localRecord: conflict.localRecord, remoteRecord: conflict.remoteRecord,
                     conflictingFieldIds: conflict.conflictingFieldIds, summary: space.name))
@@ -801,6 +803,7 @@ public final class ArcaAppViewModel {
         }
         if currentSpaceId == nil { currentSpaceId = spaces.first?.id }
         setDevices(try await syncBackend.listEnrolledDevices(accountId: session.accountId), currentId: device.deviceId)
+        if !syncConflicts.isEmpty { bannerState = .syncConflictsDetected(count: syncConflicts.count) }
         syncStatus = "Synced at " + Date().formatted(date: .omitted, time: .standard) + " · Sent " + String(pushed) + ", received " + String(pulled)
     }
 
@@ -826,14 +829,23 @@ public final class ArcaAppViewModel {
 
     public func resolveConflict(_ conflictId: UUID, keepLocal: Bool) async {
         guard let idx = syncConflicts.firstIndex(where: { $0.id == conflictId }) else { return }
-        let conflict = syncConflicts.remove(at: idx)
+        let conflict = syncConflicts[idx]
         var chosen = keepLocal ? conflict.localRecord : conflict.remoteRecord
         chosen.revision = max(conflict.localRecord.revision, conflict.remoteRecord.revision) + 1
         chosen.updatedAt = Date()
-        if let col = schema(for: chosen.collectionId) {
-            let store = await spaceStore(for: chosen.spaceId)
-            try? await store.saveRecord(chosen, schema: col, enqueueSync: currentSpace?.storageMode == .arcaSync)
+        guard let currentDeviceIdentity else { return }
+        chosen.lastModifiedByDeviceId = currentDeviceIdentity.deviceId
+        guard let col = schema(for: chosen.collectionId) else { return }
+        let store = await spaceStore(for: chosen.spaceId)
+        do {
+            let shouldSync = spaces.first(where: { $0.id == chosen.spaceId })?.storageMode == .arcaSync
+            try await store.saveRecord(chosen, schema: col, enqueueSync: shouldSync)
+            try await store.removeSyncConflict(recordId: chosen.id, accountId: accountId)
+            syncConflicts.removeAll { $0.id == conflictId }
             await reloadSpaceFromDisk(chosen.spaceId)
+        } catch {
+            syncStatus = "Conflict resolution failed. " + error.localizedDescription
+            return
         }
         bannerState = syncConflicts.isEmpty ? .normal : .syncConflictsDetected(count: syncConflicts.count)
     }
