@@ -105,13 +105,12 @@ final class ArcaVerificationTests: XCTestCase {
     func testOfflineSQLiteCRUDProjectionsAndSearch() async throws {
         let catalog = CatalogStore(baseDirectoryURL: tempWorkspace)
         let space = SpaceMetadata(name: "Offline Home Space", storageMode: .localOnly)
-        try await catalog.saveSpace(space)
+        await catalog.saveSpace(space)
 
-        let spacesRoot = tempWorkspace.appendingPathComponent("Spaces", isDirectory: true)
-        let store = SpaceStore(spaceId: space.id, spacesRootDirectoryURL: spacesRoot)
+        let store = SpaceStore(spaceId: space.id, baseDirectoryURL: tempWorkspace)
 
         let warrantySchema = StarterTemplateCatalog.warranties.instantiateSchema(for: space.id)
-        try await store.saveCollection(warrantySchema, enqueueSync: false)
+        await store.saveCollection(warrantySchema, enqueueSync: false)
 
         let f = warrantySchema.fields
         let money = MoneyValue(decimalString: "1299.95", currencyCode: "USD")!
@@ -156,12 +155,12 @@ final class ArcaVerificationTests: XCTestCase {
             filters: [.favoritesOnly, .hasAttachments],
             sort: .updatedAtDescending
         )
-        let matches = try await store.queryRecords(searchQuery, schemas: [warrantySchema.id: warrantySchema])
+        let matches = await store.queryRecords(searchQuery, schemas: [warrantySchema.id: warrantySchema])
         XCTAssertEqual(matches.count, 1)
         XCTAssertEqual(matches.first?.id, record.id)
 
         // Verify local-only mode did not enqueue sync operations
-        let outbox = try await store.pendingOutboxItems()
+        let outbox = await store.pendingOutboxItems()
         XCTAssertTrue(outbox.isEmpty)
     }
 
@@ -174,10 +173,10 @@ final class ArcaVerificationTests: XCTestCase {
         try FileManager.default.createDirectory(at: exportsDir, withIntermediateDirectories: true)
 
         let bundle = SampleDataFactory.createDefaultPersonalSpace(storageMode: .localOnly)
-        try await catalog.saveSpace(bundle.space)
-        let store = SpaceStore(spaceId: bundle.space.id, spacesRootDirectoryURL: spacesRoot)
+        await catalog.saveSpace(bundle.space)
+        let store = SpaceStore(spaceId: bundle.space.id, baseDirectoryURL: tempWorkspace)
         for col in bundle.collections {
-            try await store.saveCollection(col, enqueueSync: false)
+            await store.saveCollection(col, enqueueSync: false)
         }
         var sampleRecord = bundle.records[0]
         let attRef = try await store.storeAttachment(
@@ -215,8 +214,8 @@ final class ArcaVerificationTests: XCTestCase {
             spacesRootDirectory: spacesRoot
         )
         XCTAssertNotEqual(restoredSpace.id, bundle.space.id)
-        let restoredStore = SpaceStore(spaceId: restoredSpace.id, spacesRootDirectoryURL: spacesRoot)
-        let restoredRecords = try await restoredStore.listRecords()
+        let restoredStore = SpaceStore(spaceId: restoredSpace.id, baseDirectoryURL: tempWorkspace)
+        let restoredRecords = await restoredStore.listRecords()
         XCTAssertEqual(restoredRecords.count, 1)
         let restoredAttachments = restoredRecords[0].allAttachments
         XCTAssertEqual(restoredAttachments.count, 1)
@@ -235,7 +234,7 @@ final class ArcaVerificationTests: XCTestCase {
         let recordsJsonURL = plainArchiveURL.appendingPathComponent("records.json")
         try Data("{\"corrupted\": true}".utf8).write(to: recordsJsonURL)
 
-        let spacesBeforeCorruptRestore = try await catalog.listSpaces().count
+        let spacesBeforeCorruptRestore = await catalog.listSpaces().count
         do {
             _ = try await ArchiveService.restoreArchiveAsNewSpace(
                 from: plainArchiveURL,
@@ -246,7 +245,7 @@ final class ArcaVerificationTests: XCTestCase {
             XCTFail("Corrupted archive should have been rejected during staging")
         } catch {
             // Verify live catalog was NOT modified
-            let spacesAfterCorruptRestore = try await catalog.listSpaces().count
+            let spacesAfterCorruptRestore = await catalog.listSpaces().count
             XCTAssertEqual(spacesBeforeCorruptRestore, spacesAfterCorruptRestore)
         }
     }
@@ -256,31 +255,32 @@ final class ArcaVerificationTests: XCTestCase {
     func testEncryptionRecoveryKeyAndTwoDeviceLimitWithRevocation() async throws {
         // 1. Recovery Key round-trip
         let originalMAK = SymmetricKey(size: .bits256)
-        let (wrappedBundle, phrase) = try RecoveryKeyCredential.generate(wrapping: originalMAK)
+        let credential = RecoveryKeyCredential.generate()
+        let wrappedBundle = try credential.wrapMasterAccountKey(originalMAK, accountId: "recovery-test")
         XCTAssertFalse(RecoveryKeyCredential.canPasswordResetDecryptE2EEData)
 
-        let recoveredMAK = try RecoveryKeyCredential.recoverMasterAccountKey(from: wrappedBundle, recoveryPhrase: phrase)
+        let recoveredMAK = try RecoveryKeyCredential.restoreMasterAccountKey(fromPhrase: credential.formattedPhrase, bundle: wrappedBundle)
         let originalBytes = originalMAK.withUnsafeBytes { Data($0) }
         let recoveredBytes = recoveredMAK.withUnsafeBytes { Data($0) }
         XCTAssertEqual(originalBytes, recoveredBytes)
 
         // Wrong recovery phrase must fail
-        XCTAssertThrowsError(try RecoveryKeyCredential.recoverMasterAccountKey(
-            from: wrappedBundle,
-            recoveryPhrase: "ARCA-0000-0000-0000-0000-0000-0000-0000-0000"
+        XCTAssertThrowsError(try RecoveryKeyCredential.restoreMasterAccountKey(
+            fromPhrase: "ARCA-0000-0000-0000-0000-0000-0000-0000-0000",
+            bundle: wrappedBundle
         ))
 
         // 2. Device Enrollment & Free 2-Device Limit Enforcement
         let backend = InMemoryArcaSyncBackend()
-        let session = try await backend.authenticate(email: "owner@example.com", passkeyOrCredentialToken: "passkey-1")
+        let session = try await backend.authenticate(email: "owner@example.com", credentialProof: "passkey-1")
 
         let device1 = DeviceIdentity(deviceId: "dev-1", deviceName: "iPhone 16")
         let device2 = DeviceIdentity(deviceId: "dev-2", deviceName: "iPad Mini")
         let device3 = DeviceIdentity(deviceId: "dev-3", deviceName: "Backup iPhone")
 
-        _ = try await backend.enrollDevice(accountId: session.accountId, device: device1.descriptor, wrappedMasterKey: nil, isProTier: false)
-        let wrappedForDev2 = try device1.wrapMasterAccountKey(originalMAK, forNewDevice: device2.descriptor)
-        _ = try await backend.enrollDevice(accountId: session.accountId, device: device2.descriptor, wrappedMasterKey: wrappedForDev2, isProTier: false)
+        _ = try await backend.enrollDevice(accountId: session.accountId, device: EnrolledDevice(descriptor: device1.descriptor), maxAllowedDevices: 2, wrappedMasterKey: nil)
+        let wrappedForDev2 = try device1.wrapMasterAccountKey(originalMAK, forRecipient: device2.descriptor)
+        _ = try await backend.enrollDevice(accountId: session.accountId, device: EnrolledDevice(descriptor: device2.descriptor), maxAllowedDevices: 2, wrappedMasterKey: wrappedForDev2)
 
         // Device 2 can unwrap MAK
         let unwrappedByDev2 = try device2.unwrapMasterAccountKey(from: wrappedForDev2)
@@ -288,7 +288,7 @@ final class ArcaVerificationTests: XCTestCase {
 
         // Enrolling 3rd device on Free tier must fail with .deviceLimitReached
         do {
-            _ = try await backend.enrollDevice(accountId: session.accountId, device: device3.descriptor, wrappedMasterKey: nil, isProTier: false)
+            _ = try await backend.enrollDevice(accountId: session.accountId, device: EnrolledDevice(descriptor: device3.descriptor), maxAllowedDevices: 2, wrappedMasterKey: nil)
             XCTFail("Expected 3rd device enrollment on Free tier to throw deviceLimitReached")
         } catch let error as SyncServiceError {
             if case .deviceLimitReached(let currentDevices, let limit) = error {
@@ -299,21 +299,21 @@ final class ArcaVerificationTests: XCTestCase {
             }
         }
 
-        // Revoking Device 2 allows Device 3 to enroll and rotates SpaceKeyRing
-        _ = try await backend.revokeDevice(accountId: session.accountId, targetDeviceId: "dev-2", requestingDeviceId: "dev-1")
-        let enrolled3 = try await backend.enrollDevice(accountId: session.accountId, device: device3.descriptor, wrappedMasterKey: nil, isProTier: false)
-        XCTAssertEqual(enrolled3.deviceId, "dev-3")
+        // Revoking Device 2 frees one enrollment slot for Device 3
+        _ = try await backend.revokeDevice(accountId: session.accountId, revokingDeviceId: "dev-2", requestedByDeviceId: "dev-1")
+        let enrolled3 = try await backend.enrollDevice(accountId: session.accountId, device: EnrolledDevice(descriptor: device3.descriptor), maxAllowedDevices: 2, wrappedMasterKey: nil)
+        XCTAssertEqual(enrolled3.enrolledDevice.deviceId, "dev-3")
     }
 
     // MARK: - 5. Idempotent Retried Sync Operations & Concurrent Edit Conflict Preservation
 
     func testIdempotentSyncAndConcurrentConflictPreservation() async throws {
         let backend = InMemoryArcaSyncBackend()
-        let session = try await backend.authenticate(email: "sync@example.com", passkeyOrCredentialToken: "token")
+        let session = try await backend.authenticate(email: "sync@example.com", credentialProof: "token")
         let devA = DeviceIdentity(deviceId: "dev-A", deviceName: "Device A")
         let devB = DeviceIdentity(deviceId: "dev-B", deviceName: "Device B")
-        _ = try await backend.enrollDevice(accountId: session.accountId, device: devA.descriptor, wrappedMasterKey: nil, isProTier: false)
-        _ = try await backend.enrollDevice(accountId: session.accountId, device: devB.descriptor, wrappedMasterKey: nil, isProTier: false)
+        _ = try await backend.enrollDevice(accountId: session.accountId, device: EnrolledDevice(descriptor: devA.descriptor), maxAllowedDevices: 2, wrappedMasterKey: nil)
+        _ = try await backend.enrollDevice(accountId: session.accountId, device: EnrolledDevice(descriptor: devB.descriptor), maxAllowedDevices: 2, wrappedMasterKey: nil)
 
         let space = SpaceMetadata(name: "Synced Vehicles", storageMode: .arcaSync, cloudSyncAcceptedAt: Date())
         let keyRing = SpaceKeyRing(spaceId: space.id)
@@ -338,24 +338,25 @@ final class ArcaVerificationTests: XCTestCase {
         // 1. Test idempotent push: pushing the exact same operationId twice only records 1 operation on the server
         let coordinatorA = SyncCoordinator(accountId: session.accountId, deviceIdentity: devA, backend: backend)
         let opId = UUID()
-        try await coordinatorA.queueRecordUpsert(baseRecord, keyRing: keyRing, fixedOperationId: opId)
-        let firstSync = try await coordinatorA.synchronizeSpace(space: space, store: nil, keyRing: keyRing, isProTier: false)
-        XCTAssertEqual(firstSync.pushedCount, 1)
+        await coordinatorA.registerSpaceKeyRing(keyRing)
+        try await coordinatorA.queueRecordUpsert(baseRecord, operationId: opId)
+        let firstSync = try await coordinatorA.synchronizeSpace(spaceId: space.id, spaceMode: space.storageMode)
+        XCTAssertEqual(firstSync.pushedOperationsCount, 1)
 
         // Re-push same operationId to backend directly to simulate network retry
         let pullBatch = try await backend.pullEncryptedOperations(
             accountId: session.accountId,
             spaceId: space.id,
-            requestingDeviceId: devB.deviceId,
+            deviceId: devB.deviceId,
             sinceCursor: nil,
             limit: 50
         )
         XCTAssertEqual(pullBatch.operations.count, 1)
         let retryAck = try await backend.pushEncryptedOperations(
             accountId: session.accountId,
-            requestingDeviceId: devA.deviceId,
-            operations: pullBatch.operations,
-            isProTier: false
+            spaceId: space.id,
+            deviceId: devA.deviceId,
+            operations: pullBatch.operations
         )
         XCTAssertEqual(retryAck.deduplicatedOperationIds, [opId])
 
@@ -370,10 +371,12 @@ final class ArcaVerificationTests: XCTestCase {
         remoteDisjoint.revision = 2
         remoteDisjoint.lastModifiedByDeviceId = devB.deviceId
 
-        let disjointOutcome = SyncConflictEngine.reconcileConcurrentRecordEdit(
-            baseRecord: baseRecord,
+        let disjointOutcome = SyncConflictEngine.reconcileRecord(
             localRecord: localDisjoint,
-            remoteRecord: remoteDisjoint
+            remoteRecord: remoteDisjoint,
+            baseRecordSnapshot: baseRecord,
+            localBaseRevision: baseRecord.revision,
+            hasUncommittedLocalEdits: true
         )
         if case .cleanFieldLevelMerge(let merged) = disjointOutcome {
             XCTAssertEqual(merged.values[odometerFieldId], .number(42150))
@@ -393,10 +396,12 @@ final class ArcaVerificationTests: XCTestCase {
         remoteOverlap.revision = 2
         remoteOverlap.lastModifiedByDeviceId = devB.deviceId
 
-        let overlapOutcome = SyncConflictEngine.reconcileConcurrentRecordEdit(
-            baseRecord: baseRecord,
+        let overlapOutcome = SyncConflictEngine.reconcileRecord(
             localRecord: localOverlap,
-            remoteRecord: remoteOverlap
+            remoteRecord: remoteOverlap,
+            baseRecordSnapshot: baseRecord,
+            localBaseRevision: baseRecord.revision,
+            hasUncommittedLocalEdits: true
         )
         if case .conflictPreserved(let conflict) = overlapOutcome {
             XCTAssertEqual(conflict.conflictingFieldIds, [titleFieldId])
