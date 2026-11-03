@@ -2,6 +2,7 @@
 import Foundation
 import CryptoKit
 import ArcaCore
+import ArcaPersistence
 import ArcaCrypto
 import ArcaUI
 
@@ -30,6 +31,11 @@ enum SyncAcceptance {
             guard let schema = vm.collectionsInCurrentSpace.first else { throw failure("No schema") }
             try await vm.saveRecord(existingRecord: nil, schema: schema, values: [field.id: .shortText(original)], isFavorite: true)
             guard let record = vm.recordsInCurrentSpace.first else { throw failure("No record after save") }
+            // Reproduce an older demo that drained its queue without reaching Forge.
+            let store = SpaceStore(spaceId: schema.spaceId, baseDirectoryURL: vm.rootDirectoryURL)
+            let queued = await store.pendingOutboxItems()
+            try require(!queued.isEmpty, "Expected a local change queue")
+            try await store.acknowledgeOutboxOperations(queued.map(\.operationId))
             let ring = try identity.activeSpaceKeyRing(for: schema.spaceId)
             let cipher = try ClientCryptoEngine.encryptCodable(record.id, using: ring.symmetricKey, keyId: ring.keyId, contextAAD: "quit-proof")
             let proof = Proof(record: record.id, space: schema.spaceId, deviceKey: identity.deviceIdentity.publicKeyBase64,

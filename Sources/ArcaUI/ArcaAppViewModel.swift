@@ -778,7 +778,10 @@ public final class ArcaAppViewModel {
         var pulled = 0
         for space in spaces where space.storageMode == .arcaSync {
             let ring = try persistedSpaceKeyRing(for: space.id)
+            let store = await spaceStore(for: space.id)
             let remoteSpace = remote.first { $0.id == space.id }
+            // Legacy/demo clients may have acknowledged their local outbox without publishing data.
+            if (remoteSpace?.wrapped_space_keys_json ?? []).isEmpty { try await store.enqueueInitialSyncSnapshot() }
             if let requiredGeneration = remoteSpace?.current_key_version, ring.keyGeneration < requiredGeneration {
                 throw PersistenceError.ioError("Waiting for the current Space key from an enrolled device.")
             }
@@ -787,7 +790,6 @@ public final class ArcaAppViewModel {
                 try await syncBackend.publishWrappedSpaceKey(accountId: session.accountId, deviceId: device.deviceId, wrappedSpaceKey: wrapped)
             }
             for key in try identityStore.spaceKeyRings(for: space.id) { await coordinator.registerSpaceKeyRing(key) }
-            let store = await spaceStore(for: space.id)
             let report = try await coordinator.synchronizeSpaceStore(store, spaceMode: space.storageMode)
             pushed += report.pushedOperationsCount
             pulled += report.pulledOperationsCount
@@ -901,17 +903,23 @@ public final class ArcaAppViewModel {
         spaceId: UUID,
         to targetMode: SpaceStorageMode,
         deleteRemoteCopies: Bool
-    ) async {
-        if deleteRemoteCopies {
-            do {
-                _ = try await syncBackend.deleteRemoteSpaceData(
-                accountId: accountId,
-                spaceId: spaceId,
-                requestedByDeviceId: currentDeviceIdentity?.deviceId ?? "unavailable"
-                )
-            } catch {
-                syncStatus = "Remote deletion failed. " + error.localizedDescription
-                return
+    ) async throws {
+        guard !isSyncing else { throw PersistenceError.ioError("Sync is in progress. Try again when it finishes.") }
+        guard let space = await catalogStore.fetchSpace(id: spaceId), space.storageMode != targetMode else { return }
+        isSyncing = true
+        defer { isSyncing = false }
+        if targetMode == .arcaSync {
+            let store = await spaceStore(for: spaceId)
+            try await store.enqueueInitialSyncSnapshot()
+            if cloudAccountConnected, let device = currentDeviceIdentity {
+                try await syncBackend.enableCloudSync(spaceId: spaceId, deviceId: device.deviceId)
+            }
+        } else if space.storageMode == .arcaSync && targetMode == .localOnly && deleteRemoteCopies {
+            guard let device = currentDeviceIdentity else { throw SyncServiceError.unauthenticated }
+            let receipt = try await syncBackend.deleteRemoteSpaceData(accountId: accountId, spaceId: spaceId,
+                                                                      requestedByDeviceId: device.deviceId)
+            guard receipt.verifiedZeroRemainingRecords else {
+                throw PersistenceError.ioError("The server could not verify remote deletion.")
             }
         }
         _ = await catalogStore.updateStorageMode(

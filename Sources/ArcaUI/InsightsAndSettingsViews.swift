@@ -766,6 +766,7 @@ public struct StorageModeMigrationScreenView: View {
     @Environment(\.colorScheme) private var colorScheme
 
     @ViewState private var targetMode: SpaceStorageMode = .localOnly
+    @ViewState private var migrationError: String?
     @ViewState private var requestRemoteDeletion = false
     @ViewState private var acceptCloudUpload = false
 
@@ -839,14 +840,16 @@ public struct StorageModeMigrationScreenView: View {
                     }
                 }
 
+                if let migrationError { Text(migrationError).foregroundStyle(ArcaTheme.dangerRed) }
                 Button("Apply Storage Mode Change") {
                     Task {
-                        await viewModel.applyStorageModeChange(
-                            spaceId: space.id,
-                            to: targetMode,
-                            deleteRemoteCopies: requestRemoteDeletion
-                        )
-                        dismiss()
+                        do {
+                            try await viewModel.applyStorageModeChange(spaceId: space.id, to: targetMode,
+                                                                       deleteRemoteCopies: requestRemoteDeletion)
+                            dismiss()
+                        } catch {
+                            migrationError = error.localizedDescription
+                        }
                     }
                 }
                 .buttonStyle(ArcaPrimaryButtonStyle())

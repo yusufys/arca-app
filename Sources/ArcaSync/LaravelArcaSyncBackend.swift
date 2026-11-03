@@ -275,6 +275,17 @@ public final class LaravelArcaSyncBackend: ArcaSyncBackendProtocol, @unchecked S
     public func downloadEncryptedAttachment(accountId: String, spaceId: UUID, attachmentId: UUID, deviceId: String) async throws -> EncryptedAttachmentBlob {
         throw SyncServiceError.invalidOperationEnvelope("Remote attachment transport is not enabled on this server.")
     }
+    /// An explicitly opted-in device may resume a previously disabled Space.
+    /// A new Space will be registered when its first wrapped key is published.
+    public func enableCloudSync(spaceId: UUID, deviceId: String) async throws {
+        let payload = try jsonEncoder.encode(["target_mode": "arca_sync"])
+        do {
+            _ = try await request("spaces/\(spaceId.uuidString)/migrate-mode", method: "POST", body: payload, deviceId: deviceId)
+        } catch let error as NSError where error.domain == "ArcaSync.HTTP" && error.code == 404 {
+            return
+        }
+    }
+
     public func deleteRemoteSpaceData(accountId: String, spaceId: UUID, requestedByDeviceId: String) async throws -> RemoteDeletionReceipt {
         struct Payload: Encodable { let target_mode = "local_only"; let delete_remote_ciphertext = true }
         struct Receipt: Decodable { let deleted_operation_count: Int; let deleted_attachment_count: Int; let freed_storage_bytes: Int64; let verified_zero_remaining: Bool; let deleted_at: Date }
