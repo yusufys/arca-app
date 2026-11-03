@@ -37,6 +37,26 @@ class SyncKeyTransportTest extends TestCase
         $this->getJson('/api/v1/spaces')->assertOk()->assertJsonPath('spaces.0.wrapped_space_keys_json', [$key, $second]);
     }
 
+    public function test_space_reregistration_preserves_key_history_and_rejects_key_updates(): void
+    {
+        $user = User::factory()->create();
+        $device = $user->enrolledDevices()->create(['device_name' => 'A', 'platform' => 'ios']);
+        $spaceId = (string) Str::uuid();
+        $key = ['spaceId' => $spaceId, 'keyId' => (string) Str::uuid(), 'keyGeneration' => 1, 'wrappedKeyEnvelope' => ['ciphertextBase64' => 'sealed']];
+        $this->withToken($user->api_token)->withHeader('X-Device-Id', $device->id)->postJson("/api/v1/spaces/$spaceId/keys", $key)->assertOk();
+        $second = array_replace($key, ['keyGeneration' => 2, 'keyId' => (string) Str::uuid()]);
+        $this->postJson("/api/v1/spaces/$spaceId/keys", $second)->assertOk();
+
+        $this->postJson("/api/v1/spaces/$spaceId/register", ['current_key_version' => 1])->assertOk()
+            ->assertJsonPath('space.current_key_version', 2)
+            ->assertJsonPath('space.wrapped_space_keys_json', [$key, $second]);
+        $this->postJson("/api/v1/spaces/$spaceId/register", ['current_key_version' => 1, 'wrapped_space_keys_json' => [$key]])
+            ->assertUnprocessable()->assertJsonValidationErrors(['wrapped_space_keys_json']);
+        $space = $user->syncedSpaces()->findOrFail($spaceId);
+        $this->assertSame(2, $space->current_key_version);
+        $this->assertSame([$key, $second], $space->wrapped_space_keys_json);
+    }
+
     public function test_other_accounts_and_revoked_devices_cannot_read_or_publish_keys(): void
     {
         $user = User::factory()->create();
