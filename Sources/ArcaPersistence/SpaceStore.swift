@@ -705,6 +705,70 @@ public actor SpaceStore {
 
     // MARK: - Outbox Accessors for ArcaSync
 
+    /// Rebuilds the first publication snapshot from live local data, including legacy Spaces whose queue was drained.
+    /// Schema operations precede records; attachment and future queue types remain unchanged.
+    public func enqueueInitialSyncSnapshot() throws {
+        guard let db else { throw PersistenceError.databaseOpenFailed("Space database unavailable.") }
+        try executeSQLStrict("BEGIN IMMEDIATE TRANSACTION;")
+        do {
+            var snapshot: [(type: String, id: UUID, json: String)] = []
+            for (table, type) in [("collections", OutboxEntityType.collectionUpsert), ("records", OutboxEntityType.recordUpsert)] {
+                var statement: OpaquePointer?
+                let sql = table == "records"
+                    ? "SELECT r.payload_json FROM records r INNER JOIN collections c ON c.id = r.collection_id WHERE r.is_deleted = 0 AND c.is_deleted = 0 ORDER BY r.id ASC;"
+                    : "SELECT payload_json FROM collections WHERE is_deleted = 0 ORDER BY id ASC;"
+                guard sqlite3_prepare_v2(db, sql, -1, &statement, nil) == SQLITE_OK else {
+                    throw PersistenceError.statementPreparationFailed("Initial sync snapshot read failed.")
+                }
+                defer { sqlite3_finalize(statement) }
+                var result = sqlite3_step(statement)
+                while result == SQLITE_ROW {
+                    guard let json = Self.columnText(statement, index: 0), let data = json.data(using: .utf8) else {
+                        throw PersistenceError.decodingFailed
+                    }
+                    let id: UUID
+                    if type == .collectionUpsert {
+                        let schema = try decoder.decode(CollectionSchema.self, from: data)
+                        guard schema.spaceId == spaceId, !schema.isDeleted else { throw PersistenceError.decodingFailed }
+                        id = schema.id
+                    } else {
+                        let record = try decoder.decode(RecordItem.self, from: data)
+                        guard record.spaceId == spaceId, !record.isDeleted else { throw PersistenceError.decodingFailed }
+                        id = record.id
+                    }
+                    snapshot.append((type.rawValue, id, json))
+                    result = sqlite3_step(statement)
+                }
+                guard result == SQLITE_DONE else { throw PersistenceError.sqlExecutionFailed("Initial sync snapshot read failed.") }
+            }
+            try executeSQLStrict("DELETE FROM sync_outbox WHERE entity_type IN ('collection_upsert','collection_tombstone','record_upsert','record_tombstone');")
+            var statement: OpaquePointer?
+            let sql = "INSERT INTO sync_outbox(operation_id,entity_type,entity_id,base_revision,created_at,retry_count,last_error,payload_json) VALUES(?,?,?,0,?,0,NULL,?);"
+            guard sqlite3_prepare_v2(db, sql, -1, &statement, nil) == SQLITE_OK else {
+                throw PersistenceError.statementPreparationFailed("Initial sync snapshot write failed.")
+            }
+            defer { sqlite3_finalize(statement) }
+            let createdAt = Date().timeIntervalSince1970
+            for (index, item) in snapshot.enumerated() {
+                sqlite3_reset(statement)
+                sqlite3_clear_bindings(statement)
+                Self.bindText(statement, index: 1, value: UUID().uuidString)
+                Self.bindText(statement, index: 2, value: item.type)
+                Self.bindText(statement, index: 3, value: item.id.uuidString)
+                // A first publication has no remote base, even when local revisions have advanced.
+                sqlite3_bind_double(statement, 4, createdAt + Double(index) * 0.000001)
+                Self.bindText(statement, index: 5, value: item.json)
+                guard sqlite3_step(statement) == SQLITE_DONE else {
+                    throw PersistenceError.sqlExecutionFailed("Initial sync snapshot write failed.")
+                }
+            }
+            try executeSQLStrict("COMMIT;")
+        } catch {
+            Self.executeRawSQL(on: db, sql: "ROLLBACK;")
+            throw error
+        }
+    }
+
     /// Returns all pending `OutboxRecord` items ordered chronologically by creation time.
     public func pendingOutboxItems() -> [OutboxRecord] {
         guard let db else { return [] }

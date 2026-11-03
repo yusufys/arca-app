@@ -607,6 +607,7 @@ if #available(macOS 14.0, iOS 17.0, *) {
             if CommandLine.arguments.count == 4, CommandLine.arguments[1] == "--workspace-restart" {
                 try await verifyWorkspaceRestart(mode: CommandLine.arguments[2], path: CommandLine.arguments[3])
             } else {
+                try await verifyInitialSyncSnapshot()
                 try verifyWorkspaceIdentityFailureModes()
                 try await ArcaVerificationSuite.runAll()
             }
