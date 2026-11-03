@@ -10,7 +10,7 @@ A cross-platform monorepo for **Arca** featuring:
 
 New Spaces default to Arca Sync and can be set to Local-Only. The iOS starter menus offer vehicles, warranties and home inventory.
 
-[Download or open the standalone iOS release roadmap](ROADMAP.html) for finished work, open tasks and the sensitive-data design. Open the file locally to view the formatted page offline.
+[Download or open the standalone iOS release roadmap](ROADMAP.html) for the delivery board, milestone dependencies, release criteria, core features and frontend, backend and end-to-end architecture. Open the file locally to view the formatted page offline.
 
 ---
 
