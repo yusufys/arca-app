@@ -13,6 +13,8 @@
 		B40000000000000000000006 /* RevenueCatUI in Frameworks */ = {isa = PBXBuildFile; productRef = B40000000000000000000003; };
 		B40000000000000000000014 /* ArcaPurchases.swift in Sources */ = {isa = PBXBuildFile; fileRef = B4000000000000000000000A; };
 		B40000000000000000000015 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = B4000000000000000000000B; };
+		B40000000000000000000016 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = B4000000000000000000000C; };
+		B40000000000000000000017 /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = B4000000000000000000000D; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -22,6 +24,8 @@
 		A10000072B00000100000001 /* ArcaPackage */ = {isa = PBXFileReference; lastKnownFileType = wrapper; name = ArcaPackage; path = .; sourceTree = SOURCE_ROOT; };
 		B4000000000000000000000A /* ArcaPurchases.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArcaPurchases.swift; sourceTree = "<group>"; };
 		B4000000000000000000000B /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		B4000000000000000000000C /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
+		B4000000000000000000000D /* Localizable.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = Localizable.xcstrings; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -53,6 +57,8 @@
 				A10000022B00000100000001 /* ArcaiOSApp.swift */,
 				A10000052B00000100000001 /* Info.plist */,
 				B4000000000000000000000B /* Assets.xcassets */,
+				B4000000000000000000000C /* PrivacyInfo.xcprivacy */,
+				B4000000000000000000000D /* Localizable.xcstrings */,
 				B4000000000000000000000A /* ArcaPurchases.swift */,
 			);
 			path = iOSApp;
@@ -136,6 +142,8 @@
 			buildActionMask = 2147483647;
 			files = (
 				B40000000000000000000015,
+				B40000000000000000000016,
+				B40000000000000000000017,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

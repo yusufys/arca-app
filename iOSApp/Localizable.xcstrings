@@ -1,0 +1,566 @@
+{
+  "sourceLanguage": "en",
+  "version": "1.0",
+  "strings": {
+    "Your plan": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Planınız"
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "خطتك"
+          }
+        }
+      }
+    },
+    "Arca Pro": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Arca Pro"
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Arca Pro"
+          }
+        }
+      }
+    },
+    "Arca Free": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Arca Ücretsiz"
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Arca المجاني"
+          }
+        }
+      }
+    },
+    "Lifetime access": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ömür boyu erişim"
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "وصول مدى الحياة"
+          }
+        }
+      }
+    },
+    "Access through %@": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ tarihine kadar erişim"
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "الوصول متاح حتى %@"
+          }
+        }
+      }
+    },
+    "Connect your Arca account in Settings to purchase or restore Pro.": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pro satın almak veya satın alımlarınızı geri yüklemek için Ayarlar’dan Arca hesabınıza giriş yapın."
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "سجّل الدخول إلى حساب Arca من الإعدادات لشراء Pro أو استعادة مشترياتك."
+          }
+        }
+      }
+    },
+    "View plans": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Planları görüntüle"
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "عرض الخطط"
+          }
+        }
+      }
+    },
+    "Restore purchases": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Satın alımları geri yükle"
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "استعادة المشتريات"
+          }
+        }
+      }
+    },
+    "Manage purchases": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Satın alımları yönet"
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "إدارة المشتريات"
+          }
+        }
+      }
+    },
+    "Retry": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Yeniden dene"
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "إعادة المحاولة"
+          }
+        }
+      }
+    },
+    "Cancel": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Vazgeç"
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "إلغاء"
+          }
+        }
+      }
+    },
+    "Privacy policy": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gizlilik politikası"
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "سياسة الخصوصية"
+          }
+        }
+      }
+    },
+    "Contact support": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Destek ekibine ulaşın"
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "التواصل مع الدعم"
+          }
+        }
+      }
+    },
+    "Arca is Locked": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Arca kilitli"
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Arca مقفل"
+          }
+        }
+      }
+    },
+    "Authenticate to open your records.": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Kayıtlarınızı açmak için kimliğinizi doğrulayın."
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "أكّد هويتك لفتح سجلاتك."
+          }
+        }
+      }
+    },
+    "Sensitive data": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hassas veriler"
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "البيانات الحساسة"
+          }
+        }
+      }
+    },
+    "Do you want to sync “%@” to the cloud?": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "“%@” bulutla eşzamanlansın mı?"
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "هل تريد مزامنة «%@» مع السحابة؟"
+          }
+        }
+      }
+    },
+    "It is kept on this device until you explicitly enable sync. A Local-Only Space or collection overrides this choice.": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Eşzamanlamayı açana kadar bu cihazda kalır. Alan veya koleksiyon yalnızca bu cihazdaysa bu seçim geçerli olmaz."
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "يبقى على هذا الجهاز حتى تفعّل المزامنة. إذا كانت المساحة أو المجموعة محلية فقط فستبقى بياناتها على الجهاز."
+          }
+        }
+      }
+    },
+    "Keep on this device": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bu cihazda tut"
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "الاحتفاظ على هذا الجهاز"
+          }
+        }
+      }
+    },
+    "Verify master password": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ana parolayı doğrula"
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "تأكيد كلمة المرور الرئيسية"
+          }
+        }
+      }
+    },
+    "Set up a master password": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ana parola oluştur"
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "إعداد كلمة مرور رئيسية"
+          }
+        }
+      }
+    },
+    "Master password": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ana parola"
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "كلمة المرور الرئيسية"
+          }
+        }
+      }
+    },
+    "At least 12 characters": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "En az 12 karakter"
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "12 حرفًا على الأقل"
+          }
+        }
+      }
+    },
+    "Confirm master password": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ana parolayı onayla"
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "تأكيد كلمة المرور الرئيسية"
+          }
+        }
+      }
+    },
+    "This password is verified on this device. It is separate from your account password and recovery phrase.": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bu parola cihazınızda doğrulanır. Hesap parolanızdan ve kurtarma ifadenizden ayrıdır."
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "يتحقق جهازك من كلمة المرور هذه. وهي منفصلة عن كلمة مرور حسابك وعبارة الاسترداد."
+          }
+        }
+      }
+    },
+    "Sync securely": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Güvenle eşzamanla"
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "مزامنة آمنة"
+          }
+        }
+      }
+    },
+    "Remote deletion pending": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sunucudan silinmesi bekleniyor"
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "بانتظار الحذف من الخادم"
+          }
+        }
+      }
+    },
+    "Older server copies must be removed before this collection can upload again. Reconnect and sync to retry. An offline device may still hold an earlier copy.": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bu koleksiyonun yeniden yüklenebilmesi için önce sunucudaki eski kopyalar silinmelidir. Tekrar bağlanıp eşzamanlayın. Çevrimdışı bir cihazda eski bir kopya bulunabilir."
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "يجب حذف نسخ الخادم القديمة قبل رفع هذه المجموعة مرة أخرى. أعد الاتصال والمزامنة للمحاولة. قد تبقى نسخة سابقة على جهاز غير متصل."
+          }
+        }
+      }
+    },
+    "Delete Cloud Account": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bulut hesabını sil"
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "حذف الحساب السحابي"
+          }
+        }
+      }
+    },
+    "Finish Local Cleanup": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cihazdaki temizliği tamamla"
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "إكمال التنظيف على الجهاز"
+          }
+        }
+      }
+    },
+    "Permanently delete your cloud account?": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bulut hesabınız kalıcı olarak silinsin mi?"
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "هل تريد حذف حسابك السحابي نهائيًا؟"
+          }
+        }
+      }
+    },
+    "Delete Account and Remote Data": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hesabı ve bulut verilerini sil"
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "حذف الحساب والبيانات السحابية"
+          }
+        }
+      }
+    },
+    "Completing account deletion…": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hesap silme işlemi tamamlanıyor…"
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "جارٍ إكمال حذف الحساب…"
+          }
+        }
+      }
+    },
+    "This cannot be undone. Your local records will be kept, and all Spaces will become Local-Only.": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bu işlem geri alınamaz. Cihazınızdaki kayıtlar korunur ve tüm alanlar yalnızca bu cihazda saklanır."
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "لا يمكن التراجع عن هذا الإجراء. ستبقى سجلاتك على جهازك وستصبح جميع المساحات محلية فقط."
+          }
+        }
+      }
+    },
+    "Delete your cloud account, encrypted remote records, recovery material and device registrations. Local records stay on this device in Local-Only Spaces. Any App Store subscription must be managed separately.": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bulut hesabınızı, sunucudaki şifreli kayıtları, kurtarma verilerini ve cihaz kayıtlarını siler. Yerel kayıtlar bu cihazda kalır. App Store aboneliğinizi ayrıca yönetmeniz gerekir."
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "يُحذف حسابك السحابي وسجلاتك المشفرة على الخادم وبيانات الاسترداد وتسجيلات الأجهزة. تبقى السجلات المحلية على جهازك في مساحات محلية. تُدار اشتراكات App Store بشكل منفصل."
+          }
+        }
+      }
+    }
+  }
+}

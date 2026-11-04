@@ -148,13 +148,15 @@ public struct ArcaRootContainerView: View {
                 }
 
                 Text(title)
-                    .font(.system(size: 11, weight: isSelected ? .bold : .medium, design: .rounded))
+                    .font(.caption.weight(isSelected ? .bold : .medium))
                     .foregroundStyle(isSelected ? ArcaTheme.accent : .secondary)
             }
             .frame(maxWidth: .infinity)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .accessibilityLabel(Text(title))
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 
     // MARK: - macOS Studio iPhone 16 Pro Viewport Wrapper
@@ -320,9 +322,9 @@ public struct ArcaRootContainerView: View {
 
             VStack(spacing: 8) {
                 Text("Arca is Locked")
-                    .font(.system(size: 26, weight: .bold, design: .rounded))
+                    .font(.title2.bold())
 
-                Text("Your personal spaces and attachments are encrypted and protected on this device.")
+                Text("Authenticate to open your records.")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
