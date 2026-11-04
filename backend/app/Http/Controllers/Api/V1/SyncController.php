@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
 use App\Models\EncryptedAttachment;
+use App\Models\PublicRecordSnapshot;
 use App\Models\SyncedSpace;
 use App\Models\SyncOperation;
 use App\Models\User;
@@ -219,6 +220,12 @@ class SyncController extends Controller
             );
 
             abort_if($space->storage_mode === 'local_only', 403, 'Cloud sync is disabled for this space.');
+            if ((int) $space->privacy_generation > 0) {
+                abort_unless($request->integer('privacy_protocol') === 1 && $request->integer('privacy_generation') === (int) $space->privacy_generation, 409, 'Pull the latest privacy rules with an upgraded client before uploading.');
+                foreach ($validated['operations'] as $op) {
+                    abort_unless(isset($op['encrypted_envelope']['operation']['collectionId']), 422, 'Collection routing is required after privacy changes.');
+                }
+            }
             $acknowledgedIds = [];
             $totalNewCiphertextBytes = 0;
 
@@ -309,6 +316,77 @@ class SyncController extends Controller
             'operations' => $operations,
             'space_metadata' => $space,
         ]);
+    }
+
+    public function privacy(Request $request, string $spaceId): JsonResponse
+    {
+        $this->authorizeDevice($request);
+        $space = $request->user()->syncedSpaces()->whereKey($spaceId)->first();
+
+        return response()->json(['generation' => (int) ($space?->privacy_generation ?? 0), 'rules' => array_values($space?->privacy_rules_json ?? [])]);
+    }
+
+    /** Remove only the affected collection's old ciphertext. The encrypted rule contains IDs, never labels. */
+    public function updatePrivacy(Request $request, string $spaceId): JsonResponse
+    {
+        $this->authorizeDevice($request);
+        $validated = $request->validate([
+            'expected_cursor' => 'required|integer|min:0', 'generation' => 'required|integer|min:0',
+            'rule' => 'required|array', 'rule.collectionId' => 'required|uuid', 'rule.changeId' => 'required|uuid',
+            'rule.keyGeneration' => 'required|integer|min:1', 'rule.envelope' => 'required|array',
+        ]);
+        abort_if($this->findPlaintextViolation($validated['rule']) !== null, 422);
+        abort_if(strlen(json_encode($validated['rule'], JSON_THROW_ON_ERROR)) > 131072, 413);
+
+        return DB::transaction(function () use ($request, $spaceId, $validated) {
+            $user = User::whereKey($request->user()->id)->lockForUpdate()->firstOrFail();
+            $space = $user->syncedSpaces()->whereKey($spaceId)->lockForUpdate()->first();
+            if (! $space) {
+                abort_if(SyncedSpace::whereKey($spaceId)->where('user_id', '!=', $user->id)->exists(), 403);
+                abort_unless($validated['expected_cursor'] === 0 && $validated['generation'] === 0, 409);
+                $space = $user->syncedSpaces()->create(['id' => $spaceId, 'storage_mode' => 'arca_sync', 'current_key_version' => 1]);
+            }
+            $collectionId = strtolower($validated['rule']['collectionId']);
+            $rules = $space->privacy_rules_json ?? [];
+            foreach ($rules as $prior) {
+                if (strcasecmp($prior['collectionId'], $collectionId) === 0 && strcasecmp($prior['changeId'], $validated['rule']['changeId']) === 0) {
+                    return response()->json(['generation' => (int) $space->privacy_generation, 'collection_id' => $collectionId, 'verified' => true]);
+                }
+            }
+            abort_unless((int) $space->privacy_generation === $validated['generation'], 409, 'Privacy policy changed. Pull and retry.');
+            $operations = SyncOperation::where('space_id', $spaceId)->where('user_id', $user->id)->get();
+            $latest = (int) ($operations->max('server_cursor') ?? 0);
+            // A retained client cursor can exceed the current max after an earlier scoped purge.
+            abort_if($latest > $validated['expected_cursor'], 409, 'New remote changes must be pulled before privacy deletion.');
+            $purge = [];
+            foreach ($operations as $op) {
+                $routing = $op->encrypted_envelope_json['operation'] ?? [];
+                $routedCollection = $routing['collectionId'] ?? null;
+                abort_unless(is_string($routedCollection), 409, 'Legacy routing cannot verify a scoped deletion.');
+                if (strcasecmp($routedCollection, $collectionId) === 0) {
+                    $purge[] = $op;
+                }
+            }
+            // Cloud attachment object deletion is not shipped. Never claim success while an object may remain.
+            abort_if(EncryptedAttachment::where('space_id', $spaceId)->exists(), 409, 'Attachment deletion requires verified object removal.');
+            $allEntityIds = $operations->pluck('entity_id')->all();
+            // Old snapshots without a classifiable synced record cannot be safely assigned to a collection.
+            abort_if(PublicRecordSnapshot::where('space_id', $spaceId)->where('user_id', $user->id)->whereNotIn('record_id', $allEntityIds)->exists(), 409, 'Legacy public snapshots require explicit removal before scoped privacy deletion.');
+            $recordIds = array_map(fn ($op) => $op->entity_id, $purge);
+            PublicRecordSnapshot::where('space_id', $spaceId)->where('user_id', $user->id)->whereIn('record_id', $recordIds)->delete();
+            $bytes = array_sum(array_map(fn ($op) => (int) $op->ciphertext_bytes, $purge));
+            SyncOperation::whereIn('server_cursor', array_map(fn ($op) => $op->server_cursor, $purge))->delete();
+            $rules = array_values(array_filter($rules, fn ($rule) => strcasecmp($rule['collectionId'], $collectionId) !== 0));
+            $rules[] = $validated['rule'];
+            $space->privacy_generation = (int) $space->privacy_generation + 1;
+            $space->privacy_rules_json = $rules;
+            $space->ciphertext_bytes = max(0, (int) $space->ciphertext_bytes - $bytes);
+            $space->save();
+            $user->remote_storage_bytes_used = max(0, (int) $user->remote_storage_bytes_used - $bytes);
+            $user->save();
+
+            return response()->json(['generation' => (int) $space->privacy_generation, 'collection_id' => $collectionId, 'verified' => true]);
+        });
     }
 
     public function migrateMode(Request $request, string $spaceId): JsonResponse

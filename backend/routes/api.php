@@ -48,6 +48,9 @@ Route::prefix('v1')->middleware('throttle:120,1')->group(function () {
         Route::get('/spaces/{spaceId}/keys', [SyncController::class, 'keys']);
         Route::post('/spaces/{spaceId}/keys', [SyncController::class, 'storeKey']);
 
+        Route::get('/spaces/{spaceId}/privacy', [SyncController::class, 'privacy']);
+        Route::post('/spaces/{spaceId}/privacy', [SyncController::class, 'updatePrivacy']);
+
         // E2EE Sync operations & spaces
         Route::post('/spaces/{spaceId}/register', [SyncController::class, 'registerSpace']);
         Route::post('/spaces/{spaceId}/push', [SyncController::class, 'push']);
