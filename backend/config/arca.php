@@ -45,7 +45,9 @@ return [
     */
     'revenuecat' => [
         'webhook_secret' => env('REVENUECAT_WEBHOOK_SECRET'),
-        'pro_entitlement_id' => env('REVENUECAT_PRO_ENTITLEMENT_ID', 'arca_pro'),
+        'pro_entitlement_id' => env('REVENUECAT_PRO_ENTITLEMENT_ID', 'arca_app_pro'),
+        'server_api_key' => env('REVENUECAT_SERVER_API_KEY'),
+        'environment' => env('REVENUECAT_ENVIRONMENT', 'PRODUCTION'),
     ],
 
     /*

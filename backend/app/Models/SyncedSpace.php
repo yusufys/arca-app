@@ -20,6 +20,8 @@ class SyncedSpace extends Model
         'storage_mode',
         'current_key_version',
         'wrapped_space_keys_json',
+        'privacy_generation',
+        'privacy_rules_json',
         'ciphertext_bytes',
         'deleted_at',
     ];
@@ -29,6 +31,8 @@ class SyncedSpace extends Model
         return [
             'current_key_version' => 'integer',
             'wrapped_space_keys_json' => 'array',
+            'privacy_generation' => 'integer',
+            'privacy_rules_json' => 'array',
             'ciphertext_bytes' => 'integer',
             'deleted_at' => 'datetime',
         ];

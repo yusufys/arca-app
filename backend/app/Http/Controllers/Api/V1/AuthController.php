@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
+use App\Models\ApiSession;
 use App\Models\EnrolledDevice;
 use App\Models\User;
 use Illuminate\Http\JsonResponse;
@@ -30,7 +31,6 @@ class AuthController extends Controller
             'name' => $validated['name'],
             'email' => $validated['email'],
             'password' => Hash::make($validated['password']),
-            'api_token' => Str::random(60),
             'subscription_tier' => 'free',
             'subscription_state' => 'active',
             'remote_storage_bytes_used' => 0,
@@ -49,7 +49,7 @@ class AuthController extends Controller
                 'remote_storage_bytes_used' => $user->remote_storage_bytes_used,
                 'created_at' => $user->created_at,
             ],
-            'api_token' => $user->api_token,
+            'api_token' => ApiSession::issue($user, $associatedDevice?->id),
             'associated_device' => $associatedDevice,
             'default_space_storage_mode' => config('arca.default_space_storage_mode', 'arca_sync'),
             'entitlements' => [
@@ -83,11 +83,6 @@ class AuthController extends Controller
             ], 401);
         }
 
-        if (empty($user->api_token)) {
-            $user->api_token = Str::random(60);
-            $user->save();
-        }
-
         $associatedDevice = $this->associateDeviceWithUser($user, $validated);
 
         return response()->json([
@@ -101,7 +96,7 @@ class AuthController extends Controller
                 'remote_storage_bytes_used' => $user->remote_storage_bytes_used,
                 'created_at' => $user->created_at,
             ],
-            'api_token' => $user->api_token,
+            'api_token' => ApiSession::issue($user, $associatedDevice?->id),
             'associated_device' => $associatedDevice,
             'default_space_storage_mode' => config('arca.default_space_storage_mode', 'arca_sync'),
             'entitlements' => [
@@ -149,7 +144,7 @@ class AuthController extends Controller
                 if (! empty($data['public_key_x25519'])) {
                     $device->public_key_x25519 = $data['public_key_x25519'];
                 }
-                $device->revoked_at = null;
+                abort_if($device->revoked_at, 403, 'This device is revoked.');
                 $device->last_synced_at = now();
                 $device->save();
                 $device->refresh();
@@ -206,6 +201,7 @@ class AuthController extends Controller
     public function destroy(Request $request): JsonResponse
     {
         $user = $request->user();
+
         return DB::transaction(function () use ($user) {
             $user = User::whereKey($user->id)->lockForUpdate()->firstOrFail();
             $receipt = [
@@ -222,6 +218,7 @@ class AuthController extends Controller
             $user->delete();
             $receipt['verifiedZeroRemainingRecords'] = ! DB::table('sync_operations')->where('user_id', $user->id)->exists()
                 && ! DB::table('encrypted_attachments')->where('user_id', $user->id)->exists();
+
             return response()->json($receipt);
         });
     }

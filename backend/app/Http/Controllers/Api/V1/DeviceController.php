@@ -3,10 +3,12 @@
 namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
+use App\Models\ApiSession;
 use App\Models\EnrolledDevice;
 use App\Models\User;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
 class DeviceController extends Controller
@@ -45,7 +47,10 @@ class DeviceController extends Controller
         /** @var User|null $authenticatedUser */
         $authenticatedUser = null;
         if ($bearerToken = $request->bearerToken()) {
-            $authenticatedUser = User::where('api_token', $bearerToken)->first();
+            $session = ApiSession::find(hash('sha256', $bearerToken));
+            abort_unless($session && $session->device_id && $deviceId && strcasecmp($session->device_id, $deviceId) === 0, 403);
+            $authenticatedUser = User::findOrFail($session->user_id);
+            abort_unless($authenticatedUser->enrolledDevices()->whereKey($session->device_id)->whereNull('revoked_at')->exists(), 403);
         }
 
         $device = null;
@@ -113,6 +118,26 @@ class DeviceController extends Controller
 
     public function enroll(Request $request): JsonResponse
     {
+        return DB::transaction(function () use ($request) {
+            $session = ApiSession::whereKey($request->attributes->get('arca_session')->getKey())->lockForUpdate()->firstOrFail();
+            User::whereKey($session->user_id)->lockForUpdate()->firstOrFail();
+            if ($session->device_id) {
+                $id = $request->input('id') ?? $request->input('device_id');
+                abort_unless(is_string($id) && strcasecmp($session->device_id, $id) === 0, 403);
+            }
+            $response = $this->enrollDevice($request);
+            if ($response->isSuccessful()) {
+                $id = $response->getData()->device->id;
+                abort_if($session->device_id && strcasecmp($session->device_id, $id) !== 0, 403);
+                $session->update(['device_id' => $id]);
+            }
+
+            return $response;
+        });
+    }
+
+    private function enrollDevice(Request $request): JsonResponse
+    {
         /** @var User $user */
         $user = $request->user();
 
@@ -136,6 +161,7 @@ class DeviceController extends Controller
         }
 
         if ($existingDevice) {
+            abort_if($existingDevice->revoked_at, 403, 'This device is revoked.');
             if ($deviceToken) {
                 $existingDevice->device_token = $deviceToken;
             }

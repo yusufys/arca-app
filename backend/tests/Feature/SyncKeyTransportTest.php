@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Models\ApiSession;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Str;
@@ -16,11 +17,11 @@ class SyncKeyTransportTest extends TestCase
         $user = User::factory()->create();
         $device = $user->enrolledDevices()->create(['device_name' => 'A', 'platform' => 'ios']);
         $bundle = ['accountId' => $user->uuid, 'makKeyId' => (string) Str::uuid(), 'hkdfSaltBase64' => 'salt', 'wrappedMAKEnvelope' => ['ciphertextBase64' => 'sealed'], 'createdAt' => '2026-11-03T00:00:00Z'];
-        $this->withToken($user->api_token)->withHeader('X-Device-Id', $device->id)
+        $this->withToken(ApiSession::issue($user, $device->id))->withHeader('X-Device-Id', $device->id)
             ->postJson('/api/v1/sync/recovery', $bundle)->assertOk()->assertJsonPath('bundle', $bundle);
         $replacement = array_replace($bundle, ['makKeyId' => (string) Str::uuid()]);
         $this->postJson('/api/v1/sync/recovery', $replacement)->assertOk()->assertJsonPath('bundle', $bundle);
-        $this->withHeader('X-Device-Id', 'not-enrolled')->getJson('/api/v1/sync/recovery')->assertOk()->assertJsonPath('bundle', $bundle);
+        $this->withToken(ApiSession::issue($user))->withHeader('X-Device-Id', 'not-enrolled')->getJson('/api/v1/sync/recovery')->assertOk()->assertJsonPath('bundle', $bundle);
         $this->assertSame($bundle, $user->fresh()->sync_recovery_bundle);
     }
 
@@ -30,7 +31,7 @@ class SyncKeyTransportTest extends TestCase
         $device = $user->enrolledDevices()->create(['device_name' => 'A', 'platform' => 'ios']);
         $spaceId = (string) Str::uuid();
         $key = ['spaceId' => $spaceId, 'keyId' => (string) Str::uuid(), 'keyGeneration' => 1, 'wrappedKeyEnvelope' => ['ciphertextBase64' => 'sealed']];
-        $this->withToken($user->api_token)->withHeader('X-Device-Id', $device->id)->postJson("/api/v1/spaces/$spaceId/keys", $key)->assertOk();
+        $this->withToken(ApiSession::issue($user, $device->id))->withHeader('X-Device-Id', $device->id)->postJson("/api/v1/spaces/$spaceId/keys", $key)->assertOk();
         $this->postJson("/api/v1/spaces/$spaceId/keys", array_replace($key, ['keyId' => (string) Str::uuid()]))->assertConflict();
         $second = array_replace($key, ['keyGeneration' => 2, 'keyId' => (string) Str::uuid()]);
         $this->postJson("/api/v1/spaces/$spaceId/keys", $second)->assertOk();
@@ -43,7 +44,7 @@ class SyncKeyTransportTest extends TestCase
         $device = $user->enrolledDevices()->create(['device_name' => 'A', 'platform' => 'ios']);
         $spaceId = (string) Str::uuid();
         $key = ['spaceId' => $spaceId, 'keyId' => (string) Str::uuid(), 'keyGeneration' => 1, 'wrappedKeyEnvelope' => ['ciphertextBase64' => 'sealed']];
-        $this->withToken($user->api_token)->withHeader('X-Device-Id', $device->id)->postJson("/api/v1/spaces/$spaceId/keys", $key)->assertOk();
+        $this->withToken(ApiSession::issue($user, $device->id))->withHeader('X-Device-Id', $device->id)->postJson("/api/v1/spaces/$spaceId/keys", $key)->assertOk();
         $second = array_replace($key, ['keyGeneration' => 2, 'keyId' => (string) Str::uuid()]);
         $this->postJson("/api/v1/spaces/$spaceId/keys", $second)->assertOk();
 
@@ -61,7 +62,7 @@ class SyncKeyTransportTest extends TestCase
     {
         $user = User::factory()->create();
         $device = $user->enrolledDevices()->create(['device_name' => 'A', 'platform' => 'ios', 'revoked_at' => now()]);
-        $this->withToken($user->api_token)->withHeader('X-Device-Id', $device->id)->getJson('/api/v1/spaces')->assertForbidden();
+        $this->withToken(ApiSession::issue($user, $device->id))->withHeader('X-Device-Id', $device->id)->getJson('/api/v1/spaces')->assertForbidden();
         $this->postJson('/api/v1/sync/recovery', [])->assertForbidden();
         $this->withToken('invalid')->getJson('/api/v1/sync/recovery')->assertUnauthorized();
     }

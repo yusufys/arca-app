@@ -2,14 +2,15 @@
 
 namespace Tests\Feature;
 
+use App\Models\ApiSession;
 use App\Models\AppAnnouncement;
-use App\Models\EncryptedAttachment;
 use App\Models\EnrolledDevice;
 use App\Models\PublicRecordSnapshot;
 use App\Models\SyncedSpace;
 use App\Models\SyncOperation;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
 use Tests\TestCase;
 
@@ -21,7 +22,7 @@ class ArcaBackendApiTest extends TestCase
     {
         $user = User::factory()->create();
         $device = $user->enrolledDevices()->create(['device_name' => 'iPhone', 'platform' => 'ios']);
-        $this->withToken($user->api_token)->deleteJson('/api/v1/account')
+        $this->withToken(ApiSession::issue($user, $device->id))->deleteJson('/api/v1/account')
             ->assertOk()->assertJsonPath('didDeleteEntireAccount', true);
         $this->assertDatabaseMissing('users', ['id' => $user->id]);
         $this->assertDatabaseMissing('enrolled_devices', ['id' => $device->id]);
@@ -35,7 +36,7 @@ class ArcaBackendApiTest extends TestCase
         $device = $owner->enrolledDevices()->create(['device_name' => 'iPhone', 'platform' => 'ios', 'public_key_x25519' => 'original']);
         $body = ['id' => $device->id, 'device_token' => 'untrusted', 'device_name' => 'other', 'platform' => 'ios', 'public_key_x25519' => 'new'];
         $this->postJson('/api/v1/devices/register', $body)->assertForbidden();
-        $this->withToken($attacker->api_token)->postJson('/api/v1/devices/enroll', $body)->assertForbidden();
+        $this->withToken(ApiSession::issue($attacker))->postJson('/api/v1/devices/enroll', $body)->assertForbidden();
         $this->assertSame('original', $device->fresh()->public_key_x25519);
         $this->assertSame($owner->id, $device->fresh()->user_id);
     }
@@ -100,7 +101,7 @@ class ArcaBackendApiTest extends TestCase
             'subscription_tier' => 'free',
             'subscription_state' => 'active',
         ]);
-        $token = $user->api_token;
+        $token = ApiSession::issue($user);
 
         $authHeader = ['Authorization' => "Bearer {$token}"];
 
@@ -117,7 +118,7 @@ class ArcaBackendApiTest extends TestCase
 
         // Enroll device 2 (Free tier - 2nd device)
         $device2Id = (string) Str::uuid();
-        $resp2 = $this->withHeaders($authHeader)->postJson('/api/v1/devices/enroll', [
+        $resp2 = $this->withToken(ApiSession::issue($user))->postJson('/api/v1/devices/enroll', [
             'id' => $device2Id,
             'device_name' => 'Alice Pixel 9 Pro',
             'platform' => 'android',
@@ -127,7 +128,8 @@ class ArcaBackendApiTest extends TestCase
 
         // Attempt device 3 on Free tier (Should be rejected with 403 DEVICE_LIMIT_EXCEEDED)
         $device3Id = (string) Str::uuid();
-        $resp3 = $this->withHeaders($authHeader)->postJson('/api/v1/devices/enroll', [
+        $thirdToken = ApiSession::issue($user);
+        $resp3 = $this->withToken($thirdToken)->postJson('/api/v1/devices/enroll', [
             'id' => $device3Id,
             'device_name' => 'Alice MacBook M3',
             'platform' => 'macos',
@@ -142,7 +144,7 @@ class ArcaBackendApiTest extends TestCase
         $user->update(['subscription_tier' => 'pro']);
 
         // Now device 3 enrollment succeeds
-        $resp3Pro = $this->withHeaders($authHeader)->postJson('/api/v1/devices/enroll', [
+        $resp3Pro = $this->withToken($thirdToken)->postJson('/api/v1/devices/enroll', [
             'id' => $device3Id,
             'device_name' => 'Alice MacBook M3',
             'platform' => 'macos',
@@ -180,7 +182,6 @@ class ArcaBackendApiTest extends TestCase
             'subscription_tier' => 'free',
             'subscription_state' => 'active',
         ]);
-        $token = $user->api_token;
         $deviceId = (string) Str::uuid();
         $spaceId = (string) Str::uuid();
 
@@ -192,6 +193,7 @@ class ArcaBackendApiTest extends TestCase
             'public_key_x25519' => 'sample_pubkey',
         ]);
 
+        $token = ApiSession::issue($user, $deviceId);
         $authHeaders = [
             'Authorization' => "Bearer {$token}",
             'X-Device-Id' => $deviceId,
@@ -305,7 +307,6 @@ class ArcaBackendApiTest extends TestCase
         $user = User::factory()->create([
             'remote_storage_bytes_used' => 2048,
         ]);
-        $token = $user->api_token;
         $deviceId = (string) Str::uuid();
         $spaceId = (string) Str::uuid();
 
@@ -317,6 +318,7 @@ class ArcaBackendApiTest extends TestCase
             'public_key_x25519' => 'pubkey',
         ]);
 
+        $token = ApiSession::issue($user, $deviceId);
         $space = SyncedSpace::create([
             'id' => $spaceId,
             'user_id' => $user->id,
@@ -402,16 +404,25 @@ class ArcaBackendApiTest extends TestCase
             'remote_storage_bytes_used' => 0,
         ]);
         $webhookSecret = 'webhook-test-only';
-        config(['arca.revenuecat.webhook_secret' => $webhookSecret]);
+        config(['arca.revenuecat.webhook_secret' => $webhookSecret, 'arca.revenuecat.server_api_key' => 'test-server-key',
+            'arca.revenuecat.pro_entitlement_id' => 'arca_app_pro', 'arca.revenuecat.environment' => 'PRODUCTION']);
+        $expires = now()->addMonth()->toIso8601String();
+        $paid = ['entitlements' => ['arca_app_pro' => ['product_identifier' => 'monthly', 'expires_date' => $expires]],
+            'subscriptions' => ['monthly' => ['is_sandbox' => false]]];
+        $grace = $paid;
+        $grace['subscriptions']['monthly']['billing_issues_detected_at'] = now()->toIso8601String();
+        Http::fakeSequence()
+            ->push(['subscriber' => $paid])->push(['subscriber' => $grace])->push(['subscriber' => ['entitlements' => []]]);
         $webhookHeader = ['Authorization' => "Bearer {$webhookSecret}"];
 
         // 5a. INITIAL_PURCHASE webhook -> upgrades to Pro active
         $purchaseResp = $this->withHeaders($webhookHeader)->postJson('/api/v1/webhooks/revenuecat', [
             'event' => [
                 'id' => (string) Str::uuid(),
+                'environment' => 'PRODUCTION',
                 'type' => 'INITIAL_PURCHASE',
                 'app_user_id' => $user->uuid,
-                'product_id' => 'arca_pro_monthly',
+                'product_id' => 'monthly',
                 'expiration_at_ms' => now()->addMonth()->timestamp * 1000,
             ],
         ]);
@@ -422,15 +433,16 @@ class ArcaBackendApiTest extends TestCase
         $user->refresh();
         $this->assertEquals('pro', $user->subscription_tier);
         $this->assertEquals('active', $user->subscription_state);
-        $this->assertEquals('arca_pro_monthly', $user->subscription_product_id);
+        $this->assertEquals('monthly', $user->subscription_product_id);
 
         // 5b. BILLING_ISSUE webhook -> transitions to billing_grace_period
         $billingResp = $this->withHeaders($webhookHeader)->postJson('/api/v1/webhooks/revenuecat', [
             'event' => [
                 'id' => (string) Str::uuid(),
+                'environment' => 'PRODUCTION',
                 'type' => 'BILLING_ISSUE',
                 'app_user_id' => $user->uuid,
-                'product_id' => 'arca_pro_monthly',
+                'product_id' => 'monthly',
             ],
         ]);
 
@@ -443,6 +455,7 @@ class ArcaBackendApiTest extends TestCase
         $expResp = $this->withHeaders($webhookHeader)->postJson('/api/v1/webhooks/revenuecat', [
             'event' => [
                 'id' => (string) Str::uuid(),
+                'environment' => 'PRODUCTION',
                 'type' => 'EXPIRATION',
                 'app_user_id' => $user->uuid,
             ],
@@ -472,8 +485,9 @@ class ArcaBackendApiTest extends TestCase
         ]);
         $spaceId = (string) Str::uuid();
 
+        $token = ApiSession::issue($user, $deviceId);
         $pushWhileExpired = $this->withHeaders([
-            'Authorization' => "Bearer {$user->api_token}",
+            'Authorization' => "Bearer {$token}",
             'X-Device-Id' => $deviceId,
         ])->postJson("/api/v1/spaces/{$spaceId}/push", [
             'operations' => [
@@ -500,7 +514,7 @@ class ArcaBackendApiTest extends TestCase
             ->assertJsonPath('canLocalExport', true);
 
         // Test pulling while expired: returns 200 OK
-        $pullWhileExpired = $this->withHeader('Authorization', "Bearer {$user->api_token}")
+        $pullWhileExpired = $this->withHeader('Authorization', "Bearer {$token}")
             ->getJson("/api/v1/spaces/{$spaceId}/pull?since_cursor=0");
 
         $pullWhileExpired->assertStatus(200);
@@ -620,7 +634,8 @@ class ArcaBackendApiTest extends TestCase
     public function test_revocable_public_record_snapshots_lifecycle_and_revocation(): void
     {
         $user = User::factory()->create();
-        $authHeader = ['Authorization' => "Bearer {$user->api_token}"];
+        $device = $user->enrolledDevices()->create(['device_name' => 'A', 'platform' => 'ios']);
+        $authHeader = ['Authorization' => 'Bearer '.ApiSession::issue($user, $device->id)];
 
         $spaceId = (string) Str::uuid();
         $recordId = (string) Str::uuid();
@@ -677,8 +692,8 @@ class ArcaBackendApiTest extends TestCase
             'subscription_tier' => 'free',
             'remote_storage_bytes_used' => 0,
         ]);
-        $token = $user->api_token;
-        $authHeader = ['Authorization' => "Bearer {$token}"];
+        $device = $user->enrolledDevices()->create(['device_name' => 'A', 'platform' => 'ios']);
+        $authHeader = ['Authorization' => 'Bearer '.ApiSession::issue($user, $device->id)];
 
         $spaceId = (string) Str::uuid();
         $recordId = (string) Str::uuid();
@@ -826,7 +841,7 @@ class ArcaBackendApiTest extends TestCase
         ])->assertStatus(201);
 
         // Free tier has 2 active devices (Pixel + iPhone); enrolling a 3rd will exceed quota
-        $token = $registerUserResp->json('api_token');
+        $token = ApiSession::issue(User::findOrFail($registeredUserId));
         $overQuotaEnrollResp = $this->withHeader('Authorization', "Bearer {$token}")
             ->postJson('/api/v1/devices/enroll', [
                 'id' => $macDeviceId,
