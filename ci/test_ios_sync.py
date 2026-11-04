@@ -2,6 +2,7 @@
 import argparse
 import json
 import os
+import platform
 import secrets
 import shutil
 import signal
@@ -61,7 +62,9 @@ def simulator_build(work):
                     }""") + '\n' + (REPO / 'ci/SyncAcceptance.swift').read_text())
     subprocess.run(['xcodebuild','-project',str(project/'Arca.xcodeproj'),'-scheme','Arca',
                     '-configuration','Debug','-destination','generic/platform=iOS Simulator','-derivedDataPath',str(work/'build'),
-                    'CODE_SIGNING_ALLOWED=YES','build'], check=True)
+                    # Both disposable simulators run on this Mac. Building the SDK for the other CPU
+                    # architecture doubles compilation work without testing another destination.
+                    'ARCHS='+platform.machine(), '-jobs','3','-quiet','CODE_SIGNING_ALLOWED=YES','build'], check=True)
     return work / 'build/Build/Products/Debug-iphonesimulator/Arca.app'
 
 def simulator_devices(app, ids):
