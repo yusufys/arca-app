@@ -366,7 +366,7 @@ public struct SettingsHubScreenView: View {
                                     icon: "key.fill",
                                     tint: ArcaTheme.plumSensitive,
                                     title: "End-to-End Encryption & Recovery Key",
-                                    subtitle: "Zero-knowledge architecture & server metadata"
+                                    subtitle: "Recovery phrase and sync privacy"
                                 )
                             }
                             .buttonStyle(.plain)
@@ -893,6 +893,9 @@ public struct PrivacyAndEncryptionDetailsView: View {
     @Bindable var viewModel: ArcaAppViewModel
     @Environment(\.colorScheme) private var colorScheme
 
+    @Environment(\.scenePhase) private var scenePhase
+    @ViewState private var showingRecoveryPhrase = false
+
     public var body: some View {
         ScrollView(showsIndicators: false) {
             VStack(alignment: .leading, spacing: 18) {
@@ -907,16 +910,20 @@ public struct PrivacyAndEncryptionDetailsView: View {
                     icon: "key.fill",
                     iconTint: ArcaTheme.warmAmber
                 ) {
-                    Text(viewModel.recoveryKeyPhrase)
-                        .font(.system(size: 12, weight: .semibold, design: .monospaced))
-                        .padding(12)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(RoundedRectangle(cornerRadius: 10).fill(ArcaTheme.warmAmber.opacity(0.10)))
+                    Button(showingRecoveryPhrase ? "Hide recovery phrase" : "Show recovery phrase") {
+                        showingRecoveryPhrase.toggle()
+                    }
+                    if showingRecoveryPhrase {
+                        Text(viewModel.recoveryKeyPhrase)
+                            .font(.system(.body, design: .monospaced))
+                            .privacySensitive()
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
                 }
 
-                ArcaSectionCard(title: "What Arca Servers Never Receive", icon: "eye.slash.fill", iconTint: ArcaTheme.secondaryEmerald) {
-                    Text("• Record field values or notes\n• Collection names or custom field labels\n• Attachment filenames or file contents\n• Usable Master Account Keys or Space Data Encryption Keys")
-                        .font(.system(size: 12))
+                ArcaSectionCard(title: "Private sync content", icon: "eye.slash.fill", iconTint: ArcaTheme.secondaryEmerald) {
+                    Text("Record values, collection schemas and field labels are encrypted on this device before syncing. Forge receives encrypted changes and wrapped recovery keys. File attachments imported into Local-Only Spaces stay on this device unless you export them.")
+                        .font(.body)
                         .foregroundStyle(.secondary)
                 }
 
@@ -929,6 +936,10 @@ public struct PrivacyAndEncryptionDetailsView: View {
             .padding(18)
         }
         .background(ArcaTheme.canvasBackground(for: colorScheme))
+        .onChange(of: scenePhase) { _, phase in
+            if phase != .active { showingRecoveryPhrase = false }
+        }
+        .onDisappear { showingRecoveryPhrase = false }
         #if os(iOS)
         .toolbar(.hidden, for: .navigationBar)
         #endif

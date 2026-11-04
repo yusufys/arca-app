@@ -10,7 +10,7 @@ App Store Connect record: **Arca - Personal Records**, Apple ID **6830898859**, 
 - Support: https://arca-api.on-forge.com/support.html · Privacy: https://arca-api.on-forge.com/privacy.html · Support and beta feedback: hi@kawkbi.com
 - Release note: First iOS release. Save, search and organize records on your iPhone, protect sensitive data, and recover synced collections on a second device.
 - Review access: Provide a disposable working review account and its recovery phrase in App Store Connect’s private review notes when cloud testing is required. Confirm the backend is reachable throughout review. Keep sign-in details out of Git.
-- Before submission: supply real app screenshots for the supported device families; finish the age-rating and content-rights questionnaires, regional business details, privacy disclosures, and the encryption assessment for the final binary. Compare connected account identifiers, email, purchase history, cloud operations and RevenueCat diagnostic data with the actual configuration. Document the intended storefronts, pricing and renewal terms. Apple and RevenueCat credentials belong in their own consoles.
+- Before submission: use the [English iPhone and iPad screenshots](artifacts/app-store-screenshots/en-US/); finish the age-rating and content-rights questionnaires, regional business details, privacy disclosures, and the encryption assessment for the final binary. Compare connected account identifiers, email, purchase history, cloud operations and RevenueCat diagnostic data with the actual configuration. Document the intended storefronts, pricing and renewal terms. Apple and RevenueCat credentials belong in their own consoles.
 
 ## What to test in TestFlight
 

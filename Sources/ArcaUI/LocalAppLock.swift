@@ -62,12 +62,12 @@ public final class LocalAppLock {
         let generation = authenticationGeneration
         defer { isAuthenticating = false }
         do {
-            let passed = try await authenticate(reason)
+            let passed = try await authenticate(AppLanguage.preferred.localized(reason))
             guard generation == authenticationGeneration, !isInBackground else { return false }
-            if !passed { errorMessage = "Authentication did not complete. Try again." }
+            if !passed { errorMessage = AppLanguage.preferred.localized("Authentication did not complete. Try again.") }
             return passed
         } catch {
-            errorMessage = "Authentication did not complete. Unlock with your device credentials and try again."
+            errorMessage = AppLanguage.preferred.localized("Authentication did not complete. Unlock with your device credentials and try again.")
             return false
         }
     }

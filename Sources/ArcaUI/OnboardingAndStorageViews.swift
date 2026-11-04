@@ -154,7 +154,7 @@ public struct OnboardingContainerView: View {
                             icon: "lock.shield.fill",
                             tint: ArcaTheme.plumSensitive,
                             title: "Per-Space Privacy Control",
-                            subtitle: "Sync general spaces across devices with client-side encryption, while keeping sensitive spaces strictly on this device."
+                            subtitle: "Choose whether a Space syncs. In a synced Space, you can keep a sensitive field or collection on this device."
                         )
                     }
                 }
@@ -399,13 +399,13 @@ public struct StorageModeComparisonStepView: View {
 
                 storageModeOptionCard(
                     mode: .arcaSync,
-                    badge: "Cloud DB — Default",
+                    badge: "Recommended",
                     icon: "arrow.triangle.2.circlepath.icloud.fill",
                     tint: ArcaTheme.accent,
-                    title: "Arca Sync (Cloud DB — Default)",
+                    title: "Arca Sync",
                     bullets: [
-                        "Default mode for new Spaces. Records live locally first and synchronize seamlessly across devices when online.",
-                        "End-to-end encrypted on your device—Arca servers never see plaintext records, schemas, or encryption keys.",
+                        "Save records on your device and sync changes after connecting your Arca account.",
+                        "Your device encrypts record changes before upload. Forge stores encrypted changes and wrapped keys for recovery.",
                         "Free accounts support up to 2 active devices; Pro expands to 10 devices."
                     ]
                 )
@@ -417,9 +417,9 @@ public struct StorageModeComparisonStepView: View {
                     tint: ArcaTheme.secondaryEmerald,
                     title: "Local-Only (On This Device)",
                     bullets: [
-                        "Always-available option for users who want records never to leave their phone.",
+                        "Your records stay on this device unless you choose to export them.",
                         "You can use a Local-Only Space without an account.",
-                        "Full offline SQLite storage, FTS5 search, insights, and manual .arcaarchive backups included free."
+                        "Search, insights and manual backups work offline."
                     ]
                 )
 
@@ -436,7 +436,7 @@ public struct StorageModeComparisonStepView: View {
                                 Text("I understand and accept encrypted cloud storage for synced Spaces")
                                     .font(.system(size: 13, weight: .semibold, design: .rounded))
                                     .foregroundStyle(.primary)
-                                Text("No records upload until you enable Arca Sync. Server-visible metadata is limited to account ID, device count, ciphertext byte size, and request timestamps.")
+                                Text("The sync service handles your account details, enrolled devices and their public keys, record identifiers, encrypted sizes and sync activity.")
                                     .font(.system(size: 11))
                                     .foregroundStyle(.secondary)
                                     .multilineTextAlignment(.leading)
@@ -454,6 +454,7 @@ public struct StorageModeComparisonStepView: View {
                         )
                     }
                     .buttonStyle(.plain)
+                    .accessibilityAddTraits(acceptedCloudTerms ? .isSelected : [])
                 }
 
                 if onBack != nil || onContinue != nil {
@@ -544,6 +545,7 @@ public struct StorageModeComparisonStepView: View {
             .shadow(color: isSelected ? tint.opacity(0.12) : .clear, radius: 8, x: 0, y: 4)
         }
         .buttonStyle(.plain)
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 }
 

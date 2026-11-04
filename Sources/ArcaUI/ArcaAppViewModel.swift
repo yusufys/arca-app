@@ -40,7 +40,9 @@ public final class ArcaAppViewModel {
 
     // MARK: - App Preferences & Navigation State
     public var hasCompletedOnboarding: Bool = false
-    public var language: AppLanguage = .english
+    public var language: AppLanguage = .preferred {
+        didSet { UserDefaults.standard.set(language.rawValue, forKey: "arca.language") }
+    }
     public var appearanceMode: AppAppearanceMode = .light
     public let appLock: LocalAppLock
     public var biometricLockEnabled: Bool { appLock.enabled }
@@ -76,6 +78,7 @@ public final class ArcaAppViewModel {
     public var isProSubscriber: Bool = false
 
     // MARK: - Underlying Engines
+    private let consentPasswordIdentifier: String
     public let rootDirectoryURL: URL
     public let catalogStore: CatalogStore
     private var spaceStores: [UUID: SpaceStore] = [:]
@@ -90,14 +93,16 @@ public final class ArcaAppViewModel {
     public init(rootDirectoryURL: URL? = nil, startWithCompletedOnboarding: Bool = false) {
         let baseDir = rootDirectoryURL ?? CatalogStore.defaultBaseDirectoryURL()
         self.rootDirectoryURL = baseDir
-        self.appLock = LocalAppLock(preferenceKey: "arca.appLock." + baseDir.standardizedFileURL.path)
+        // iOS may relocate the data container on update. The default vault keeps stable identifiers.
+        let namespace = rootDirectoryURL == nil ? "default" : SHA256.hash(data: Data(baseDir.standardizedFileURL.path.utf8)).map { String(format: "%02x", $0) }.joined()
+        self.consentPasswordIdentifier = "consent-password." + namespace
+        self.appLock = rootDirectoryURL == nil ? LocalAppLock() : LocalAppLock(preferenceKey: "arca.appLock." + baseDir.standardizedFileURL.path)
         self.syncBackend = LaravelArcaSyncBackend(apiToken: nil)
         self.recoveryKeyPhrase = ""
         var startupError: String?
         var restoredBearer: String?
         do {
             if rootDirectoryURL == nil { try Self.preserveLegacyWorkspace(at: baseDir) }
-            let namespace = rootDirectoryURL == nil ? "default" : SHA256.hash(data: Data(baseDir.standardizedFileURL.path.utf8)).map { String(format: "%02x", $0) }.joined()
             let identity = try WorkspaceIdentityStore(directory: baseDir, namespace: namespace)
             self.identityStore = identity
             restoredBearer = identity.cloudSession?.bearer
@@ -1014,10 +1019,6 @@ public final class ArcaAppViewModel {
 
     public var purchaseAccountID: String? {
         cloudAccountConnected ? accountId : nil
-    }
-
-    private var consentPasswordIdentifier: String {
-        "consent-password." + ClientCryptoEngine.sha256Hex(of: Data(rootDirectoryURL.standardizedFileURL.path.utf8))
     }
 
     public var hasConsentMasterPassword: Bool {

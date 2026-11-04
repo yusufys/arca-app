@@ -670,24 +670,29 @@ public struct AddEditRecordSheetView: View {
             case .failure(let error): saveError = error.localizedDescription
             }
         }
+        .alert(isPresented: Binding(get: { saveError != nil }, set: { if !$0 { saveError = nil } })) {
+            Alert(title: Text(ArcaStrings.text("record.checkInput", language: viewModel.language)),
+                  message: Text(saveError ?? ""),
+                  dismissButton: .default(Text(ArcaStrings.text("common.ok", language: viewModel.language))))
+        }
     }
 
     private func populateInitialDraft() {
         if let rec = existingRecord {
             draftValues = rec.values
             isFavorite = rec.isFavorite
-            for field in schema.activeFields {
-                if case .currency(let money) = rec.values[field.id] {
-                    currencyTextInputs[field.id] = "\(money.decimalValue)"
-                } else if case .number(let n) = rec.values[field.id] {
-                    numberTextInputs[field.id] = "\(n)"
-                }
-            }
         } else {
             for field in schema.activeFields {
                 if let def = field.defaultValue {
                     draftValues[field.id] = def
                 }
+            }
+        }
+        for field in schema.activeFields {
+            if case .currency(let money) = draftValues[field.id] {
+                currencyTextInputs[field.id] = LocalizedNumericInput.editingText(for: money, locale: viewModel.language.locale)
+            } else if case .number(let number) = draftValues[field.id] {
+                numberTextInputs[field.id] = LocalizedNumericInput.editingText(for: number, locale: viewModel.language.locale)
             }
         }
     }
@@ -731,7 +736,8 @@ public struct AddEditRecordSheetView: View {
                     },
                     set: { draftValues[field.id] = $0.isEmpty ? .null : .longText($0) }
                 ))
-                .font(.system(size: 14))
+                .accessibilityLabel(Text(field.label))
+                .font(.body)
                 .frame(minHeight: 74)
                 .padding(8)
                 .background(
@@ -741,12 +747,12 @@ public struct AddEditRecordSheetView: View {
 
             case .number:
                 ArcaStyledTextField(
-                    "0",
+                    field.label,
                     text: Binding(
                         get: { numberTextInputs[field.id] ?? "" },
                         set: { str in
                             numberTextInputs[field.id] = str
-                            if let parsed = Double(str.trimmingCharacters(in: .whitespacesAndNewlines)) {
+                            if let parsed = LocalizedNumericInput.number(str, locale: viewModel.language.locale) {
                                 draftValues[field.id] = .number(parsed)
                             } else if str.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                                 draftValues[field.id] = .null
@@ -766,12 +772,12 @@ public struct AddEditRecordSheetView: View {
                         .background(RoundedRectangle(cornerRadius: 10).fill(ArcaTheme.accent.opacity(0.12)))
 
                     ArcaStyledTextField(
-                        "0.00",
+                        "\(field.label) (\(field.validation.defaultCurrencyCode))",
                         text: Binding(
                             get: { currencyTextInputs[field.id] ?? "" },
                             set: { str in
                                 currencyTextInputs[field.id] = str
-                                if let money = MoneyValue(decimalString: str, currencyCode: field.validation.defaultCurrencyCode) {
+                                if let money = LocalizedNumericInput.money(str, currencyCode: field.validation.defaultCurrencyCode, locale: viewModel.language.locale) {
                                     draftValues[field.id] = .currency(money)
                                 } else if str.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                                     draftValues[field.id] = .null
@@ -792,7 +798,7 @@ public struct AddEditRecordSheetView: View {
                     ),
                     displayedComponents: [.date]
                 ) {
-                    Text("Calendar Date")
+                    Text(field.label)
                         .font(.system(size: 13, weight: .medium))
                 }
 
@@ -807,7 +813,7 @@ public struct AddEditRecordSheetView: View {
                     ),
                     displayedComponents: [.date, .hourAndMinute]
                 ) {
-                    Text("Date & Time")
+                    Text(field.label)
                         .font(.system(size: 13, weight: .medium))
                 }
 
@@ -841,6 +847,7 @@ public struct AddEditRecordSheetView: View {
                                     .foregroundStyle(selected ? .white : .primary)
                             }
                             .buttonStyle(.plain)
+                            .accessibilityAddTraits(selected ? .isSelected : [])
                         }
                     }
                 }
@@ -867,6 +874,7 @@ public struct AddEditRecordSheetView: View {
                                     .foregroundStyle(selected ? .white : .primary)
                             }
                             .buttonStyle(.plain)
+                            .accessibilityAddTraits(selected ? .isSelected : [])
                         }
                     }
                 }
@@ -886,6 +894,8 @@ public struct AddEditRecordSheetView: View {
                                 .foregroundStyle(star <= currentRating ? ArcaTheme.warmAmber : Color.secondary.opacity(0.35))
                         }
                         .buttonStyle(.plain)
+                        .accessibilityLabel(Text("\(field.label), \(star) / \(field.validation.maxRating)"))
+                        .accessibilityAddTraits(star == currentRating ? .isSelected : [])
                     }
                 }
                 .padding(.vertical, 4)
@@ -929,9 +939,25 @@ public struct AddEditRecordSheetView: View {
 
     private func saveDraft() {
         guard !saving else { return }
+        for field in schema.activeFields {
+            if field.type == .number, let text = numberTextInputs[field.id],
+               !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+               LocalizedNumericInput.number(text, locale: viewModel.language.locale) == nil {
+                saveError = String(format: ArcaStrings.text("record.invalidNumber", language: viewModel.language), field.label)
+                return
+            }
+            if field.type == .currency, let text = currencyTextInputs[field.id],
+               !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+               LocalizedNumericInput.money(text, currencyCode: field.validation.defaultCurrencyCode, locale: viewModel.language.locale) == nil {
+                saveError = String(format: ArcaStrings.text("record.invalidAmount", language: viewModel.language), field.label)
+                return
+            }
+        }
+        saveError = nil
         let errs = SchemaEngine.validate(values: draftValues, against: schema)
         if !errs.isEmpty {
             validationErrors = errs
+            saveError = errs.map { $0.errorDescription ?? $0.reason }.joined(separator: "\n")
             return
         }
         saving = true
@@ -962,6 +988,7 @@ public struct RecordDetailView: View {
     @ViewState private var showingLocalQRSheet = false
     @ViewState private var showingPublicSnapshotSheet = false
     @ViewState private var selectedSnapshotFieldIds: Set<UUID> = []
+    @ViewState private var pendingRecordDeletion: RecordDeletionTarget?
 
     private var record: RecordItem? {
         viewModel.record(for: recordId)
@@ -1140,10 +1167,7 @@ public struct RecordDetailView: View {
                                 #endif
 
                                 Button {
-                                    Task {
-                                        await viewModel.deleteRecord(id: rec.id)
-                                        dismiss()
-                                    }
+                                    pendingRecordDeletion = RecordDeletionTarget(id: rec.id, title: rec.title(using: liveSchema))
                                 } label: {
                                     Label("Delete Record", systemImage: "trash")
                                 }
@@ -1174,6 +1198,24 @@ public struct RecordDetailView: View {
                     .foregroundStyle(.secondary)
             }
         }
+        .alert(item: $pendingRecordDeletion) { target in
+            Alert(
+                title: Text(String(format: ArcaStrings.text("delete.recordTitle", language: viewModel.language), target.title)),
+                message: Text(ArcaStrings.text("delete.recordBody", language: viewModel.language)),
+                primaryButton: .destructive(Text(ArcaStrings.text("common.delete", language: viewModel.language))) {
+                    Task {
+                        await viewModel.deleteRecord(id: target.id)
+                        dismiss()
+                    }
+                },
+                secondaryButton: .cancel(Text(ArcaStrings.text("common.cancel", language: viewModel.language)))
+            )
+        }
+    }
+
+    private struct RecordDeletionTarget: Identifiable {
+        let id: UUID
+        let title: String
     }
 
     private func localQRSheet(for rec: RecordItem) -> some View {

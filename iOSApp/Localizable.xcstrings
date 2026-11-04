@@ -561,6 +561,326 @@
           }
         }
       }
+    },
+    "Unlock Arca": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Arca kilidini aç"
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "فتح Arca"
+          }
+        }
+      }
+    },
+    "Enable App Lock for your Arca records.": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Arca kayıtlarınız için uygulama kilidini etkinleştirin."
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "فعّل قفل التطبيق لحماية سجلات Arca."
+          }
+        }
+      }
+    },
+    "Turn off Arca App Lock.": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Arca uygulama kilidini kapatın."
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "أوقف قفل تطبيق Arca."
+          }
+        }
+      }
+    },
+    "Unlock your Arca records.": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Arca kayıtlarınızın kilidini açın."
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "افتح سجلات Arca."
+          }
+        }
+      }
+    },
+    "Authentication did not complete. Try again.": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Kimlik doğrulama tamamlanmadı. Tekrar deneyin."
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "لم تكتمل المصادقة. حاول مرة أخرى."
+          }
+        }
+      }
+    },
+    "Authentication did not complete. Unlock with your device credentials and try again.": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Kimlik doğrulama tamamlanmadı. Cihazınızın kilidini açıp tekrar deneyin."
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "لم تكتمل المصادقة. افتح قفل جهازك ثم حاول مرة أخرى."
+          }
+        }
+      }
+    },
+    "Show recovery phrase": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Kurtarma ifadesini göster"
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "إظهار عبارة الاسترداد"
+          }
+        }
+      }
+    },
+    "Hide recovery phrase": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Kurtarma ifadesini gizle"
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "إخفاء عبارة الاسترداد"
+          }
+        }
+      }
+    },
+    "Clear %@": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ alanını temizle"
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "مسح %@"
+          }
+        }
+      }
+    },
+    "Sign in": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Giriş yap"
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "تسجيل الدخول"
+          }
+        }
+      }
+    },
+    "Create account": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hesap oluştur"
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "إنشاء حساب"
+          }
+        }
+      }
+    },
+    "Choose Starter Collections": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Başlangıç koleksiyonlarını seçin"
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "اختر مجموعات البداية"
+          }
+        }
+      }
+    },
+    "These demo collections contain fictional records so you can try Arca.": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Arca’yı deneyebilmeniz için bu örnek koleksiyonlar kurgusal kayıtlar içerir."
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "تحتوي مجموعات العرض هذه على سجلات خيالية لتجربة Arca."
+          }
+        }
+      }
+    },
+    "Set Up Arca Sync & Recovery Key": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Arca Sync ve kurtarma anahtarını ayarlayın"
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "إعداد مزامنة Arca ومفتاح الاسترداد"
+          }
+        }
+      }
+    },
+    "Your account password signs you in, while your Recovery Key decrypts your records if you ever lose all enrolled devices.": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hesap parolanızla giriş yaparsınız. Kayıtlı cihazlarınızın tümünü kaybederseniz kayıtlarınızın şifresini kurtarma anahtarınız çözer."
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "تستخدم كلمة مرور حسابك لتسجيل الدخول. وإذا فقدت جميع أجهزتك المسجّلة، يفك مفتاح الاسترداد تشفير سجلاتك."
+          }
+        }
+      }
+    },
+    "Save this recovery key before continuing. You will need it on your next device.": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Devam etmeden önce kurtarma anahtarını saklayın. Yeni cihazınızda bu anahtara ihtiyacınız olacak."
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "احفظ مفتاح الاسترداد قبل المتابعة. ستحتاج إليه عند استخدام جهاز آخر."
+          }
+        }
+      }
+    },
+    "Back": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Geri"
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "رجوع"
+          }
+        }
+      }
+    },
+    "Continue": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Devam et"
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "متابعة"
+          }
+        }
+      }
+    },
+    "I understand and accept encrypted cloud storage for synced Spaces": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Eşzamanlanan alanlar için şifreli bulut depolamayı anlıyor ve kabul ediyorum"
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "أفهم وأوافق على تخزين المساحات المتزامنة مشفّرة في السحابة"
+          }
+        }
+      }
+    },
+    "The sync service handles your account details, enrolled devices and their public keys, record identifiers, encrypted sizes and sync activity.": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Eşzamanlama hizmeti hesap bilgilerinizi, kayıtlı cihazları ve açık anahtarlarını, kayıt kimliklerini, şifreli veri boyutlarını ve eşzamanlama etkinliğini işler."
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "تعالج خدمة المزامنة تفاصيل حسابك وأجهزتك المسجّلة ومفاتيحها العامة ومعرّفات السجلات وأحجام البيانات المشفّرة ونشاط المزامنة."
+          }
+        }
+      }
     }
   }
 }

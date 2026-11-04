@@ -1,0 +1,121 @@
+{
+  "date": "2026-11-05",
+  "sdk": "RevenueCat iOS 5.102.0",
+  "billing_device": "iPhone 18 Pro Max simulator, iOS 27.2",
+  "environment": "RevenueCat Test Store",
+  "entitlement": "arca_app_pro",
+  "native_ui_results": {
+    "monthly_purchase": "passed",
+    "monthly_cancel_keeps_free": "passed",
+    "monthly_cold_launch_restore": "passed",
+    "yearly_purchase": "passed",
+    "yearly_cold_launch_restore": "passed",
+    "lifetime_purchase": "passed",
+    "lifetime_no_expiration": "passed",
+    "lifetime_cold_launch_restore": "passed"
+  },
+  "independent_customer_verification": "RevenueCat responses confirmed test_store and is_sandbox=true for all three products. No Apple transactions.",
+  "limitations": [
+    "Test Store restore returns current CustomerInfo; Apple receipt restore and TestFlight purchases remain unverified.",
+    "The current default offering has no published paywall. SDK fallback displayed all three products for these tests.",
+    "These checks do not verify production webhook delivery or server quota activation."
+  ],
+  "screenshots": [
+    {
+      "file": "en-US/ipad-13/01-home.png",
+      "pixels": [
+        2064,
+        2752
+      ],
+      "sha256": "35fce0e47bafdfca7ca87ec9701cdf33821c4bd0565bea88ae7538f77f3323d1",
+      "visually_verified": true
+    },
+    {
+      "file": "en-US/ipad-13/02-warranties.png",
+      "pixels": [
+        2064,
+        2752
+      ],
+      "sha256": "b389c66181396b9a92d18b13fe34751674b22ed228bb1f7af32d3b6925921268",
+      "visually_verified": true
+    },
+    {
+      "file": "en-US/ipad-13/04-insights.png",
+      "pixels": [
+        2064,
+        2752
+      ],
+      "sha256": "20400d52cc3928dd5643ace9598a0eeb165ca04509a20fd60bbdbce12b4102dd",
+      "visually_verified": true
+    },
+    {
+      "file": "en-US/ipad-13/05-vehicles.png",
+      "pixels": [
+        2064,
+        2752
+      ],
+      "sha256": "b768054a8580a43ea18ffce0e35e3dae7c1c5f71548155c35f4f9d9613e92341",
+      "visually_verified": true
+    },
+    {
+      "file": "en-US/iphone-6.9/01-home.png",
+      "pixels": [
+        1320,
+        2868
+      ],
+      "sha256": "d33ab4cc22b0307e11ff7a6cd8951870d654c37d6379a88c302aefabd77e08c6",
+      "visually_verified": true
+    },
+    {
+      "file": "en-US/iphone-6.9/02-warranties.png",
+      "pixels": [
+        1320,
+        2868
+      ],
+      "sha256": "522b2fa433dba8cc22e0b4e132c3deb0d811aa6d888182ade3ef5aa2ebd9b47e",
+      "visually_verified": true
+    },
+    {
+      "file": "en-US/iphone-6.9/03-warranty-detail.png",
+      "pixels": [
+        1320,
+        2868
+      ],
+      "sha256": "a81e27e7a8d27e1b5b6afc715a22347d63cf7716c8c1003c1b8b477a568ff465",
+      "visually_verified": true
+    },
+    {
+      "file": "en-US/iphone-6.9/04-insights.png",
+      "pixels": [
+        1320,
+        2868
+      ],
+      "sha256": "a08005862aa9ac00930e7283048543de1bf8d475500cf285f3747bf88f6b819a",
+      "visually_verified": true
+    },
+    {
+      "file": "en-US/iphone-6.9/05-vehicles.png",
+      "pixels": [
+        1320,
+        2868
+      ],
+      "sha256": "7c6080d6795557b3a34833989932bdafae4a2ad8fcce5363dc9b2241606de97d",
+      "visually_verified": true
+    }
+  ],
+  "branding": {
+    "palette_source": "Sources/ArcaUI/DesignSystemAndLocalization.swift",
+    "copied_source_matches_current_production": true,
+    "main_accent_rgb": [
+      0.122,
+      0.365,
+      0.247
+    ],
+    "content": "Real production SwiftUI with fictional seeded records. No mock UI, customer IDs or account IDs in screenshots."
+  },
+  "screenshot_checks": {
+    "iphone": "Final capture passed with Insights heading and selected tab asserted. All five images visually verified.",
+    "ipad": "13-inch simulator flow passed with existing compiled products. Four images visually verified. Detail image omitted because DEBUG-only public snapshot action was visible.",
+    "production_ui": "App record screens and palette are production SwiftUI. Only fixture seeding and read-only SDK observation were added to temporary source copy."
+  }
+}

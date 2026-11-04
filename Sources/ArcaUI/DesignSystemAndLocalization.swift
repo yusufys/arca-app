@@ -12,6 +12,18 @@ public enum AppLanguage: String, CaseIterable, Codable, Sendable, Identifiable {
     case arabic = "ar"
     case turkish = "tr"
 
+    static var preferred: AppLanguage {
+        if let stored = UserDefaults.standard.string(forKey: "arca.language"),
+           let language = AppLanguage(rawValue: stored) { return language }
+        let match = Bundle.preferredLocalizations(from: AppLanguage.allCases.map(\.rawValue)).first
+        return match.flatMap(AppLanguage.init(rawValue:)) ?? .english
+    }
+
+    func localized(_ english: String) -> String {
+        guard let path = Bundle.main.path(forResource: rawValue, ofType: "lproj"),
+              let bundle = Bundle(path: path) else { return english }
+        return bundle.localizedString(forKey: english, value: english, table: nil)
+    }
     public var id: String { rawValue }
 
     public var displayName: String {
@@ -83,6 +95,16 @@ public enum ArcaStrings {
             "home.searchPlaceholder": "Search records, notes, serial numbers…",
             "home.quickAddRecord": "New Record",
             "home.newCollection": "New Collection",
+            "record.invalidNumber": "Enter a valid number for “%@” using your selected language's number format.",
+            "record.invalidAmount": "Enter a valid amount for “%@” with at most two decimal places.",
+            "record.checkInput": "Check This Record",
+            "delete.spaceTitle": "Delete “%@”?",
+            "delete.spaceBody": "This removes this Space's local records and attachments. Local-Only data cannot be recovered without a backup. Cloud copies remain and can sync back.",
+            "delete.recordTitle": "Delete “%@”?",
+            "delete.recordBody": "This removes the record from this device. For a synced Space, the deletion will sync to your other devices. This cannot be undone in Arca.",
+            "common.delete": "Delete",
+            "common.cancel": "Cancel",
+            "common.ok": "OK",
             "insights.title": "Insights",
             "insights.spendingOverTime": "Spending Over Time",
             "insights.upcomingExpirations": "Upcoming Warranty Expirations",
@@ -119,6 +141,16 @@ public enum ArcaStrings {
             "home.searchPlaceholder": "ابحث في السجلات، الملاحظات، الأرقام التسلسلية…",
             "home.quickAddRecord": "سجل جديد",
             "home.newCollection": "مجموعة جديدة",
+            "record.invalidNumber": "أدخل رقماً صالحاً للحقل «%@» بتنسيق الأرقام للغة المحددة.",
+            "record.invalidAmount": "أدخل مبلغاً صالحاً للحقل «%@» بمنزلتين عشريتين كحد أقصى.",
+            "record.checkInput": "تحقق من هذا السجل",
+            "delete.spaceTitle": "حذف «%@»؟",
+            "delete.spaceBody": "سيؤدي هذا إلى إزالة السجلات والمرفقات المحلية لهذه المساحة. لا يمكن استعادة البيانات المحلية فقط دون نسخة احتياطية. ستبقى النسخ السحابية وقد تتم مزامنتها مجدداً.",
+            "delete.recordTitle": "حذف «%@»؟",
+            "delete.recordBody": "سيُزال السجل من هذا الجهاز. إذا كانت المساحة متزامنة، فستتم مزامنة الحذف مع أجهزتك الأخرى. لا يمكن التراجع عن ذلك في أركا.",
+            "common.delete": "حذف",
+            "common.cancel": "إلغاء",
+            "common.ok": "حسناً",
             "insights.title": "الإحصاءات",
             "insights.spendingOverTime": "الإنفاق بمرور الوقت",
             "insights.upcomingExpirations": "انتهاء صلاحية الضمانات القريبة",
@@ -155,6 +187,16 @@ public enum ArcaStrings {
             "home.searchPlaceholder": "Kayıtlarda, notlarda, seri numaralarında ara…",
             "home.quickAddRecord": "Yeni Kayıt",
             "home.newCollection": "Yeni Koleksiyon",
+            "record.invalidNumber": "“%@” için seçtiğiniz dilin sayı biçiminde geçerli bir sayı girin.",
+            "record.invalidAmount": "“%@” için en fazla iki ondalık basamak içeren geçerli bir tutar girin.",
+            "record.checkInput": "Bu Kaydı Kontrol Edin",
+            "delete.spaceTitle": "“%@” silinsin mi?",
+            "delete.spaceBody": "Bu alanın yerel kayıtları ve ekleri kaldırılır. Yalnızca cihazda tutulan veriler yedek olmadan kurtarılamaz. Bulut kopyaları kalır ve yeniden eşitlenebilir.",
+            "delete.recordTitle": "“%@” silinsin mi?",
+            "delete.recordBody": "Kayıt bu cihazdan kaldırılır. Alan eşitleniyorsa silme işlemi diğer cihazlarınıza da eşitlenir. Bu işlem Arca içinde geri alınamaz.",
+            "common.delete": "Sil",
+            "common.cancel": "İptal",
+            "common.ok": "Tamam",
             "insights.title": "Analizler",
             "insights.spendingOverTime": "Zaman İçinde Harcamalar",
             "insights.upcomingExpirations": "Yaklaşan Garanti Bitiş Tarihleri",
@@ -418,11 +460,11 @@ public struct ArcaStyledTextField: View {
             if isSecure {
                 SecureField(placeholder, text: $text)
                     .textFieldStyle(.plain)
-                    .font(.system(size: 15))
+                    .font(.body)
             } else {
                 TextField(placeholder, text: $text)
                     .textFieldStyle(.plain)
-                    .font(.system(size: 15))
+                    .font(.body)
             }
             if !text.isEmpty {
                 Button {
@@ -433,6 +475,7 @@ public struct ArcaStyledTextField: View {
                         .foregroundStyle(.tertiary)
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel(Text("Clear \(placeholder)"))
             }
         }
         .padding(.horizontal, 14)

@@ -534,6 +534,7 @@ public struct ManageSpacesSheetView: View {
     @ViewState private var newSpaceIcon = "folder.fill"
     @ViewState private var renamingSpace: SpaceMetadata?
     @ViewState private var renameText = ""
+    @ViewState private var pendingSpaceDeletion: SpaceMetadata?
 
     private let availableIcons: [(label: String, icon: String)] = [
         ("Folder", "folder.fill"),
@@ -605,7 +606,7 @@ public struct ManageSpacesSheetView: View {
                                         }
                                         if viewModel.spaces.count > 1 {
                                             Button("Delete Space", role: .destructive) {
-                                                Task { await viewModel.deleteSpace(id: space.id) }
+                                                pendingSpaceDeletion = space
                                             }
                                         }
                                     } label: {
@@ -699,6 +700,16 @@ public struct ManageSpacesSheetView: View {
                 .padding(18)
             }
             .background(ArcaTheme.canvasBackground(for: colorScheme))
+        }
+        .alert(item: $pendingSpaceDeletion) { space in
+            Alert(
+                title: Text(String(format: ArcaStrings.text("delete.spaceTitle", language: viewModel.language), space.name)),
+                message: Text(ArcaStrings.text("delete.spaceBody", language: viewModel.language)),
+                primaryButton: .destructive(Text(ArcaStrings.text("common.delete", language: viewModel.language))) {
+                    Task { await viewModel.deleteSpace(id: space.id) }
+                },
+                secondaryButton: .cancel(Text(ArcaStrings.text("common.cancel", language: viewModel.language)))
+            )
         }
     }
 
