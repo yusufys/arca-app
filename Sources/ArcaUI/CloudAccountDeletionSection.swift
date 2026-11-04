@@ -1,0 +1,44 @@
+import SwiftUI
+
+@available(macOS 14.0, iOS 17.0, *)
+struct CloudAccountDeletionSection: View {
+    @Bindable var viewModel: ArcaAppViewModel
+    @ViewState private var confirmDeletion = false
+    @ViewState private var errorMessage: String?
+    @ViewState private var resultMessage: String?
+
+    var body: some View {
+        if viewModel.cloudAccountConnected || viewModel.hasPendingAccountDeletionCleanup || resultMessage != nil {
+            ArcaSectionCard(title: "Cloud Account", icon: "person.crop.circle.badge.xmark", iconTint: ArcaTheme.dangerRed) {
+                Text("Delete your cloud account, encrypted remote records, recovery material and device registrations. Local records stay on this device in Local-Only Spaces. Any App Store subscription must be managed separately.")
+                    .font(.footnote).foregroundStyle(.secondary)
+                if let resultMessage { Text(resultMessage).font(.footnote) }
+                if let errorMessage { Text(errorMessage).font(.footnote).foregroundStyle(ArcaTheme.dangerRed) }
+                if viewModel.hasPendingAccountDeletionCleanup {
+                    Button("Finish Local Cleanup") { performDeletion() }
+                        .disabled(viewModel.isDeletingCloudAccount || viewModel.isSyncing)
+                } else if viewModel.cloudAccountConnected {
+                    Button("Delete Cloud Account", role: .destructive) { confirmDeletion = true }
+                        .disabled(viewModel.isDeletingCloudAccount || viewModel.isSyncing)
+                }
+                if viewModel.isDeletingCloudAccount { ProgressView("Completing account deletion…") }
+            }
+            .confirmationDialog("Permanently delete your cloud account?", isPresented: $confirmDeletion, titleVisibility: .visible) {
+                Button("Delete Account and Remote Data", role: .destructive) { performDeletion() }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("This cannot be undone. Your local records will be kept, and all Spaces will become Local-Only.")
+            }
+        }
+    }
+
+    private func performDeletion() {
+        errorMessage = nil
+        Task {
+            do {
+                try await viewModel.deleteCloudAccountAndKeepLocalRecords()
+                resultMessage = "Cloud account deleted. Your local records are preserved."
+            } catch { errorMessage = error.localizedDescription }
+        }
+    }
+}

@@ -137,6 +137,7 @@ private final class SyncBatchFixture {
     func respond(to request: URLRequest) throws -> (status: Int, data: Data) {
         lock.lock()
         defer { lock.unlock() }
+        if request.url!.path.hasSuffix("/privacy") { return (404, Data("{}".utf8)) }
         if request.url!.path.hasSuffix("/pull") {
             let query = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)!.queryItems!
             let since = Int(query.first { $0.name == "since_cursor" }!.value!)!

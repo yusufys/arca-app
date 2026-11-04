@@ -41,8 +41,10 @@ Copy `backend/.env.example` to `backend/.env` on your server (or local Laravel H
 
 - [ ] **RevenueCat Server Webhook Secret (PRIVATE — Server Only)**
   ```dotenv
+  REVENUECAT_SERVER_API_KEY=your_revenuecat_v1_server_api_key
+  REVENUECAT_ENVIRONMENT=PRODUCTION
   REVENUECAT_WEBHOOK_SECRET=your_random_64_char_webhook_bearer_secret
-  REVENUECAT_PRO_ENTITLEMENT_ID=arca_pro
+  REVENUECAT_PRO_ENTITLEMENT_ID=arca_app_pro
   ```
 
 - [ ] **Cloudflare R2 / AWS S3 for Encrypted Attachment Blobs (PRIVATE — Server Only)**
@@ -74,12 +76,12 @@ The iOS app reads its configuration automatically via [`ArcaEnvironmentConfig`](
   - Local Mac testing: `http://127.0.0.1:8000` (or your Mac's LAN IP `http://192.168.x.x:8000` when testing on a physical iPhone over Wi-Fi)
   - Production: `https://api.yourdomain.com`
 
-- [ ] **Set `REVENUECAT_IOS_PUBLIC_KEY` in [`iOSApp/Info.plist`](iOSApp/Info.plist)**
+- [ ] **Set the Release build setting `ARCA_RC_PUBLIC_KEY`; Info.plist expands it into `REVENUECAT_IOS_PUBLIC_KEY`**
   - Format: `appl_xxxxxxxxxxxxxxxxxxxxxxxx` (found in **RevenueCat Dashboard → Project Settings → API Keys → Public app-specific API keys (Apple)**).
   - ⚠️ Use the **Public** `appl_...` key only (never `sk_...`).
 
 - [ ] **Set `REVENUECAT_PRO_ENTITLEMENT_ID` in [`iOSApp/Info.plist`](iOSApp/Info.plist)**
-  - Value: `arca_pro`
+  - Value: `arca_app_pro`
 
 - [ ] **Apple Developer Signing (Xcode)**
   - Open `Arca.xcodeproj` → **Signing & Capabilities** → select your Apple Team & Bundle ID (`app.arca.personalrecords`).
@@ -101,7 +103,7 @@ The iOS app reads its configuration automatically via [`ArcaEnvironmentConfig`](
   REVENUECAT_ANDROID_PUBLIC_KEY=goog_xxxxxxxxxxxxxxxxxxxxxxxx
 
   # Entitlement ID
-  REVENUECAT_PRO_ENTITLEMENT_ID=arca_pro
+  REVENUECAT_PRO_ENTITLEMENT_ID=arca_app_pro
   ```
 
 - [ ] **Rebuild APK after updating `local.properties`**
@@ -112,16 +114,6 @@ The iOS app reads its configuration automatically via [`ArcaEnvironmentConfig`](
 
 ---
 
-## 4. RevenueCat Dashboard Wiring (5 Minutes)
+## 4. RevenueCat dashboard and TestFlight
 
-- [ ] **1. Create Entitlement**: Name it `arca_pro`.
-- [ ] **2. Add Products**:
-  - Monthly: `arca.pro.monthly`
-  - Yearly: `arca.pro.yearly`
-  - Attach both products to the `arca_pro` entitlement.
-- [ ] **3. Add Webhook Integration**:
-  - Go to **RevenueCat Dashboard → Integrations → Webhooks → + New**
-  - **Webhook URL**: `https://api.yourdomain.com/api/v1/webhooks/revenuecat`
-  - **Authorization Header**: `Bearer <your_REVENUECAT_WEBHOOK_SECRET_from_backend_.env>`
-  - **Environment**: Both Production & Sandbox
-  - When a user subscribes, renews, enters billing grace period, or expires on iOS or Android, RevenueCat will automatically call your Laravel webhook and update their quota (`2 devices / 250 MB` ↔ `10 devices / 25 GB`).
+Follow [Arca’s RevenueCat setup and verification guide](REVENUECAT.md). The iOS entitlement is `arca_app_pro`. The three products are `lifetime`, `yearly` and `monthly`. Configure separate staging and production webhook environments.

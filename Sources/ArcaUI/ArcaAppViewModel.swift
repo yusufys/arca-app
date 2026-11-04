@@ -9,6 +9,7 @@ import ArcaArchive
 import ArcaSync
 import ArcaBilling
 import ArcaCloudAdapters
+import UniformTypeIdentifiers
 
 /// UI-friendly representation of an enrolled device.
 public struct DeviceSummaryItem: Identifiable, Sendable, Equatable {
@@ -41,8 +42,10 @@ public final class ArcaAppViewModel {
     public var hasCompletedOnboarding: Bool = false
     public var language: AppLanguage = .english
     public var appearanceMode: AppAppearanceMode = .light
-    public var biometricLockEnabled: Bool = false
-    public var isAppLocked: Bool = false
+    public let appLock: LocalAppLock
+    public var biometricLockEnabled: Bool { appLock.enabled }
+    public var isAppLocked: Bool { appLock.isLocked }
+    private var scenePhases: [UUID: ScenePhase] = [:]
     public var bannerState: OperationalBannerState = .normal
     public var globalSearchText: String = ""
 
@@ -58,6 +61,8 @@ public final class ArcaAppViewModel {
     public var recoveryKeyPhrase: String
     public var enrolledDevices: [DeviceSummaryItem] = []
     public var syncConflicts: [ConflictSummaryItem] = []
+    private var pendingPrivacyDeletionBySpace: [UUID: Set<UUID>] = [:]
+    public var pendingPrivacyDeletionCollectionIds: Set<UUID> { Set(pendingPrivacyDeletionBySpace.values.flatMap { $0 }) }
     public var pendingOutboxCount: Int = 0
     public var isOfflineSimulated: Bool = false {
         didSet {
@@ -75,7 +80,6 @@ public final class ArcaAppViewModel {
     public let catalogStore: CatalogStore
     private var spaceStores: [UUID: SpaceStore] = [:]
     public private(set) var syncBackend: LaravelArcaSyncBackend
-    public let billingManager: BillingManager
     private var identityStore: WorkspaceIdentityStore?
     public private(set) var storageStartupError: String?
     private var masterAccountKey: SymmetricKey? { identityStore?.masterAccountKey }
@@ -86,8 +90,8 @@ public final class ArcaAppViewModel {
     public init(rootDirectoryURL: URL? = nil, startWithCompletedOnboarding: Bool = false) {
         let baseDir = rootDirectoryURL ?? CatalogStore.defaultBaseDirectoryURL()
         self.rootDirectoryURL = baseDir
+        self.appLock = LocalAppLock(preferenceKey: "arca.appLock." + baseDir.standardizedFileURL.path)
         self.syncBackend = LaravelArcaSyncBackend(apiToken: nil)
-        self.billingManager = BillingManager()
         self.recoveryKeyPhrase = ""
         var startupError: String?
         var restoredBearer: String?
@@ -107,7 +111,7 @@ public final class ArcaAppViewModel {
         }
         self.catalogStore = CatalogStore(baseDirectoryURL: baseDir, readOnly: startupError != nil)
         self.storageStartupError = startupError
-        self.syncBackend.apiToken = restoredBearer
+        self.syncBackend.apiToken = FileManager.default.fileExists(atPath: baseDir.appendingPathComponent("cloud-account-deletion-receipt.json").path) ? nil : restoredBearer
         self.hasCompletedOnboarding = startWithCompletedOnboarding
     }
 
@@ -212,6 +216,10 @@ public final class ArcaAppViewModel {
 
     public func bootstrapIfNeeded() async {
         guard !isBootstrapped, storageStartupError == nil else { return }
+        if hasPendingAccountDeletionCleanup {
+            do { try await deleteCloudAccountAndKeepLocalRecords() }
+            catch { syncStatus = "Account deleted remotely; local cleanup needs retry. " + error.localizedDescription }
+        }
         isBootstrapped = true
 
         let existing = await catalogStore.listSpaces()
@@ -240,11 +248,19 @@ public final class ArcaAppViewModel {
     public private(set) var syncStatus = "No sync has run yet."
     public private(set) var isSyncing = false
     public private(set) var needsCloudSignIn = false
+    public private(set) var isDeletingCloudAccount = false
+    private var accountDeletionReceiptAwaitingCleanup: RemoteDeletionReceipt?
+    public var hasPendingAccountDeletionCleanup: Bool {
+        accountDeletionReceiptAwaitingCleanup != nil || FileManager.default.fileExists(atPath: accountDeletionReceiptURL.path)
+    }
+    private var accountDeletionReceiptURL: URL {
+        rootDirectoryURL.appendingPathComponent("cloud-account-deletion-receipt.json")
+    }
     public var cloudAccountConnected: Bool { syncBackend.apiToken != nil && identityStore?.cloudSession != nil }
     private var connecting = false
 
     public func connectCloudAccount(email: String, password: String, createAccount: Bool, recoveryPhrase: String) async throws {
-        guard let identityStore, !connecting, !isSyncing else {
+        guard let identityStore, !connecting, !isSyncing, !isDeletingCloudAccount, !hasPendingAccountDeletionCleanup else {
             throw PersistenceError.ioError(storageStartupError ?? "Another account operation is in progress.")
         }
         connecting = true
@@ -350,6 +366,7 @@ public final class ArcaAppViewModel {
 
     private func reloadSpaceFromDisk(_ spaceId: UUID) async {
         let store = await spaceStore(for: spaceId)
+        pendingPrivacyDeletionBySpace[spaceId] = (try? await store.pendingPrivacyRules()).map { Set($0.map(\.collectionId)) } ?? []
         let cols = await store.listCollections(includeDeleted: false)
         let recs = await store.listRecords(includeDeleted: false)
         collectionsBySpace[spaceId] = cols
@@ -378,6 +395,7 @@ public final class ArcaAppViewModel {
     }
 
     public func createSpace(name: String, iconName: String, storageMode: SpaceStorageMode) async {
+        let storageMode: SpaceStorageMode = isDeletingCloudAccount || hasPendingAccountDeletionCleanup || storageMode == .personalCloudBackup ? .localOnly : storageMode
         let space = SpaceMetadata(
             name: name,
             iconName: iconName,
@@ -454,7 +472,7 @@ public final class ArcaAppViewModel {
 
     public func importCollectionSchemaFromJSON(_ jsonString: String) throws {
         guard let spaceId = currentSpace?.id else { return }
-        let schema = try OptionalCapabilityEngine.parseAndValidateImportedSchemaJSON(jsonString, for: spaceId)
+        let schema = CloudPrivacyPolicy.resettingConsent(try OptionalCapabilityEngine.parseAndValidateImportedSchemaJSON(jsonString, for: spaceId))
         Task {
             let store = await spaceStore(for: spaceId)
             await store.saveCollection(schema, enqueueSync: currentSpace?.storageMode == .arcaSync)
@@ -609,15 +627,25 @@ public final class ArcaAppViewModel {
         await reloadSpaceFromDisk(rec.spaceId)
     }
 
-    public func attachSampleReceiptFile() async -> AttachmentReference? {
-        guard let spaceId = currentSpace?.id else { return nil }
+    /// Keeps security-scoped access open until the selected file has been copied.
+    public func attachFile(from url: URL, to spaceId: UUID) async throws -> AttachmentReference {
+        guard await catalogStore.fetchSpace(id: spaceId)?.storageMode == .localOnly else {
+            throw PersistenceError.ioError("Attachments are currently available in Local-Only Spaces. Cloud attachment upload is not available yet.")
+        }
+        let access = url.startAccessingSecurityScopedResource()
+        defer { if access { url.stopAccessingSecurityScopedResource() } }
+        let values = try url.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey, .contentTypeKey])
+        guard values.isRegularFile == true else { throw PersistenceError.ioError("Choose a regular file to attach.") }
+        guard (values.fileSize ?? 0) <= 50 * 1024 * 1024 else {
+            throw PersistenceError.ioError("Choose an attachment smaller than 50 MB.")
+        }
+        let data = try Data(contentsOf: url)
+        guard data.count <= 50 * 1024 * 1024 else {
+            throw PersistenceError.ioError("Choose an attachment smaller than 50 MB.")
+        }
         let store = await spaceStore(for: spaceId)
-        let sampleContent = Data("Arca Fictional Receipt Attachment • Invoice #\(Int.random(in: 1000...9999))".utf8)
-        return try? await store.storeAttachment(
-            data: sampleContent,
-            filename: "receipt-\(Int.random(in: 100...999)).txt",
-            mimeType: "text/plain"
-        )
+        return try await store.storeAttachment(data: data, filename: url.lastPathComponent,
+                                               mimeType: values.contentType?.preferredMIMEType ?? "application/octet-stream")
     }
 
     public func searchRecordsInCurrentSpace(queryText: String) -> [RecordItem] {
@@ -703,11 +731,14 @@ public final class ArcaAppViewModel {
     // MARK: - Portable Archive Export & Staged Restore
 
     public func exportCurrentSpaceArchive(passphrase: String?) async throws -> URL {
+        guard let passphrase, !passphrase.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            throw ArchiveError.passphraseRequired
+        }
         guard let space = currentSpace else {
             throw ArchiveError.corruptedArchive("No active Space selected.")
         }
         let store = await spaceStore(for: space.id)
-        let exportsDir = rootDirectoryURL.appendingPathComponent("Exports", isDirectory: true)
+        let exportsDir = FileManager.default.temporaryDirectory.appendingPathComponent("ArcaEncryptedExports", isDirectory: true)
         try FileManager.default.createDirectory(at: exportsDir, withIntermediateDirectories: true)
         let url = try await ArchiveService.exportSpace(
             space: space,
@@ -722,6 +753,8 @@ public final class ArcaAppViewModel {
     }
 
     public func restoreSpaceArchive(from url: URL, passphrase: String?) async throws -> SpaceMetadata {
+        let access = url.startAccessingSecurityScopedResource()
+        defer { if access { url.stopAccessingSecurityScopedResource() } }
         let restored = try await ArchiveService.restoreArchiveAsNewSpace(
             from: url,
             passphrase: passphrase,
@@ -745,8 +778,47 @@ public final class ArcaAppViewModel {
         }
     }
 
+    /// Requires the caller's explicit destructive confirmation. A durable receipt makes cleanup resumable.
+    public func deleteCloudAccountAndKeepLocalRecords() async throws {
+        guard let identityStore, !connecting, !isSyncing, !isDeletingCloudAccount else {
+            throw PersistenceError.ioError("Another account operation is in progress.")
+        }
+        isDeletingCloudAccount = true
+        defer { isDeletingCloudAccount = false }
+        let receipt: RemoteDeletionReceipt
+        if let pending = accountDeletionReceiptAwaitingCleanup {
+            receipt = pending
+        } else if hasPendingAccountDeletionCleanup {
+            receipt = try JSONDecoder().decode(RemoteDeletionReceipt.self, from: Data(contentsOf: accountDeletionReceiptURL))
+        } else {
+            guard let session = identityStore.cloudSession, syncBackend.apiToken != nil else {
+                throw SyncServiceError.unauthenticated
+            }
+            receipt = try await syncBackend.deleteAccountAndRemoteData(accountId: session.accountId)
+            try AccountDeletionCleanup.validate(receipt, expectedAccountId: session.accountId)
+        }
+        accountDeletionReceiptAwaitingCleanup = receipt
+        try JSONEncoder().encode(receipt).write(to: accountDeletionReceiptURL, options: .atomic)
+        syncBackend.apiToken = nil
+        try await AccountDeletionCleanup.apply(receipt, catalog: catalogStore, identity: identityStore)
+        try FileManager.default.removeItem(at: accountDeletionReceiptURL)
+        accountDeletionReceiptAwaitingCleanup = nil
+        accountId = "acct-local-default"
+        recoveryKeyPhrase = identityStore.recoveryPhrase
+        needsCloudSignIn = false
+        spaces = await catalogStore.listSpaces()
+        for space in spaces { await reloadSpaceFromDisk(space.id) }
+        syncConflicts.removeAll()
+        enrolledDevices = []
+        pendingOutboxCount = 0
+        syncStatus = "Cloud account and remote data deleted. Your records remain on this device in Local-Only Spaces."
+    }
+
     /// Discover remote Spaces, decrypt their keys locally, then exchange the SQLite outboxes.
     public func syncCloudSpaces() async throws {
+        guard !isDeletingCloudAccount, !hasPendingAccountDeletionCleanup else {
+            throw PersistenceError.ioError("Account deletion is being completed. Cloud sync is paused.")
+        }
         guard let identityStore, let session = identityStore.cloudSession, !isOfflineSimulated else {
             throw SyncServiceError.unauthenticated
         }
@@ -805,6 +877,7 @@ public final class ArcaAppViewModel {
         setDevices(try await syncBackend.listEnrolledDevices(accountId: session.accountId), currentId: device.deviceId)
         if !syncConflicts.isEmpty { bannerState = .syncConflictsDetected(count: syncConflicts.count) }
         syncStatus = "Synced at " + Date().formatted(date: .omitted, time: .standard) + " · Sent " + String(pushed) + ", received " + String(pulled)
+        if !pendingPrivacyDeletionCollectionIds.isEmpty { syncStatus += " · Remote privacy deletion pending; affected collection uploads remain paused." }
     }
 
     public func simulateConcurrentConflict() {
@@ -904,12 +977,20 @@ public final class ArcaAppViewModel {
         to targetMode: SpaceStorageMode,
         deleteRemoteCopies: Bool
     ) async throws {
-        guard !isSyncing else { throw PersistenceError.ioError("Sync is in progress. Try again when it finishes.") }
+        guard !isSyncing, !isDeletingCloudAccount, !hasPendingAccountDeletionCleanup else {
+            throw PersistenceError.ioError("Another account operation is in progress. Try again when it finishes.")
+        }
+        guard targetMode != .personalCloudBackup else {
+            throw PersistenceError.ioError("Personal cloud providers are not available yet. Use an encrypted backup saved to Files.")
+        }
         guard let space = await catalogStore.fetchSpace(id: spaceId), space.storageMode != targetMode else { return }
         isSyncing = true
         defer { isSyncing = false }
         if targetMode == .arcaSync {
             let store = await spaceStore(for: spaceId)
+            guard await store.listRecords().allSatisfy({ $0.allAttachments.isEmpty }) else {
+                throw PersistenceError.ioError("Cloud attachment upload is not available yet. Keep this Space Local-Only or remove its attachments before enabling Sync.")
+            }
             try await store.enqueueInitialSyncSnapshot()
             if cloudAccountConnected, let device = currentDeviceIdentity {
                 try await syncBackend.enableCloudSync(spaceId: spaceId, deviceId: device.deviceId)
@@ -931,34 +1012,55 @@ public final class ArcaAppViewModel {
         spaces = await catalogStore.listSpaces()
     }
 
-    // MARK: - Billing & Subscription
-
-    public func purchaseProSubscription(annual: Bool) async {
-        let productId = annual
-            ? ArcaCommercialConfig.annualProductID
-            : ArcaCommercialConfig.monthlyProductID
-        _ = try? await billingManager.purchase(productId: productId)
-        isProSubscriber = billingManager.currentTier == .pro
-        if case .thirdDeviceLimitBlocked = bannerState {
-            bannerState = .normal
-        }
+    public var purchaseAccountID: String? {
+        cloudAccountConnected ? accountId : nil
     }
 
-    public func simulateSubscriptionExpiry() async {
-        billingManager.injectDeterministicState(
-            tier: .free,
-            state: .expired,
-            activeProductId: ArcaCommercialConfig.annualProductID
-        )
-        isProSubscriber = false
-        if enrolledDevices.count > ArcaCommercialConfig.freeMaxActiveDevices {
-            bannerState = .thirdDeviceLimitBlocked
-        }
+    private var consentPasswordIdentifier: String {
+        "consent-password." + ClientCryptoEngine.sha256Hex(of: Data(rootDirectoryURL.standardizedFileURL.path.utf8))
     }
 
-    public func restorePurchases() async {
-        _ = try? await billingManager.restorePurchases(performStoreSync: false)
-        isProSubscriber = billingManager.currentTier == .pro
+    public var hasConsentMasterPassword: Bool {
+        (try? SystemKeychainKeyStore().loadKeyData(forIdentifier: consentPasswordIdentifier)) != nil
+    }
+
+    public func setUpConsentMasterPassword(_ password: String, confirmation: String) throws {
+        guard password == confirmation else { throw PersistenceError.ioError("The passwords do not match.") }
+        let keyStore = SystemKeychainKeyStore()
+        guard try keyStore.loadKeyData(forIdentifier: consentPasswordIdentifier) == nil else {
+            throw PersistenceError.ioError("A master password is already configured on this device.")
+        }
+        let verifier = try ConsentPasswordVerifier(password: password)
+        try keyStore.saveKeyData(JSONEncoder().encode(verifier), forIdentifier: consentPasswordIdentifier)
+    }
+
+    /// Marking sensitive always persists local-only first. Verification is a separate explicit action.
+    public func keepSensitiveDataOnDevice(collectionId: UUID, fieldId: UUID? = nil) async throws {
+        try await updateSensitivePrivacy(collectionId: collectionId, fieldId: fieldId, choice: .localOnly)
+    }
+
+    public func consentToSensitiveCloudSync(collectionId: UUID, fieldId: UUID? = nil, password: String) async throws {
+        guard let data = try SystemKeychainKeyStore().loadKeyData(forIdentifier: consentPasswordIdentifier),
+              try JSONDecoder().decode(ConsentPasswordVerifier.self, from: data).verify(password) else {
+            throw PersistenceError.ioError("Master password verification failed. Sync remains off.")
+        }
+        try await updateSensitivePrivacy(collectionId: collectionId, fieldId: fieldId, choice: .syncWithConsent)
+    }
+
+    private func updateSensitivePrivacy(collectionId: UUID, fieldId: UUID?, choice: SensitiveDataPrivacy) async throws {
+        guard !isSyncing else { throw PersistenceError.ioError("Wait for the active sync to finish before changing privacy.") }
+        guard var schema = schema(for: collectionId) else { throw PersistenceError.ioError("Collection not found.") }
+        if let fieldId {
+            guard let index = schema.fields.firstIndex(where: { $0.id == fieldId }) else { throw PersistenceError.ioError("Field not found.") }
+            schema.fields[index].privacy = choice
+        } else { schema.privacy = choice }
+        schema.revision += 1; schema.schemaVersion += 1; schema.updatedAt = Date()
+        let store = await spaceStore(for: schema.spaceId)
+        // Persist even in a Local-Only Space: pending remote removal must survive later mode changes.
+        try await store.saveCollectionStrict(schema, enqueueSync: true)
+        guard await store.fetchCollection(id: schema.id) == schema else { throw PersistenceError.ioError("Privacy choice could not be saved. Please retry.") }
+        publicSnapshots.removeAll { snapshot in (recordsBySpace[schema.spaceId] ?? []).contains { $0.collectionId == collectionId && $0.id == snapshot.sourceRecordId } }
+        await reloadSpaceFromDisk(schema.spaceId)
     }
 
     // MARK: - Public Snapshot & Biometrics
@@ -968,7 +1070,12 @@ public final class ArcaAppViewModel {
         schema: CollectionSchema,
         selectedFieldIds: Set<UUID>
     ) {
-        let pairs: [(label: String, formattedValue: String)] = schema.activeFields
+        guard spaces.first(where: { $0.id == record.spaceId })?.storageMode == .arcaSync,
+              let current = self.schema(for: record.collectionId), current.privacy == nil, !CloudPrivacyPolicy.isCollectionLocalOnly(current) else { return }
+        var safeSchema = current
+        safeSchema.fields.removeAll { $0.privacy != nil }
+        guard let safeRecord = CloudPrivacyPolicy.recordForCloud(record, schema: safeSchema) else { return }
+        let pairs: [(label: String, formattedValue: String)] = safeSchema.activeFields
             .filter { selectedFieldIds.contains($0.id) }
             .map { field in
                 let val = (record.values[field.id] ?? .null).plainTextSummary(for: field, locale: language.locale)
@@ -976,14 +1083,35 @@ public final class ArcaAppViewModel {
             }
         let snapshot = PublicRecordSnapshot(
             sourceRecordId: record.id,
-            title: record.title(using: schema),
+            title: safeRecord.title(using: safeSchema),
             selectedFieldPairs: pairs
         )
         publicSnapshots.append(snapshot)
     }
 
-    public func unlockAppWithBiometrics() {
-        isAppLocked = false
+    public func unlockAppWithBiometrics() async {
+        await appLock.unlock()
+    }
+
+    public func setAppLockEnabled(_ enabled: Bool) async {
+        await appLock.setEnabled(enabled)
+    }
+
+    public func handleScenePhase(_ phase: ScenePhase, sceneId: UUID? = nil) {
+        if let sceneId { scenePhases[sceneId] = phase }
+        switch phase {
+        case .background:
+            appLock.enteredBackground()
+            // Another active iPad window can still authenticate after this window closes.
+            if scenePhases.values.contains(.active) { appLock.becameActive() }
+        case .active: appLock.becameActive()
+        default: break
+        }
+    }
+
+    public func forgetScene(_ id: UUID) {
+        scenePhases.removeValue(forKey: id)
+        if !scenePhases.values.contains(.active) { appLock.enteredBackground() }
     }
 
     public func handleBannerAction() {

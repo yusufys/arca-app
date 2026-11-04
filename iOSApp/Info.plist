@@ -19,7 +19,7 @@
 	<key>CFBundleShortVersionString</key>
 	<string>1.0</string>
 	<key>CFBundleVersion</key>
-	<string>1</string>
+	<string>$(CURRENT_PROJECT_VERSION)</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>NSFaceIDUsageDescription</key>
@@ -27,9 +27,9 @@
 	<key>ARCA_API_BASE_URL</key>
 	<string>https://arca-api.on-forge.com</string>
 	<key>REVENUECAT_IOS_PUBLIC_KEY</key>
-	<string>appl_replace_with_your_revenuecat_ios_public_sdk_key</string>
+	<string>$(ARCA_RC_PUBLIC_KEY)</string>
 	<key>REVENUECAT_PRO_ENTITLEMENT_ID</key>
-	<string>arca_pro</string>
+	<string>arca_app_pro</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

@@ -1,4 +1,5 @@
 import SwiftUI
+import UniformTypeIdentifiers
 import Charts
 import ArcaCore
 
@@ -196,6 +197,7 @@ public struct InsightsScreenView: View {
 
 @available(macOS 14.0, iOS 17.0, *)
 public struct SettingsHubScreenView: View {
+    @Environment(\.arcaSubscriptionScreen) private var subscriptionScreen
     @Bindable var viewModel: ArcaAppViewModel
     @Environment(\.colorScheme) private var colorScheme
 
@@ -286,13 +288,13 @@ public struct SettingsHubScreenView: View {
                     // Subscription & Billing
                     ArcaSectionCard(title: ArcaStrings.text("settings.subscription", language: viewModel.language), icon: "sparkles") {
                         NavigationLink {
-                            SubscriptionAndBillingScreenView(viewModel: viewModel)
+                            subscriptionScreen
                         } label: {
                             settingsRow(
                                 icon: "crown.fill",
                                 tint: ArcaTheme.warmAmber,
                                 title: "Arca Plan & Quotas",
-                                subtitle: "Non-destructive expiry guarantee",
+                                subtitle: "Plans, purchases and restore",
                                 badge: viewModel.isProSubscriber ? "Arca Pro" : "Free Plan"
                             )
                         }
@@ -343,11 +345,20 @@ public struct SettingsHubScreenView: View {
                     // Privacy, Encryption & Biometrics
                     ArcaSectionCard(title: ArcaStrings.text("settings.privacyAndSecurity", language: viewModel.language), icon: "lock.shield.fill", iconTint: ArcaTheme.plumSensitive) {
                         VStack(spacing: 12) {
-                            Toggle("Biometric App Lock (Face ID)", isOn: $viewModel.biometricLockEnabled)
-                                .font(.system(size: 14, weight: .semibold, design: .rounded))
+                            Toggle("App Lock (Device Authentication)", isOn: Binding(
+                                get: { viewModel.biometricLockEnabled },
+                                set: { value in Task { await viewModel.setAppLockEnabled(value) } }
+                            ))
+                            .disabled(viewModel.appLock.isAuthenticating)
+                            .font(.system(size: 14, weight: .semibold, design: .rounded))
+                            if let error = viewModel.appLock.errorMessage {
+                                Text(error).font(.footnote).foregroundStyle(ArcaTheme.dangerRed)
+                            }
 
                             Divider().opacity(0.45)
 
+                            Link("Privacy policy", destination: URL(string: "https://arca-api.on-forge.com/privacy.html")!)
+                            Link("Contact support", destination: URL(string: "mailto:hi@kawkbi.com")!)
                             NavigationLink {
                                 PrivacyAndEncryptionDetailsView(viewModel: viewModel)
                             } label: {
@@ -362,6 +373,7 @@ public struct SettingsHubScreenView: View {
                         }
                     }
 
+                    #if DEBUG
                     // Verification & Edge-State Simulator
                     ArcaSectionCard(
                         title: "Interactive State Simulator",
@@ -394,6 +406,7 @@ public struct SettingsHubScreenView: View {
                         }
                         .buttonStyle(ArcaSecondaryButtonStyle(isFullWidth: true))
                     }
+                    #endif
                 }
                 .padding(18)
             }
@@ -509,105 +522,102 @@ public struct BackupExportRestoreScreenView: View {
     @Bindable var viewModel: ArcaAppViewModel
     @Environment(\.colorScheme) private var colorScheme
 
-    @ViewState private var encryptArchive = true
     @ViewState private var passphrase = ""
+    @ViewState private var restorePassphrase = ""
     @ViewState private var statusMessage: String?
     @ViewState private var isError = false
+    @ViewState private var isBusy = false
+    @ViewState private var showExporter = false
+    @ViewState private var showImporter = false
+    @ViewState private var exportDocument: EncryptedArchiveDocument?
+    @ViewState private var exportFilename = "Arca-backup.arcaarchive.enc"
 
     public var body: some View {
         ScrollView(showsIndicators: false) {
             VStack(alignment: .leading, spacing: 18) {
-                ArcaSubscreenBackHeader(
-                    title: "Portable Backups & Restore",
-                    subtitle: "Independent per-Space .arcaarchive packages with SHA-256 verification"
-                )
-
-                ArcaSectionCard(
-                    title: "Export Space Archive",
-                    subtitle: "Exports Space metadata, versioned schemas, records, attachments, and a SHA-256 manifest.",
-                    icon: "square.and.arrow.up.fill"
-                ) {
-                    Toggle("Encrypt with Passphrase (AES-256-GCM)", isOn: $encryptArchive)
-                        .font(.system(size: 14, weight: .semibold, design: .rounded))
-
-                    if encryptArchive {
-                        ArcaStyledTextField("Backup Passphrase (optional)", text: $passphrase, icon: "lock.fill", isSecure: true)
-                    }
-
-                    Button {
-                        Task {
-                            do {
-                                let url = try await viewModel.exportCurrentSpaceArchive(passphrase: encryptArchive && !passphrase.isEmpty ? passphrase : nil)
-                                isError = false
-                                statusMessage = "Verified backup exported: \(url.lastPathComponent)"
-                            } catch {
-                                isError = true
-                                statusMessage = error.localizedDescription
-                            }
-                        }
-                    } label: {
-                        Label("Export Current Space Backup", systemImage: "shippingbox.fill")
+                ArcaSubscreenBackHeader(title: "Portable Backups & Restore", subtitle: "Encrypted backups saved to Files")
+                ArcaSectionCard(title: "Export Space Archive",
+                                subtitle: "Includes this Space's records, schemas and attachments. Keep your password safe; Arca cannot recover it.",
+                                icon: "square.and.arrow.up.fill") {
+                    ArcaStyledTextField("Backup Password (required)", text: $passphrase, icon: "lock.fill", isSecure: true)
+                    Button { Task { await prepareExport() } } label: {
+                        Label("Save Encrypted Backup to Files", systemImage: "shippingbox.fill")
                     }
                     .buttonStyle(ArcaPrimaryButtonStyle())
+                    .disabled(isBusy || passphrase.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
-
+                ArcaSectionCard(title: "Restore from Files",
+                                subtitle: "Verifies the backup before creating a new Local-Only Space. Existing Spaces stay intact.",
+                                icon: "arrow.down.doc.fill") {
+                    ArcaStyledTextField("Backup Password", text: $restorePassphrase, icon: "lock.fill", isSecure: true)
+                    Button { showImporter = true } label: {
+                        Label("Choose Backup from Files", systemImage: "folder.fill")
+                    }
+                    .buttonStyle(ArcaSecondaryButtonStyle())
+                    .disabled(isBusy)
+                }
+                if isBusy { ProgressView("Preparing backup…") }
                 if let statusMessage {
-                    ArcaSectionCard(
-                        title: isError ? "Restore Rejected Safely" : "Backup Verified",
-                        icon: isError ? "xmark.octagon.fill" : "checkmark.seal.fill",
-                        iconTint: isError ? ArcaTheme.dangerRed : ArcaTheme.secondaryEmerald
-                    ) {
-                        Text(statusMessage)
-                            .font(.system(size: 13, weight: .medium))
-                            .foregroundStyle(isError ? ArcaTheme.dangerRed : ArcaTheme.secondaryEmerald)
-                    }
-                }
-
-                if !viewModel.exportedArchiveURLs.isEmpty {
-                    ArcaSectionCard(
-                        title: "Staged Restore into New Space",
-                        subtitle: "Every archive is validated in a staging folder before touching live data.",
-                        icon: "arrow.down.doc.fill",
-                        iconTint: ArcaTheme.secondaryEmerald
-                    ) {
-                        VStack(spacing: 10) {
-                            ForEach(viewModel.exportedArchiveURLs, id: \.self) { url in
-                                HStack {
-                                    VStack(alignment: .leading, spacing: 2) {
-                                        Text(url.lastPathComponent)
-                                            .font(.system(size: 13, weight: .bold, design: .rounded))
-                                        Text("SHA-256 manifest verified")
-                                            .font(.system(size: 11))
-                                            .foregroundStyle(.secondary)
-                                    }
-                                    Spacer()
-                                    ArcaPillActionButton("Restore", icon: "arrow.uturn.backward", tint: ArcaTheme.secondaryEmerald) {
-                                        Task {
-                                            do {
-                                                let restored = try await viewModel.restoreSpaceArchive(from: url, passphrase: passphrase.isEmpty ? nil : passphrase)
-                                                isError = false
-                                                statusMessage = "Restored space “\(restored.name)” cleanly without overwriting existing spaces."
-                                            } catch {
-                                                isError = true
-                                                statusMessage = error.localizedDescription
-                                            }
-                                        }
-                                    }
-                                }
-                                .padding(10)
-                                .background(RoundedRectangle(cornerRadius: 12).fill(ArcaTheme.subtleFieldBackground(for: colorScheme)))
-                            }
-                        }
-                    }
+                    Text(statusMessage).font(.callout)
+                        .foregroundStyle(isError ? ArcaTheme.dangerRed : ArcaTheme.secondaryEmerald)
                 }
             }
             .padding(18)
         }
         .background(ArcaTheme.canvasBackground(for: colorScheme))
+        .fileExporter(isPresented: $showExporter, document: exportDocument, contentType: .data,
+                      defaultFilename: exportFilename) { result in
+            exportDocument = nil
+            switch result {
+            case .success: report("Encrypted backup saved to Files.", error: false); passphrase = ""
+            case .failure(let error): report(error.localizedDescription, error: true)
+            }
+        }
+        .fileImporter(isPresented: $showImporter, allowedContentTypes: [.data, .package, .folder]) { result in
+            switch result {
+            case .success(let url): Task { await restore(from: url) }
+            case .failure(let error): report(error.localizedDescription, error: true)
+            }
+        }
         #if os(iOS)
         .toolbar(.hidden, for: .navigationBar)
         #endif
     }
+
+    private func prepareExport() async {
+        guard !isBusy else { return }
+        isBusy = true
+        defer { isBusy = false }
+        do {
+            let url = try await viewModel.exportCurrentSpaceArchive(passphrase: passphrase)
+            defer { try? FileManager.default.removeItem(at: url) }
+            exportDocument = EncryptedArchiveDocument(data: try Data(contentsOf: url))
+            exportFilename = url.lastPathComponent
+            showExporter = true
+        } catch { report(error.localizedDescription, error: true) }
+    }
+
+    private func restore(from url: URL) async {
+        guard !isBusy else { return }
+        isBusy = true
+        defer { isBusy = false }
+        do {
+            let space = try await viewModel.restoreSpaceArchive(from: url, passphrase: restorePassphrase)
+            restorePassphrase = ""
+            report("Restored “\(space.name)” as a new Local-Only Space.", error: false)
+        } catch { report("Restore rejected: " + error.localizedDescription, error: true) }
+    }
+
+    private func report(_ message: String, error: Bool) { statusMessage = message; isError = error }
+}
+
+/// Only encrypted bytes are handed to the system document picker.
+private struct EncryptedArchiveDocument: FileDocument {
+    static var readableContentTypes: [UTType] { [.data] }
+    var data: Data
+    init(data: Data) { self.data = data }
+    init(configuration: ReadConfiguration) throws { data = configuration.file.regularFileContents ?? Data() }
+    func fileWrapper(configuration: WriteConfiguration) throws -> FileWrapper { FileWrapper(regularFileWithContents: data) }
 }
 
 // MARK: - Screen 15: Sync Status, Outbox, and Conflict Resolution
@@ -625,9 +635,10 @@ public struct SyncStatusAndConflictsScreenView: View {
                     subtitle: "Idempotent outbox operations & non-destructive conflict preservation"
                 )
 
-                if !viewModel.cloudAccountConnected || viewModel.needsCloudSignIn {
+                if (!viewModel.cloudAccountConnected || viewModel.needsCloudSignIn) && !viewModel.hasPendingAccountDeletionCleanup && !viewModel.isDeletingCloudAccount {
                     CloudAccountForm(viewModel: viewModel)
                 }
+                CloudAccountDeletionSection(viewModel: viewModel)
                 ArcaSectionCard(title: "Sync status", icon: "arrow.triangle.2.circlepath.icloud.fill") {
                     Text(viewModel.syncStatus)
                         .font(.system(size: 14, weight: .medium))
@@ -783,7 +794,6 @@ public struct StorageModeMigrationScreenView: View {
                     Picker("Target Storage Mode", selection: $targetMode) {
                         Text("Arca Sync (Cloud DB — Default)").tag(SpaceStorageMode.arcaSync)
                         Text("Local-Only (On This Device)").tag(SpaceStorageMode.localOnly)
-                        Text("Personal Cloud Backup (Pro)").tag(SpaceStorageMode.personalCloudBackup)
                     }
                     Text(targetMode == .arcaSync
                          ? "Arca Sync is the default cloud-synced E2EE mode across devices."
@@ -867,96 +877,14 @@ public struct StorageModeMigrationScreenView: View {
     }
 }
 
-// MARK: - Screen 18: Subscription Screen & Purchase Restoration
+private struct SubscriptionScreenKey: EnvironmentKey {
+    static let defaultValue = AnyView(Text("Purchases are available in the Arca iOS app."))
+}
 
-@available(macOS 14.0, iOS 17.0, *)
-public struct SubscriptionAndBillingScreenView: View {
-    @Bindable var viewModel: ArcaAppViewModel
-    @Environment(\.colorScheme) private var colorScheme
-
-    public var body: some View {
-        ScrollView(showsIndicators: false) {
-            VStack(alignment: .leading, spacing: 18) {
-                ArcaSubscreenBackHeader(
-                    title: "Arca Pro & Plan",
-                    subtitle: "StoreKit 2 Subscriptions with Zero Local Lock-In"
-                )
-
-                ArcaSectionCard(
-                    title: viewModel.isProSubscriber ? "Arca Pro Active" : "Arca Free Plan Active",
-                    subtitle: "Local-only storage, manual backups, starter templates, and basic insights are always free.",
-                    icon: "crown.fill",
-                    iconTint: ArcaTheme.warmAmber
-                ) {
-                    VStack(spacing: 8) {
-                        quotaRow("Local Spaces & Records", "Unlimited (Free & Pro)")
-                        quotaRow("Synced Active Devices", viewModel.isProSubscriber ? "Up to 10 Devices (Pro)" : "Up to 2 Devices (Free)")
-                        quotaRow("Encrypted Cloud Storage", viewModel.isProSubscriber ? "25 GB (Pro)" : "250 MB (Free)")
-                        quotaRow("Personal Cloud Backup Adapters", viewModel.isProSubscriber ? "Included (Pro)" : "Pro Upgrade")
-                    }
-                }
-
-                ArcaSectionCard(title: "Upgrade or Manage Plan", icon: "sparkles") {
-                    if !viewModel.isProSubscriber {
-                        VStack(spacing: 10) {
-                            Button {
-                                Task { await viewModel.purchaseProSubscription(annual: true) }
-                            } label: {
-                                HStack {
-                                    Text("Arca Pro Annual • Best Value")
-                                    Spacer()
-                                    Text("$34.99 / yr")
-                                }
-                            }
-                            .buttonStyle(ArcaPrimaryButtonStyle())
-
-                            Button {
-                                Task { await viewModel.purchaseProSubscription(annual: false) }
-                            } label: {
-                                HStack {
-                                    Text("Arca Pro Monthly")
-                                    Spacer()
-                                    Text("$3.99 / mo")
-                                }
-                            }
-                            .buttonStyle(ArcaSecondaryButtonStyle(isFullWidth: true))
-                        }
-                    } else {
-                        Button("Simulate Subscription Expiry (Verify Zero Data Loss)") {
-                            Task { await viewModel.simulateSubscriptionExpiry() }
-                        }
-                        .buttonStyle(ArcaSecondaryButtonStyle(tint: ArcaTheme.warmAmber, isFullWidth: true))
-                    }
-
-                    Button("Restore Purchases (StoreKit 2)") {
-                        Task { await viewModel.restorePurchases() }
-                    }
-                    .buttonStyle(ArcaSecondaryButtonStyle(tint: .secondary, isFullWidth: true))
-                }
-
-                ArcaSectionCard(title: "What Happens If Paid Access Expires", icon: "heart.text.square.fill", iconTint: ArcaTheme.secondaryEmerald) {
-                    Text("• Your local spaces, records, and attachments are NEVER deleted.\n• Full local reading, creating, editing, and manual portable exports remain available forever.\n• If your account exceeds the 2-device or 250 MB Free sync allowance, background cloud sync pauses gracefully while retaining encrypted remote copies for the 90-day retention window.")
-                        .font(.system(size: 12))
-                        .foregroundStyle(.secondary)
-                }
-            }
-            .padding(18)
-        }
-        .background(ArcaTheme.canvasBackground(for: colorScheme))
-        #if os(iOS)
-        .toolbar(.hidden, for: .navigationBar)
-        #endif
-    }
-
-    private func quotaRow(_ label: String, _ value: String) -> some View {
-        HStack {
-            Text(label)
-                .font(.system(size: 13))
-                .foregroundStyle(.secondary)
-            Spacer()
-            Text(value)
-                .font(.system(size: 13, weight: .bold, design: .rounded))
-        }
+public extension EnvironmentValues {
+    var arcaSubscriptionScreen: AnyView {
+        get { self[SubscriptionScreenKey.self] }
+        set { self[SubscriptionScreenKey.self] = newValue }
     }
 }
 

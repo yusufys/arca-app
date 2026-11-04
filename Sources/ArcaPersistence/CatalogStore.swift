@@ -57,9 +57,15 @@ public enum DataProtectionConfigurator {
         isSensitiveLocalOnly: Bool,
         excludeFromUnencryptedBackup: Bool = false
     ) {
+        #if os(iOS)
         let protection: FileProtectionType = isSensitiveLocalOnly
             ? .complete
             : .completeUntilFirstUserAuthentication
+        #else
+        // iOS protection classes can make unsigned macOS tools unable to open their own files.
+        // Clear classes left by older desktop builds; macOS uses its account and disk protection.
+        let protection: FileProtectionType = .none
+        #endif
 
         try? FileManager.default.setAttributes(
             [.protectionKey: protection],

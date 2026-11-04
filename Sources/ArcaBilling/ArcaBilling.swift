@@ -544,20 +544,7 @@ public final class BillingManager {
                 throw BillingError.userCancelledPurchase
             }
         } else {
-            guard ArcaCommercialConfig.allProductIDs.contains(productId) else {
-                throw BillingError.productNotFound(productId)
-            }
-            // Sandbox / test environment fallback when StoreKit daemon has no loaded StoreKit configuration file
-            let nextSnapshot = EntitlementSnapshot(
-                tier: .pro,
-                state: .active,
-                activeProductId: productId,
-                expirationDate: Calendar.current.date(byAdding: .year, value: 1, to: Date()),
-                lastVerifiedAt: Date()
-            )
-            self.snapshot = nextSnapshot
-            self.lastStatusMessage = "Arca Pro activated (Provisional Test Environment)."
-            return nextSnapshot
+            throw BillingError.productNotFound(productId)
         }
     }
 

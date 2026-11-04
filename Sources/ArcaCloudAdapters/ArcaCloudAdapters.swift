@@ -346,6 +346,13 @@ public actor SimulatedPersonalCloudBackupEngine: PersonalCloudBackupAdapter {
 
         // Load portable archive structure and serialize canonically on-device before encryption
         let portablePackage = try PortableSpaceArchive.loadPackage(from: archiveURL)
+        let privacyDecoder = JSONDecoder(); privacyDecoder.dateDecodingStrategy = .iso8601
+        let schemas = try privacyDecoder.decode([CollectionSchema].self, from: portablePackage.collectionsJSONData)
+        guard space.storageMode != .localOnly, !schemas.contains(where: { schema in
+            CloudPrivacyPolicy.isCollectionLocalOnly(schema) || schema.fields.contains(where: { $0.privacy == .localOnly })
+        }) else {
+            throw PersonalCloudBackupError.ioFailure("This archive contains data restricted to this device. Use an explicitly encrypted local export.")
+        }
         let serializedArchiveData = try encoder.encode(portablePackage)
 
         let backupId = UUID()

@@ -33,7 +33,8 @@ public struct StarterTemplate: Identifiable, Sendable, Equatable {
                 options: field.options,
                 defaultValue: field.defaultValue,
                 validation: field.validation,
-                isPrimaryTitle: field.isPrimaryTitle
+                isPrimaryTitle: field.isPrimaryTitle,
+                privacy: field.privacy == nil ? nil : .localOnly
             )
         }
         return CollectionSchema(
@@ -44,6 +45,7 @@ public struct StarterTemplate: Identifiable, Sendable, Equatable {
             colorHex: colorHex,
             schemaVersion: 1,
             sensitivityPosture: sensitivityPosture,
+            privacy: sensitivityPosture == .elevatedLocalDefault ? .localOnly : nil,
             fields: clonedFields
         )
     }

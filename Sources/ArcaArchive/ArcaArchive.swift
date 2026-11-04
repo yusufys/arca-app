@@ -26,7 +26,7 @@ public enum ArchiveError: LocalizedError, Sendable, Equatable {
         case .unsupportedFormatVersion(let version):
             return "Unsupported archive format version (\(version))."
         case .passphraseRequired:
-            return "This archive is encrypted and requires a passphrase to inspect or restore."
+            return "A nonempty password is required for encrypted backup export or restore."
         case .decryptionFailed:
             return "Failed to decrypt archive. The passphrase may be incorrect or the ciphertext was modified."
         case .corruptedArchive(let reason):
@@ -310,7 +310,7 @@ public struct PortableSpaceArchive: Codable, Sendable, Equatable {
 
         let packageData: Data
         if isEncrypted {
-            guard let passphrase, !passphrase.isEmpty else {
+            guard let passphrase, !passphrase.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
                 throw ArchiveError.passphraseRequired
             }
             do {
@@ -352,7 +352,8 @@ public enum ArchivePathValidator {
     /// Rejects unsafe relative paths (`..`, leading `/`, backslashes `\`, null bytes, control chars, or paths escaping `rootURL`).
     public static func validateRelativePath(_ relativePath: String, withinRoot rootURL: URL) throws {
         let trimmed = relativePath.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else {
+        guard trimmed == relativePath, !trimmed.isEmpty,
+              relativePath.rangeOfCharacter(from: .controlCharacters) == nil else {
             throw ArchiveError.unsafePathDetected("Empty path")
         }
         if trimmed.hasPrefix("/") || trimmed.hasPrefix("~") {
@@ -372,12 +373,27 @@ public enum ArchivePathValidator {
             }
         }
 
-        let standardizedRoot = rootURL.standardizedFileURL.resolvingSymlinksInPath().path
-        let candidateURL = rootURL.appendingPathComponent(trimmed, isDirectory: false).standardizedFileURL.resolvingSymlinksInPath()
+        let canonicalRoot = canonicalURLResolvingExistingAncestors(rootURL)
+        let standardizedRoot = canonicalRoot.path
+        let candidateURL = canonicalURLResolvingExistingAncestors(canonicalRoot.appendingPathComponent(trimmed, isDirectory: false))
         let rootPrefix = standardizedRoot.hasSuffix("/") ? standardizedRoot : standardizedRoot + "/"
         guard candidateURL.path.hasPrefix(rootPrefix) else {
             throw ArchiveError.unsafePathDetected("Resolved path escapes staging directory")
         }
+    }
+
+    // iOS can preserve /var aliases for missing leaf paths while resolving an existing root
+    // to /private/var. Resolve the existing ancestor first, then append missing components.
+    private static func canonicalURLResolvingExistingAncestors(_ url: URL) -> URL {
+        var ancestor = url.standardizedFileURL
+        var missing: [String] = []
+        while (try? FileManager.default.attributesOfItem(atPath: ancestor.path)) == nil && ancestor.path != "/" {
+            missing.append(ancestor.lastPathComponent)
+            ancestor.deleteLastPathComponent()
+        }
+        var result = ancestor.resolvingSymlinksInPath()
+        for component in missing.reversed() { result.appendPathComponent(component) }
+        return result.standardizedFileURL
     }
 
     /// Rejects any symbolic link at `url`.
@@ -415,7 +431,7 @@ public struct ArchiveService: Sendable {
 
     /// Exports a Space and all its active Collections, Records, and verified Attachments into a portable archive.
     ///
-    /// - If `encryptionPassphrase` is `nil` or empty, writes a `.arcaarchive` bundle directory containing
+    /// - If `encryptionPassphrase` is `nil`, writes a `.arcaarchive` bundle directory containing
     ///   `manifest.json`, `collections.json`, `records.json`, and `attachments/<relativePath>`.
     /// - If `encryptionPassphrase` is non-empty, encrypts the serialized `PortableSpaceArchive` using
     ///   `ClientCryptoEngine.encryptArchiveWithPassphrase` and writes `<name>.arcaarchive.enc`.
@@ -425,9 +441,18 @@ public struct ArchiveService: Sendable {
         destinationDirectory: URL,
         encryptionPassphrase: String? = nil
     ) async throws -> URL {
+        if let passphrase = encryptionPassphrase,
+           passphrase.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            throw ArchiveError.passphraseRequired
+        }
         try FileManager.default.createDirectory(at: destinationDirectory, withIntermediateDirectories: true)
 
         let collections = await store.listCollections(includeDeleted: false)
+        if encryptionPassphrase == nil && collections.contains(where: { schema in
+            schema.privacy != nil || CloudPrivacyPolicy.isCollectionLocalOnly(schema) || schema.fields.contains(where: { $0.privacy != nil })
+        }) {
+            throw ArchiveError.passphraseRequired
+        }
         let records = await store.listRecords(collectionId: nil, includeDeleted: false)
 
         var attachmentBlobs: [String: Data] = [:]
@@ -557,13 +582,14 @@ public struct ArchiveService: Sendable {
             try ArchivePathValidator.validateRelativePath(relativePath, withinRoot: stagingDir)
         }
 
+        // Reject invalid contents, references and schema values before creating any live state.
+        let (decodedCollections, decodedRecords) = try Self.verifyPackageIntegrity(package)
+
         // Step 3: Materialize unpack into isolated staging directory and verify no symlinks
         let stagedBundleURL = stagingDir.appendingPathComponent("unpacked.arcaarchive", isDirectory: true)
         try package.writeBundleDirectory(to: stagedBundleURL)
         try ArchivePathValidator.rejectSymlinksRecursively(in: stagedBundleURL)
 
-        // Step 4: Verify all SHA-256 digests and decode schemas & records inside staging
-        let (decodedCollections, decodedRecords) = try Self.verifyPackageIntegrity(package)
 
         // Step 5: Determine target Space identity & remap IDs according to `duplicateHandling`
         let existingSpaceWithSameId = await catalog.fetchSpace(id: package.manifest.spaceMetadata.id)
@@ -608,13 +634,19 @@ public struct ArchiveService: Sendable {
         }()
 
         // Step 6: Persist restored Space, Collections, Attachments, and Records into live store
-        await catalog.saveSpace(restoredSpace)
+        let targetDirectory = resolvedBaseDir.appendingPathComponent("Spaces").appendingPathComponent(newSpaceId.uuidString)
+        guard !fm.fileExists(atPath: targetDirectory.path) else {
+            throw ArchiveError.corruptedArchive("Restore destination already exists.")
+        }
+        var completed = false
+        defer { if !completed { try? fm.removeItem(at: targetDirectory) } }
         let targetStore = SpaceStore(space: restoredSpace, baseDirectoryURL: resolvedBaseDir)
 
         var collectionIdMap: [UUID: UUID] = [:]
         var remappedSchemasByNewId: [UUID: CollectionSchema] = [:]
 
-        for originalSchema in decodedCollections {
+        for archivedSchema in decodedCollections {
+            let originalSchema = CloudPrivacyPolicy.resettingConsent(archivedSchema)
             let newCollectionId = assignFreshIds ? UUID() : originalSchema.id
             collectionIdMap[originalSchema.id] = newCollectionId
 
@@ -626,6 +658,7 @@ public struct ArchiveService: Sendable {
                 colorHex: originalSchema.colorHex,
                 schemaVersion: originalSchema.schemaVersion,
                 sensitivityPosture: originalSchema.sensitivityPosture,
+                privacy: originalSchema.privacy,
                 fields: originalSchema.fields,
                 createdAt: originalSchema.createdAt,
                 updatedAt: now,
@@ -634,6 +667,9 @@ public struct ArchiveService: Sendable {
             )
             remappedSchemasByNewId[newCollectionId] = remappedSchema
             await targetStore.saveCollection(remappedSchema, enqueueSync: false)
+            guard await targetStore.fetchCollection(id: newCollectionId) != nil else {
+                throw ArchiveError.corruptedArchive("A restored collection could not be saved.")
+            }
         }
 
         for originalRecord in decodedRecords {
@@ -684,6 +720,12 @@ public struct ArchiveService: Sendable {
             try await targetStore.saveRecord(restoredRecord, schema: targetSchema, enqueueSync: false)
         }
 
+        // Publish only after every record and attachment was written successfully.
+        await catalog.saveSpace(restoredSpace)
+        guard await catalog.fetchSpace(id: restoredSpace.id) != nil else {
+            throw ArchiveError.corruptedArchive("The restored Space could not be added to the catalog.")
+        }
+        completed = true
         return restoredSpace
     }
 
@@ -789,6 +831,37 @@ public struct ArchiveService: Sendable {
             throw ArchiveError.integrityCheckFailed("Decoded record count does not match manifest recordCount.")
         }
 
+        let schemas = Dictionary(collections.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        guard schemas.count == collections.count, Set(records.map(\.id)).count == records.count else {
+            throw ArchiveError.integrityCheckFailed("Duplicate collection or record identity.")
+        }
+        let validationRoot = FileManager.default.temporaryDirectory.appendingPathComponent("ArcaValidation")
+        for path in package.attachmentBlobs.keys {
+            try ArchivePathValidator.validateRelativePath(path, withinRoot: validationRoot)
+            guard path.hasPrefix("attachments/") else {
+                throw ArchiveError.unsafePathDetected("Attachment must be inside attachments directory")
+            }
+        }
+        for schema in collections {
+            guard schema.spaceId == manifest.spaceMetadata.id else {
+                throw ArchiveError.integrityCheckFailed("Collection belongs to a different Space.")
+            }
+        }
+        for record in records {
+            guard record.spaceId == manifest.spaceMetadata.id,
+                  let schema = schemas[record.collectionId],
+                  SchemaEngine.validate(values: record.values, against: schema).isEmpty else {
+                throw ArchiveError.integrityCheckFailed("Invalid record schema or collection reference.")
+            }
+            for ref in record.allAttachments {
+                try ArchivePathValidator.validateRelativePath(ref.localRelativePath, withinRoot: validationRoot)
+                guard let blob = package.attachmentBlobs[ref.localRelativePath],
+                      blob.count == ref.byteSize,
+                      ClientCryptoEngine.sha256Hex(of: blob) == ref.sha256Hex.lowercased() else {
+                    throw ArchiveError.integrityCheckFailed("Invalid record attachment reference.")
+                }
+            }
+        }
         return (collections, records)
     }
 

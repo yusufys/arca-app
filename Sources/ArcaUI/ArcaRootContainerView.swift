@@ -12,6 +12,8 @@ public struct ArcaRootContainerView: View {
 
     @ViewState private var selectedTab: Int = 0
     @ViewState private var useiPhoneBezelOnMac: Bool = true
+    @ViewState private var sceneIdentifier = UUID()
+    @Environment(\.scenePhase) private var scenePhase
     @Environment(\.colorScheme) private var systemColorScheme
 
     public init(viewModel: ArcaAppViewModel) {
@@ -25,6 +27,8 @@ public struct ArcaRootContainerView: View {
     public var body: some View {
         #if os(macOS)
         macStudioContainer
+            .onChange(of: scenePhase, initial: true) { _, phase in viewModel.handleScenePhase(phase, sceneId: sceneIdentifier) }
+            .onDisappear { viewModel.forgetScene(sceneIdentifier) }
             .preferredColorScheme(viewModel.appearanceMode.colorScheme)
             .environment(\.layoutDirection, viewModel.language.layoutDirection)
             .environment(\.locale, viewModel.language.locale)
@@ -33,6 +37,10 @@ public struct ArcaRootContainerView: View {
             .preferredColorScheme(viewModel.appearanceMode.colorScheme)
             .environment(\.layoutDirection, viewModel.language.layoutDirection)
             .environment(\.locale, viewModel.language.locale)
+            .background(ScenePrivacyShield())
+            .onChange(of: scenePhase, initial: true) { _, phase in viewModel.handleScenePhase(phase, sceneId: sceneIdentifier) }
+            .onDisappear { viewModel.forgetScene(sceneIdentifier) }
+            .privacySensitive()
         #endif
     }
 
@@ -322,12 +330,16 @@ public struct ArcaRootContainerView: View {
             }
 
             Button {
-                viewModel.unlockAppWithBiometrics()
+                Task { await viewModel.unlockAppWithBiometrics() }
             } label: {
-                Label("Unlock with Face ID", systemImage: "lock.open.fill")
+                Label("Unlock Arca", systemImage: "lock.open.fill")
             }
             .buttonStyle(ArcaPrimaryButtonStyle(tint: ArcaTheme.accent, isFullWidth: true))
             .padding(.horizontal, 36)
+            .disabled(viewModel.appLock.isAuthenticating)
+            if let error = viewModel.appLock.errorMessage {
+                Text(error).font(.footnote).foregroundStyle(.secondary).multilineTextAlignment(.center)
+            }
 
             Spacer()
         }

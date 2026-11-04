@@ -339,11 +339,13 @@ public enum OptionalCapabilityEngine {
             public var isRequired: Bool?
             public var isPrimaryTitle: Bool?
             public var options: [String]?
+            public var privacy: SensitiveDataPrivacy?
         }
         public var name: String
         public var iconName: String?
         public var colorHex: String?
         public var fields: [FieldDTO]
+        public var privacy: SensitiveDataPrivacy?
     }
 
     /// Validates and imports a JSON schema produced by an external prompt without trusting arbitrary identifiers.
@@ -373,7 +375,8 @@ public enum OptionalCapabilityEngine {
                 isRequired: f.isRequired ?? (index == 0),
                 sortOrder: index,
                 options: opts,
-                isPrimaryTitle: f.isPrimaryTitle ?? (index == 0)
+                isPrimaryTitle: f.isPrimaryTitle ?? (index == 0),
+                privacy: f.privacy == nil ? nil : .localOnly
             )
         }
 
@@ -385,6 +388,7 @@ public enum OptionalCapabilityEngine {
             colorHex: dto.colorHex ?? "#2B5B84",
             schemaVersion: 1,
             sensitivityPosture: .standard,
+            privacy: dto.privacy == nil ? nil : .localOnly,
             fields: mappedFields
         )
     }

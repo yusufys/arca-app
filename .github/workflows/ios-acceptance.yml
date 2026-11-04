@@ -2,16 +2,35 @@ name: iOS relaunch and sync
 on:
   workflow_dispatch:
   push:
-    branches: [codex/ios-relaunch-sync]
+    branches: [main, codex/ios-release-preparation, codex/ios-relaunch-sync]
 permissions:
   contents: read
 jobs:
   two-iphones:
     runs-on: macos-15
-    timeout-minutes: 35
+    timeout-minutes: 50
     steps:
       - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          extensions: pdo_sqlite
+          coverage: none
+      - name: Start isolated Laravel API
+        working-directory: backend
+        run: |
+          composer install --no-interaction --prefer-dist
+          cp .env.example .env
+          php artisan key:generate
+          touch "$RUNNER_TEMP/arca.sqlite"
+          export DB_CONNECTION=sqlite DB_DATABASE="$RUNNER_TEMP/arca.sqlite" CACHE_STORE=array
+          php artisan migrate --force
+          php artisan test
+          php artisan serve --host=127.0.0.1 --port=18737 > "$RUNNER_TEMP/arca-api.log" 2>&1 &
+          curl --fail --retry 5 --retry-all-errors http://127.0.0.1:18737/up
       - name: Shared Swift tests
+        env:
+          ARCA_INTEGRATION_API_URL: http://127.0.0.1:18737
         run: swift test -Xlinker -lsqlite3
       - name: Verify relaunch and bidirectional sync
         if: ${{ !cancelled() }}

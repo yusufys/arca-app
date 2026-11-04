@@ -103,7 +103,7 @@ public enum ArcaEnvironmentConfig {
     public static var revenueCatProEntitlementID: String {
         ProcessInfo.processInfo.environment["REVENUECAT_PRO_ENTITLEMENT_ID"]
             ?? (Bundle.main.object(forInfoDictionaryKey: "REVENUECAT_PRO_ENTITLEMENT_ID") as? String)
-            ?? "arca_pro"
+            ?? "arca_app_pro"
     }
 }
 
@@ -116,6 +116,7 @@ public final class LaravelArcaSyncBackend: ArcaSyncBackendProtocol, @unchecked S
     public let session: URLSession
     private let jsonEncoder: JSONEncoder
     private let jsonDecoder: JSONDecoder
+    private var privacyGenerations: [UUID: Int] = [:]
 
     public init(baseURL: URL = ArcaEnvironmentConfig.apiBaseURL, apiToken: String? = ArcaEnvironmentConfig.apiToken,
                 session: URLSession = .shared, fallback: InMemoryArcaSyncBackend = InMemoryArcaSyncBackend()) {
@@ -178,6 +179,10 @@ public final class LaravelArcaSyncBackend: ArcaSyncBackendProtocol, @unchecked S
     }
     public func deleteAccountAndRemoteData(accountId: String) async throws -> RemoteDeletionReceipt {
         let receipt = try jsonDecoder.decode(RemoteDeletionReceipt.self, from: await request("account", method: "DELETE"))
+        guard receipt.accountId == accountId, receipt.didDeleteEntireAccount,
+              receipt.deletedSpaceId == nil, receipt.verifiedZeroRemainingRecords else {
+            throw SyncServiceError.invalidOperationEnvelope("The server did not verify complete account deletion.")
+        }
         apiToken = nil; return receipt
     }
     private struct DeviceWire: Decodable {
@@ -245,8 +250,29 @@ public final class LaravelArcaSyncBackend: ArcaSyncBackendProtocol, @unchecked S
         let new_revision: Int64; let key_version: Int; let schema_version = 1; let ciphertext_bytes: Int
         let encrypted_envelope: OperationEnvelope
     }
+    public func fetchCloudPrivacyRules(spaceId: UUID, deviceId: String) async throws -> [EncryptedCloudPrivacyRule] {
+        struct Response: Decodable { let generation: Int; let rules: [EncryptedCloudPrivacyRule] }
+        do {
+            let result = try jsonDecoder.decode(Response.self, from: await request("spaces/\(spaceId)/privacy", deviceId: deviceId))
+            privacyGenerations[spaceId] = result.generation
+            return result.rules
+        } catch let error as NSError where error.domain == "ArcaSync.HTTP" && error.code == 404 {
+            // Older servers can sync ordinary data, but may never acknowledge a privacy deletion.
+            return []
+        }
+    }
+
+    public func replaceCloudPrivacyRule(_ rule: EncryptedCloudPrivacyRule, spaceId: UUID, deviceId: String, expectedCursor: Int64) async throws {
+        struct Payload: Encodable { let rule: EncryptedCloudPrivacyRule; let expected_cursor: Int64; let generation: Int }
+        struct Response: Decodable { let generation: Int; let collection_id: UUID; let verified: Bool }
+        let response = try jsonDecoder.decode(Response.self, from: await request("spaces/\(spaceId)/privacy", method: "POST",
+            body: jsonEncoder.encode(Payload(rule: rule, expected_cursor: expectedCursor, generation: privacyGenerations[spaceId] ?? 0)), deviceId: deviceId))
+        guard response.verified, response.collection_id == rule.collectionId else { throw SyncServiceError.invalidOperationEnvelope("Remote private copy removal could not be verified.") }
+        privacyGenerations[spaceId] = response.generation
+    }
+
     public func pushEncryptedOperations(accountId: String, spaceId: UUID, deviceId: String, operations: [EncryptedSyncOperation]) async throws -> SyncPushReceipt {
-        struct Payload: Encodable { let operations: [PushOperation] }
+        struct Payload: Encodable { let operations: [PushOperation]; let privacy_protocol = 1; let privacy_generation: Int }
         let wire = try operations.map { op -> PushOperation in
             guard op.spaceId == spaceId && op.authorDeviceId == deviceId else { throw SyncServiceError.invalidOperationEnvelope("Operation identity mismatch.") }
             let envelope = OperationEnvelope(operation: op)
@@ -255,7 +281,7 @@ public final class LaravelArcaSyncBackend: ArcaSyncBackendProtocol, @unchecked S
                                  ciphertext_bytes: try jsonEncoder.encode(envelope).count, encrypted_envelope: envelope)
         }
         struct Response: Decodable { let acknowledged_operation_ids: [UUID]; let latest_cursor: Int64; let remote_storage_bytes_used: Int64? }
-        let value = try jsonDecoder.decode(Response.self, from: await request("spaces/\(spaceId.uuidString)/push", method: "POST", body: jsonEncoder.encode(Payload(operations: wire)), deviceId: deviceId))
+        let value = try jsonDecoder.decode(Response.self, from: await request("spaces/\(spaceId.uuidString)/push", method: "POST", body: jsonEncoder.encode(Payload(operations: wire, privacy_generation: privacyGenerations[spaceId] ?? 0)), deviceId: deviceId))
         return SyncPushReceipt(spaceId: spaceId, acceptedOperationIds: value.acknowledged_operation_ids, deduplicatedOperationIds: [], latestCursor: SyncCursor(sequenceNumber: value.latest_cursor), totalAccountBytesUsed: value.remote_storage_bytes_used ?? 0)
     }
     public func pullEncryptedOperations(accountId: String, spaceId: UUID, deviceId: String, sinceCursor: SyncCursor?, limit: Int) async throws -> SyncPullBatch {

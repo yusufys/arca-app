@@ -790,6 +790,10 @@ public enum SyncConflictEngine {
         // Case 4: Concurrent edits exist on both local and remote!
         let effectiveBaseRevision = localBaseRevision ?? baseRecordSnapshot?.revision ?? min(local.revision, remoteRecord.revision) - 1
 
+        // A sanitized re-publication may repeat the local edit's base revision after a privacy purge.
+        // That snapshot contains no newer remote edit and must not discard a queued offline change.
+        if remoteRecord.revision <= effectiveBaseRevision { return .cleanNoChange(local) }
+
         // Subcase 4a: Edit vs. Delete conflict (one side is a tombstone, the other side is an active edit)
         if local.isDeleted != remoteRecord.isDeleted {
             if local.isDeleted && remoteRecord.isDeleted {
@@ -959,6 +963,26 @@ public enum SyncConflictEngine {
 ///
 /// All payloads crossing this boundary (`EncryptedSyncOperation`, `EncryptedAttachmentBlob`, `WrappedSpaceKeyRing`)
 /// are encrypted on the client prior to invocation.
+public struct EncryptedCloudPrivacyRule: Codable, Sendable, Equatable {
+    public let changeId: UUID
+    public let collectionId: UUID
+    public let keyGeneration: Int
+    public let envelope: EncryptedEnvelope
+    public init(rule: CollectionCloudPrivacyRule, spaceId: UUID, keyRing: SpaceKeyRing) throws {
+        changeId = rule.changeId ?? UUID(); collectionId = rule.collectionId; keyGeneration = keyRing.keyGeneration
+        var storedRule = rule; storedRule.changeId = changeId
+        envelope = try ClientCryptoEngine.encryptPayload(JSONEncoder().encode(storedRule), using: keyRing.symmetricKey, keyId: keyRing.keyId,
+            aad: Data("arca.privacy.v1:\(spaceId):\(collectionId)".utf8))
+    }
+    public func decrypt(spaceId: UUID, keyRing: SpaceKeyRing) throws -> CollectionCloudPrivacyRule {
+        let bytes = try ClientCryptoEngine.decryptPayload(envelope, using: keyRing.symmetricKey,
+            expectedAAD: Data("arca.privacy.v1:\(spaceId):\(collectionId)".utf8))
+        let rule = try JSONDecoder().decode(CollectionCloudPrivacyRule.self, from: bytes)
+        guard rule.collectionId == collectionId, rule.changeId == changeId else { throw SyncServiceError.invalidOperationEnvelope("Privacy rule identity mismatch.") }
+        return rule
+    }
+}
+
 public protocol ArcaSyncBackendProtocol: Sendable {
     // 1. Authentication & Account Deletion
     func authenticate(
@@ -999,6 +1023,9 @@ public protocol ArcaSyncBackendProtocol: Sendable {
         spaceId: UUID,
         deviceId: String
     ) async throws -> WrappedSpaceKeyRing?
+
+    func fetchCloudPrivacyRules(spaceId: UUID, deviceId: String) async throws -> [EncryptedCloudPrivacyRule]
+    func replaceCloudPrivacyRule(_ rule: EncryptedCloudPrivacyRule, spaceId: UUID, deviceId: String, expectedCursor: Int64) async throws
 
     // 4. Idempotent Push & Resumable Incremental Pull
     func pushEncryptedOperations(
@@ -1048,6 +1075,13 @@ public protocol ArcaSyncBackendProtocol: Sendable {
 /// - Strict device revocation checks blocking pushes/pulls/uploads from revoked devices.
 /// - 100% idempotency on `operationId` so retried pushes never duplicate records.
 /// - Ciphertext SHA-256 integrity checks on attachment uploads.
+public extension ArcaSyncBackendProtocol {
+    func fetchCloudPrivacyRules(spaceId: UUID, deviceId: String) async throws -> [EncryptedCloudPrivacyRule] { [] }
+    func replaceCloudPrivacyRule(_ rule: EncryptedCloudPrivacyRule, spaceId: UUID, deviceId: String, expectedCursor: Int64) async throws {
+        throw SyncServiceError.invalidOperationEnvelope("This server cannot verify removal of older private copies. Collection uploads remain paused.")
+    }
+}
+
 public actor InMemoryArcaSyncBackend: ArcaSyncBackendProtocol {
     private struct AccountState {
         var session: SyncAuthSession
@@ -1064,6 +1098,7 @@ public actor InMemoryArcaSyncBackend: ArcaSyncBackendProtocol {
     private var accounts: [String: AccountState] = [:]
     private var defaultAccountId: String = "default-arca-account"
     private var isSimulatedOffline: Bool = false
+    private var privacyRulesBySpace: [UUID: [EncryptedCloudPrivacyRule]] = [:]
 
     public init() {}
 
@@ -1299,6 +1334,27 @@ public actor InMemoryArcaSyncBackend: ArcaSyncBackendProtocol {
         guard let state = accounts[accountId] else { return nil }
         try verifyActiveEnrolledDevice(deviceId: deviceId, in: state)
         return state.wrappedSpaceKeys[spaceId]?.last
+    }
+
+    public func fetchCloudPrivacyRules(spaceId: UUID, deviceId: String) async throws -> [EncryptedCloudPrivacyRule] {
+        try ensureOnline()
+        guard accounts.values.contains(where: { $0.devices.contains { $0.deviceId == deviceId && !$0.isRevoked } }) else { throw SyncServiceError.unauthenticated }
+        return privacyRulesBySpace[spaceId] ?? []
+    }
+
+    public func replaceCloudPrivacyRule(_ rule: EncryptedCloudPrivacyRule, spaceId: UUID, deviceId: String, expectedCursor: Int64) async throws {
+        try ensureOnline()
+        guard let accountId = accounts.first(where: { $0.value.devices.contains { $0.deviceId == deviceId && !$0.isRevoked } })?.key,
+              var state = accounts[accountId] else { throw SyncServiceError.unauthenticated }
+        let operations = state.operationsBySpace[spaceId] ?? []
+        guard (operations.compactMap(\.serverSequenceNumber).max() ?? 0) <= expectedCursor else { throw SyncServiceError.invalidOperationEnvelope("Pull the latest changes before privacy deletion.") }
+        guard (state.attachmentsBySpace[spaceId] ?? [:]).isEmpty else { throw SyncServiceError.invalidOperationEnvelope("Attachment removal cannot be verified.") }
+        let removed = operations.filter { $0.collectionId == rule.collectionId }
+        state.operationsBySpace[spaceId] = operations.filter { $0.collectionId != rule.collectionId }
+        for op in removed { state.operationSequenceByOperationId.removeValue(forKey: op.operationId) }
+        accounts[accountId] = state
+        privacyRulesBySpace[spaceId, default: []].removeAll { $0.collectionId == rule.collectionId }
+        privacyRulesBySpace[spaceId, default: []].append(rule)
     }
 
     // MARK: 4. Idempotent Push & Resumable Incremental Pull
@@ -1675,6 +1731,7 @@ public actor SyncCoordinator {
     private var schemasBySpace: [UUID: [UUID: CollectionSchema]] = [:]
     private var recordsBySpace: [UUID: [UUID: RecordItem]] = [:]
     private var conflictsBySpace: [UUID: [SyncConflict]] = [:]
+    private var blockedMemoryCollections: Set<UUID> = []
 
     public init(
         accountId: String,
@@ -1703,6 +1760,15 @@ public actor SyncCoordinator {
         if keyRing.keyGeneration >= currentMax {
             latestKeyGenBySpace[keyRing.spaceId] = keyRing.keyGeneration
         }
+    }
+
+    /// Registers a local schema for privacy projection without publishing it.
+    public func registerCollectionSchema(_ schema: CollectionSchema) {
+        if let prior = schemasBySpace[schema.spaceId]?[schema.id], CloudPrivacyPolicy.rule(for: prior) != CloudPrivacyPolicy.rule(for: schema) {
+            blockedMemoryCollections.insert(schema.id)
+            outboxBySpace[schema.spaceId]?.removeAll { $0.operation.collectionId == schema.id }
+        }
+        schemasBySpace[schema.spaceId, default: [:]][schema.id] = schema
     }
 
     /// Returns the active `SpaceKeyRing` for `spaceId`, generating generation 1 if none exists yet.
@@ -1767,13 +1833,21 @@ public actor SyncCoordinator {
         guard spaceMode == .arcaSync else {
             throw SyncServiceError.spaceIsNotConfiguredForSync(spaceId: schema.spaceId)
         }
-        let existing = schemasBySpace[schema.spaceId]?[schema.id]
-        let baseRev = existing?.revision ?? max(0, schema.revision - 1)
+        let priorSchema = schemasBySpace[schema.spaceId]?[schema.id]
+        if let priorSchema, CloudPrivacyPolicy.rule(for: priorSchema) != CloudPrivacyPolicy.rule(for: schema) {
+            blockedMemoryCollections.insert(schema.id)
+            outboxBySpace[schema.spaceId]?.removeAll { $0.operation.collectionId == schema.id || $0.operation.entityId == schema.id }
+        }
+        schemasBySpace[schema.spaceId, default: [:]][schema.id] = schema
+        guard let cloudSchema = CloudPrivacyPolicy.schemaForCloud(schema) else {
+            throw SyncServiceError.invalidOperationEnvelope("This collection is kept on this device.")
+        }
+        let baseRev = priorSchema?.revision ?? max(0, schema.revision - 1)
         let keyRing = activeSpaceKeyRing(for: schema.spaceId)
 
         let op = try EncryptedSyncOperation.encryptSchemaOperation(
             operationId: operationId,
-            schema: schema,
+            schema: cloudSchema,
             baseRevision: baseRev,
             authorDeviceId: deviceIdentity.deviceId,
             spaceKeyRing: keyRing
@@ -1783,7 +1857,7 @@ public actor SyncCoordinator {
         spaceSchemas[schema.id] = schema
         schemasBySpace[schema.spaceId] = spaceSchemas
 
-        appendToOutbox(PendingSyncOutboxItem(operation: op), for: schema.spaceId)
+        if !blockedMemoryCollections.contains(schema.id) { appendToOutbox(PendingSyncOutboxItem(operation: op), for: schema.spaceId) }
         return op
     }
 
@@ -1802,7 +1876,11 @@ public actor SyncCoordinator {
         let baseRev = priorSnapshot?.revision ?? max(0, record.revision - 1)
         let keyRing = activeSpaceKeyRing(for: record.spaceId)
 
-        var updatedRecord = record
+        guard !blockedMemoryCollections.contains(record.collectionId),
+              let schema = schemasBySpace[record.spaceId]?[record.collectionId],
+              var updatedRecord = CloudPrivacyPolicy.recordForCloud(record, schema: schema) else {
+            throw SyncServiceError.invalidOperationEnvelope("A syncable collection schema is required before queuing a record.")
+        }
         updatedRecord.lastModifiedByDeviceId = deviceIdentity.deviceId
 
         let op = try EncryptedSyncOperation.encryptRecordOperation(
@@ -1814,7 +1892,8 @@ public actor SyncCoordinator {
         )
 
         var spaceRecords = recordsBySpace[record.spaceId] ?? [:]
-        spaceRecords[record.id] = updatedRecord
+        var localRecord = record; localRecord.lastModifiedByDeviceId = deviceIdentity.deviceId
+        spaceRecords[record.id] = localRecord
         recordsBySpace[record.spaceId] = spaceRecords
 
         appendToOutbox(
@@ -1857,6 +1936,15 @@ public actor SyncCoordinator {
             throw SyncServiceError.spaceIsNotConfiguredForSync(spaceId: spaceId)
         }
 
+        var privacyRules: [CollectionCloudPrivacyRule] = []
+        for encrypted in try await backend.fetchCloudPrivacyRules(spaceId: spaceId, deviceId: deviceIdentity.deviceId) {
+            let ring = try resolveKeyRing(for: spaceId, keyGeneration: encrypted.keyGeneration, keyId: encrypted.envelope.keyId)
+            let rule = try encrypted.decrypt(spaceId: spaceId, keyRing: ring)
+            privacyRules.append(rule)
+            if let schema = schemasBySpace[spaceId]?[rule.collectionId] {
+                schemasBySpace[spaceId]?[rule.collectionId] = CloudPrivacyPolicy.applyingRule(rule, to: schema)
+            }
+        }
         var currentCursor = cursorsBySpace[spaceId] ?? .initial
         var pulledCount = 0
         var cleanlyMergedCount = 0
@@ -1887,7 +1975,9 @@ public actor SyncCoordinator {
 
                 switch remoteOp.entityType {
                 case .collectionSchema:
-                    let remoteSchema = try remoteOp.decryptSchema(using: keyRing)
+                    var remoteSchema = try remoteOp.decryptSchema(using: keyRing)
+                    for rule in privacyRules { remoteSchema = CloudPrivacyPolicy.applyingRule(rule, to: remoteSchema) }
+                    remoteSchema = CloudPrivacyPolicy.mergingRemoteSchema(remoteSchema, local: schemasBySpace[spaceId]?[remoteSchema.id])
                     var spaceSchemas = schemasBySpace[spaceId] ?? [:]
                     if let localSchema = spaceSchemas[remoteSchema.id] {
                         if remoteSchema.revision >= localSchema.revision {
@@ -1899,7 +1989,12 @@ public actor SyncCoordinator {
                     schemasBySpace[spaceId] = spaceSchemas
 
                 case .record:
-                    let remoteRecord = try remoteOp.decryptRecord(using: keyRing)
+                    let incoming = try remoteOp.decryptRecord(using: keyRing)
+                    let remoteRecord: RecordItem
+                    if let schema = schemasBySpace[spaceId]?[incoming.collectionId] {
+                        if CloudPrivacyPolicy.isCollectionLocalOnly(schema) { continue }
+                        remoteRecord = CloudPrivacyPolicy.preservingLocalValues(in: incoming, local: recordsBySpace[spaceId]?[incoming.id], schema: schema)
+                    } else { remoteRecord = incoming }
                     var spaceRecords = recordsBySpace[spaceId] ?? [:]
                     let localRecord = spaceRecords[remoteRecord.id]
 
@@ -1954,14 +2049,30 @@ public actor SyncCoordinator {
         }
 
         // 2. Push eligible outbox operations
-        let currentOutbox = outboxBySpace[spaceId] ?? []
-        let eligibleItems = currentOutbox.filter {
-            $0.nextEligibleAttemptAt <= referenceDate
-        }
-
         var pushedCount = 0
         var deduplicatedCount = 0
         let finalCursor = currentCursor
+        var projectedOutbox: [PendingSyncOutboxItem] = []
+        for item in outboxBySpace[spaceId] ?? [] {
+            let op = item.operation
+            guard let collectionId = op.collectionId, !blockedMemoryCollections.contains(collectionId),
+                  let schema = schemasBySpace[spaceId]?[collectionId] else { continue }
+            let projected: EncryptedSyncOperation
+            if op.entityType == .collectionSchema, let cloudSchema = CloudPrivacyPolicy.schemaForCloud(schema) {
+                projected = try EncryptedSyncOperation.encryptSchemaOperation(operationId: op.operationId, schema: cloudSchema,
+                    baseRevision: op.baseRevision, authorDeviceId: deviceIdentity.deviceId, spaceKeyRing: activeSpaceKeyRing(for: spaceId), createdAt: op.createdAt)
+            } else if op.entityType == .record, let record = recordsBySpace[spaceId]?[op.entityId],
+                      let cloudRecord = CloudPrivacyPolicy.recordForCloud(record, schema: schema) {
+                projected = try EncryptedSyncOperation.encryptRecordOperation(operationId: op.operationId, record: cloudRecord,
+                    baseRevision: op.baseRevision, authorDeviceId: deviceIdentity.deviceId, spaceKeyRing: activeSpaceKeyRing(for: spaceId), createdAt: op.createdAt)
+            } else { continue }
+            var rebuilt = item
+            rebuilt = PendingSyncOutboxItem(operation: projected, baseRecordSnapshot: item.baseRecordSnapshot,
+                attemptCount: item.attemptCount, nextEligibleAttemptAt: item.nextEligibleAttemptAt, lastErrorDescription: item.lastErrorDescription)
+            projectedOutbox.append(rebuilt)
+        }
+        outboxBySpace[spaceId] = projectedOutbox
+        let eligibleItems = projectedOutbox.filter { $0.nextEligibleAttemptAt <= referenceDate }
 
         for batchStart in stride(from: 0, to: eligibleItems.count, by: 500) {
             let batchItems = Array(eligibleItems[batchStart..<min(batchStart + 500, eligibleItems.count)])
@@ -2022,6 +2133,12 @@ public actor SyncCoordinator {
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
 
+        let encryptedRules = try await backend.fetchCloudPrivacyRules(spaceId: spaceId, deviceId: deviceIdentity.deviceId)
+        for encryptedRule in encryptedRules {
+            let ring = try resolveKeyRing(for: spaceId, keyGeneration: encryptedRule.keyGeneration, keyId: encryptedRule.envelope.keyId)
+            try await spaceStore.applyCloudPrivacyRule(encryptedRule.decrypt(spaceId: spaceId, keyRing: ring))
+        }
+
         let storedConflicts = try await spaceStore.syncConflictPayloads(accountId: accountId)
         conflictsBySpace[spaceId] = try storedConflicts.map { try decoder.decode(SyncConflict.self, from: $0) }
         let conflictEncoder = JSONEncoder()
@@ -2067,7 +2184,13 @@ public actor SyncCoordinator {
                     }
 
                 case .record:
-                    let remoteRecord = try remoteOp.decryptRecord(using: keyRing)
+                    let incomingRecord = try remoteOp.decryptRecord(using: keyRing)
+                    guard let privacySchema = await spaceStore.fetchCollection(id: incomingRecord.collectionId) else {
+                        throw SyncServiceError.invalidOperationEnvelope("Remote record schema is missing; cursor retained for retry.")
+                    }
+                    if CloudPrivacyPolicy.isCollectionLocalOnly(privacySchema) { continue }
+                    let remoteRecord = CloudPrivacyPolicy.preservingLocalValues(in: incomingRecord,
+                        local: await spaceStore.fetchRecord(id: incomingRecord.id), schema: privacySchema)
                     let localRecord = await spaceStore.fetchRecord(id: remoteRecord.id)
                     let matchingOutbox = await spaceStore.pendingOutboxItems().filter {
                         ($0.parsedEntityType == .recordUpsert || $0.parsedEntityType == .recordTombstone) &&
@@ -2126,6 +2249,22 @@ public actor SyncCoordinator {
             }
         }
 
+        // A guarded purge removes old ciphertext before sanitized replacements can be uploaded.
+        var blockedCollections = Set<UUID>()
+        for rule in try await spaceStore.pendingPrivacyRules() {
+            do {
+                guard !(conflictsBySpace[spaceId] ?? []).contains(where: { $0.localRecord.collectionId == rule.collectionId }) else {
+                    throw SyncServiceError.invalidOperationEnvelope("Resolve this collection's conflicts before removing old cloud copies.")
+                }
+                let encrypted = try EncryptedCloudPrivacyRule(rule: rule, spaceId: spaceId, keyRing: activeSpaceKeyRing(for: spaceId))
+                try await backend.replaceCloudPrivacyRule(encrypted, spaceId: spaceId, deviceId: deviceIdentity.deviceId, expectedCursor: currentCursor.sequenceNumber)
+                try await spaceStore.enqueueCollectionSyncSnapshot(collectionId: rule.collectionId)
+                try await spaceStore.acknowledgePrivacyRule(collectionId: rule.collectionId)
+            } catch {
+                blockedCollections.insert(rule.collectionId)
+            }
+        }
+
         // 2. Encrypt and push remaining `SpaceStore` outbox items
         let remainingOutbox = await spaceStore.pendingOutboxItems()
         let keyRing = activeSpaceKeyRing(for: spaceId)
@@ -2135,7 +2274,10 @@ public actor SyncCoordinator {
             guard let payloadData = item.payloadJSON.data(using: .utf8) else { continue }
             switch item.parsedEntityType {
             case .collectionUpsert, .collectionTombstone:
-                if let schema = try? decoder.decode(CollectionSchema.self, from: payloadData) {
+                if let queued = try? decoder.decode(CollectionSchema.self, from: payloadData),
+                   !blockedCollections.contains(queued.id),
+                   let current = await spaceStore.fetchCollection(id: queued.id),
+                   let schema = CloudPrivacyPolicy.schemaForCloud(current) {
                     let op = try EncryptedSyncOperation.encryptSchemaOperation(
                         operationId: item.operationId,
                         schema: schema,
@@ -2147,7 +2289,11 @@ public actor SyncCoordinator {
                     encryptedOps.append(op)
                 }
             case .recordUpsert, .recordTombstone:
-                if let record = try? decoder.decode(RecordItem.self, from: payloadData) {
+                if let queued = try? decoder.decode(RecordItem.self, from: payloadData),
+                   !blockedCollections.contains(queued.collectionId),
+                   let schema = await spaceStore.fetchCollection(id: queued.collectionId),
+                   let current = await spaceStore.fetchRecord(id: queued.id),
+                   let record = CloudPrivacyPolicy.recordForCloud(current, schema: schema) {
                     let op = try EncryptedSyncOperation.encryptRecordOperation(
                         operationId: item.operationId,
                         record: record,
@@ -2217,7 +2363,7 @@ public actor SyncCoordinator {
         }
         let conflict = spaceConflicts[idx]
 
-        let resolvedRecord = SyncConflictEngine.resolveConflict(
+        var resolvedRecord = SyncConflictEngine.resolveConflict(
             conflict,
             choice: choice,
             resolvedByDeviceId: deviceIdentity.deviceId
@@ -2226,6 +2372,7 @@ public actor SyncCoordinator {
         guard let schema = await spaceStore.fetchCollection(id: resolvedRecord.collectionId) else {
             throw SyncServiceError.invalidOperationEnvelope("Conflict record schema is missing.")
         }
+        resolvedRecord = CloudPrivacyPolicy.preservingLocalValues(in: resolvedRecord, local: await spaceStore.fetchRecord(id: resolvedRecord.id), schema: schema)
         try await spaceStore.saveRecord(resolvedRecord, schema: schema, enqueueSync: true)
         try await spaceStore.removeSyncConflict(recordId: conflict.recordId, accountId: accountId)
         spaceConflicts.remove(at: idx); conflictsBySpace[spaceId] = spaceConflicts
@@ -2275,6 +2422,14 @@ public actor SyncCoordinator {
         spaceId: UUID,
         recordId: UUID
     ) async throws -> AttachmentReference {
+        guard let record = recordsBySpace[spaceId]?[recordId],
+              !blockedMemoryCollections.contains(record.collectionId),
+              let schema = schemasBySpace[spaceId]?[record.collectionId],
+              let projected = CloudPrivacyPolicy.recordForCloud(record, schema: schema),
+              projected.values.values.contains(where: { value in
+                  if case .attachments(let references) = value { return references.contains(where: { $0.id == reference.id }) }
+                  return false
+              }) else { throw SyncServiceError.invalidOperationEnvelope("This attachment has no verified cloud consent.") }
         let keyRing = activeSpaceKeyRing(for: spaceId)
         let blob = try EncryptedAttachmentBlob.encryptAttachment(
             reference: reference,

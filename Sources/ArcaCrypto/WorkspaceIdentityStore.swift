@@ -69,6 +69,22 @@ public final class WorkspaceIdentityStore {
 
     public var cloudSession: CloudSession? { state.cloudSession }
 
+    /// Detaches a deleted account while retaining every local Space key and device identity.
+    /// A future account gets a new master key and recovery phrase.
+    public func clearDeletedCloudAccount(expectedAccountId: String) throws {
+        guard let session = state.cloudSession else { return }
+        guard session.accountId == expectedAccountId else {
+            throw ArcaCryptoError.corruptedEnvelopeField("Account deletion identity mismatch")
+        }
+        var next = state
+        next.cloudSession = nil
+        next.masterKey = SymmetricKey(size: .bits256).withUnsafeBytes { Data($0) }
+        next.recoveryPhrase = RecoveryKeyCredential.generate().formattedPhrase
+        try keyStore.saveKeyData(JSONEncoder().encode(next), forIdentifier: identifier)
+        state = next
+        masterAccountKey = SymmetricKey(data: next.masterKey)
+    }
+
     /// Account switching requires explicit local migration; never attach existing data to a different account.
     public func bindCloudAccount(accountId: String, bearer: String, masterAccountKey: SymmetricKey, recoveryPhrase: String) throws {
         guard !accountId.isEmpty, !bearer.isEmpty,

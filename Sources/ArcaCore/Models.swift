@@ -350,6 +350,7 @@ public struct FieldDefinition: Identifiable, Codable, Sendable, Equatable, Hasha
     public var isPrimaryTitle: Bool
     public var isArchived: Bool
     public var archivedAt: Date?
+    public var privacy: SensitiveDataPrivacy?
 
     public init(
         id: UUID = UUID(),
@@ -362,7 +363,8 @@ public struct FieldDefinition: Identifiable, Codable, Sendable, Equatable, Hasha
         validation: FieldValidationRules = FieldValidationRules(),
         isPrimaryTitle: Bool = false,
         isArchived: Bool = false,
-        archivedAt: Date? = nil
+        archivedAt: Date? = nil,
+        privacy: SensitiveDataPrivacy? = nil
     ) {
         self.id = id
         self.label = label
@@ -375,6 +377,7 @@ public struct FieldDefinition: Identifiable, Codable, Sendable, Equatable, Hasha
         self.isPrimaryTitle = isPrimaryTitle
         self.isArchived = isArchived
         self.archivedAt = archivedAt
+        self.privacy = privacy
     }
 }
 
@@ -396,6 +399,7 @@ public struct CollectionSchema: Identifiable, Codable, Sendable, Equatable, Hash
     public var colorHex: String
     public var schemaVersion: Int
     public var sensitivityPosture: SensitivityPosture
+    public var privacy: SensitiveDataPrivacy?
     public var fields: [FieldDefinition]
     public var createdAt: Date
     public var updatedAt: Date
@@ -410,6 +414,7 @@ public struct CollectionSchema: Identifiable, Codable, Sendable, Equatable, Hash
         colorHex: String = "#2B5B84",
         schemaVersion: Int = 1,
         sensitivityPosture: SensitivityPosture = .standard,
+        privacy: SensitiveDataPrivacy? = nil,
         fields: [FieldDefinition] = [],
         createdAt: Date = Date(),
         updatedAt: Date = Date(),
@@ -423,6 +428,7 @@ public struct CollectionSchema: Identifiable, Codable, Sendable, Equatable, Hash
         self.colorHex = colorHex
         self.schemaVersion = schemaVersion
         self.sensitivityPosture = sensitivityPosture
+        self.privacy = privacy
         self.fields = fields.sorted(by: { $0.sortOrder < $1.sortOrder })
         self.createdAt = createdAt
         self.updatedAt = updatedAt

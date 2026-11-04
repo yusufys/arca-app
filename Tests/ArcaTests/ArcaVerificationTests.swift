@@ -339,6 +339,7 @@ final class ArcaVerificationTests: XCTestCase {
         let coordinatorA = SyncCoordinator(accountId: session.accountId, deviceIdentity: devA, backend: backend)
         let opId = UUID()
         await coordinatorA.registerSpaceKeyRing(keyRing)
+        await coordinatorA.registerCollectionSchema(schema)
         try await coordinatorA.queueRecordUpsert(baseRecord, operationId: opId)
         let firstSync = try await coordinatorA.synchronizeSpace(spaceId: space.id, spaceMode: space.storageMode)
         XCTAssertEqual(firstSync.pushedOperationsCount, 1)

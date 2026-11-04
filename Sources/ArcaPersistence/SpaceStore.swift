@@ -182,6 +182,8 @@ public actor SpaceStore {
 
         CREATE TABLE IF NOT EXISTS sync_cursors (account_id TEXT PRIMARY KEY, sequence_number INTEGER NOT NULL);
 
+        CREATE TABLE IF NOT EXISTS privacy_pending (collection_id TEXT PRIMARY KEY, rule_json TEXT NOT NULL);
+
         CREATE TABLE IF NOT EXISTS sync_outbox (
             operation_id TEXT PRIMARY KEY,
             entity_type TEXT NOT NULL,
@@ -264,51 +266,56 @@ public actor SpaceStore {
 
     /// Inserts or updates a `CollectionSchema`, optionally recording an outbox item in the same transaction.
     public func saveCollection(_ schema: CollectionSchema, enqueueSync: Bool = true) {
-        guard let db else { return }
-        guard let payloadData = try? encoder.encode(schema),
-              let payloadJSON = String(data: payloadData, encoding: .utf8) else {
-            return
-        }
+        try? saveCollectionStrict(schema, enqueueSync: enqueueSync)
+    }
 
+    /// Privacy changes and their deletion requests commit together or both roll back.
+    public func saveCollectionStrict(_ schema: CollectionSchema, enqueueSync: Bool = true) throws {
+        guard schema.spaceId == spaceId, let db else { throw PersistenceError.databaseOpenFailed("Space database unavailable.") }
+        let payload = try encoder.encode(schema)
+        let payloadJSON = String(decoding: payload, as: UTF8.self)
+        if CloudPrivacyPolicy.isCollectionLocalOnly(schema) || schema.fields.contains(where: { $0.privacy == .localOnly }) {
+            // A mixed Space's SQLite file contains its local-only values. Exclude the entire directory,
+            // including WAL files and attachment bytes, from automatic device backups.
+            var values = URLResourceValues(); values.isExcludedFromBackup = true
+            var directory = spaceDirectoryURL
+            try directory.setResourceValues(values)
+            for url in [spaceDirectoryURL, databaseURL, attachmentsDirectoryURL] {
+                DataProtectionConfigurator.applyProtection(at: url, isSensitiveLocalOnly: true, excludeFromUnencryptedBackup: true)
+            }
+        }
         let existing = fetchCollection(id: schema.id)
         let baseRevision = existing?.revision ?? max(0, schema.revision - 1)
-
-        Self.executeRawSQL(on: db, sql: "BEGIN IMMEDIATE TRANSACTION;")
-        let upsertSQL = """
-        INSERT INTO collections (id, schema_version, is_deleted, updated_at, payload_json)
-        VALUES (?, ?, ?, ?, ?)
-        ON CONFLICT(id) DO UPDATE SET
-            schema_version = excluded.schema_version,
-            is_deleted = excluded.is_deleted,
-            updated_at = excluded.updated_at,
-            payload_json = excluded.payload_json;
-        """
-        var stmt: OpaquePointer?
-        if sqlite3_prepare_v2(db, upsertSQL, -1, &stmt, nil) == SQLITE_OK {
-            Self.bindText(stmt, index: 1, value: schema.id.uuidString)
-            sqlite3_bind_int(stmt, 2, Int32(schema.schemaVersion))
-            sqlite3_bind_int(stmt, 3, schema.isDeleted ? 1 : 0)
-            sqlite3_bind_double(stmt, 4, schema.updatedAt.timeIntervalSince1970)
-            Self.bindText(stmt, index: 5, value: payloadJSON)
-            _ = sqlite3_step(stmt)
-            sqlite3_finalize(stmt)
-        }
-
-        if enqueueSync {
-            let entityType: OutboxEntityType = schema.isDeleted ? .collectionTombstone : .collectionUpsert
-            insertOutboxItemInternal(
-                on: db,
-                entityType: entityType.rawValue,
-                entityId: schema.id,
-                baseRevision: baseRevision,
-                payloadJSON: payloadJSON
-            )
-        }
-        Self.executeRawSQL(on: db, sql: "COMMIT;")
+        try executeSQLStrict("BEGIN IMMEDIATE TRANSACTION;")
+        do {
+            var statement: OpaquePointer?
+            let sql = "INSERT INTO collections(id,schema_version,is_deleted,updated_at,payload_json) VALUES(?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET schema_version=excluded.schema_version,is_deleted=excluded.is_deleted,updated_at=excluded.updated_at,payload_json=excluded.payload_json;"
+            guard sqlite3_prepare_v2(db, sql, -1, &statement, nil) == SQLITE_OK else { throw PersistenceError.statementPreparationFailed("Collection write failed.") }
+            defer { sqlite3_finalize(statement) }
+            Self.bindText(statement, index: 1, value: schema.id.uuidString)
+            sqlite3_bind_int(statement, 2, Int32(schema.schemaVersion)); sqlite3_bind_int(statement, 3, schema.isDeleted ? 1 : 0)
+            sqlite3_bind_double(statement, 4, schema.updatedAt.timeIntervalSince1970); Self.bindText(statement, index: 5, value: payloadJSON)
+            guard sqlite3_step(statement) == SQLITE_DONE else { throw PersistenceError.sqlExecutionFailed("Collection write failed.") }
+            if enqueueSync, let existing, CloudPrivacyPolicy.rule(for: existing) != CloudPrivacyPolicy.rule(for: schema) {
+                var rule = CloudPrivacyPolicy.rule(for: schema); rule.changeId = UUID()
+                var pending: OpaquePointer?
+                guard sqlite3_prepare_v2(db, "INSERT OR REPLACE INTO privacy_pending(collection_id, rule_json) VALUES (?,?);", -1, &pending, nil) == SQLITE_OK else { throw PersistenceError.statementPreparationFailed("Privacy request write failed.") }
+                defer { sqlite3_finalize(pending) }
+                Self.bindText(pending, index: 1, value: schema.id.uuidString)
+                Self.bindText(pending, index: 2, value: String(decoding: try encoder.encode(rule), as: UTF8.self))
+                guard sqlite3_step(pending) == SQLITE_DONE else { throw PersistenceError.sqlExecutionFailed("Privacy request write failed.") }
+            }
+            if enqueueSync {
+                try insertOutboxItemInternalStrict(on: db, entityType: (schema.isDeleted ? OutboxEntityType.collectionTombstone : .collectionUpsert).rawValue,
+                    entityId: schema.id, baseRevision: baseRevision, payloadJSON: payloadJSON)
+            }
+            try executeSQLStrict("COMMIT;")
+        } catch { Self.executeRawSQL(on: db, sql: "ROLLBACK;"); throw error }
     }
 
     /// Commits remote schemas before the sync cursor can advance.
-    public func applyRemoteCollection(_ schema: CollectionSchema) throws {
+    public func applyRemoteCollection(_ incoming: CollectionSchema) throws {
+        let schema = CloudPrivacyPolicy.mergingRemoteSchema(incoming, local: fetchCollection(id: incoming.id))
         guard schema.spaceId == spaceId, let db else { throw PersistenceError.databaseOpenFailed("Space database unavailable.") }
         let payload = try encoder.encode(schema)
         guard let json = String(data: payload, encoding: .utf8) else { throw PersistenceError.encodingFailed }
@@ -769,6 +776,69 @@ public actor SpaceStore {
         }
     }
 
+    /// Rebuild only one purged collection. Other outboxes and unresolved conflicts remain untouched.
+    public func enqueueCollectionSyncSnapshot(collectionId: UUID) throws {
+        guard let db, let schema = fetchCollection(id: collectionId) else { throw PersistenceError.decodingFailed }
+        let records = listRecords(collectionId: collectionId, includeDeleted: true)
+        try executeSQLStrict("BEGIN IMMEDIATE TRANSACTION;")
+        do {
+            var statement: OpaquePointer?
+            guard sqlite3_prepare_v2(db, "DELETE FROM sync_outbox WHERE entity_id = ?;", -1, &statement, nil) == SQLITE_OK else { throw PersistenceError.encodingFailed }
+            defer { sqlite3_finalize(statement) }
+            for id in [collectionId] + records.map(\.id) {
+                sqlite3_reset(statement); sqlite3_clear_bindings(statement)
+                Self.bindText(statement, index: 1, value: id.uuidString)
+                guard sqlite3_step(statement) == SQLITE_DONE else { throw PersistenceError.sqlExecutionFailed("Privacy outbox rebuild failed.") }
+            }
+            if !schema.isDeleted, let projected = CloudPrivacyPolicy.schemaForCloud(schema) {
+                try insertOutboxItemInternalStrict(on: db, entityType: OutboxEntityType.collectionUpsert.rawValue, entityId: schema.id,
+                    baseRevision: 0, payloadJSON: String(decoding: try encoder.encode(projected), as: UTF8.self))
+                for record in records where !record.isDeleted {
+                    if let projectedRecord = CloudPrivacyPolicy.recordForCloud(record, schema: schema) {
+                        try insertOutboxItemInternalStrict(on: db, entityType: OutboxEntityType.recordUpsert.rawValue, entityId: record.id,
+                            baseRevision: 0, payloadJSON: String(decoding: try encoder.encode(projectedRecord), as: UTF8.self))
+                    }
+                }
+            }
+            try executeSQLStrict("COMMIT;")
+        } catch { Self.executeRawSQL(on: db, sql: "ROLLBACK;"); throw error }
+    }
+
+    public func pendingPrivacyRules() throws -> [CollectionCloudPrivacyRule] {
+        guard let db else { throw PersistenceError.databaseOpenFailed("Space database unavailable.") }
+        var statement: OpaquePointer?
+        guard sqlite3_prepare_v2(db, "SELECT rule_json FROM privacy_pending ORDER BY collection_id;", -1, &statement, nil) == SQLITE_OK else { throw PersistenceError.decodingFailed }
+        defer { sqlite3_finalize(statement) }
+        var rules: [CollectionCloudPrivacyRule] = []
+        while sqlite3_step(statement) == SQLITE_ROW {
+            guard let json = Self.columnText(statement, index: 0), let data = json.data(using: .utf8) else { throw PersistenceError.decodingFailed }
+            rules.append(try decoder.decode(CollectionCloudPrivacyRule.self, from: data))
+        }
+        return rules
+    }
+
+    public func acknowledgePrivacyRule(collectionId: UUID) throws {
+        guard let db else { throw PersistenceError.databaseOpenFailed("Space database unavailable.") }
+        var statement: OpaquePointer?
+        guard sqlite3_prepare_v2(db, "DELETE FROM privacy_pending WHERE collection_id = ?;", -1, &statement, nil) == SQLITE_OK else { throw PersistenceError.encodingFailed }
+        defer { sqlite3_finalize(statement) }
+        Self.bindText(statement, index: 1, value: collectionId.uuidString)
+        guard sqlite3_step(statement) == SQLITE_DONE else { throw PersistenceError.sqlExecutionFailed("Privacy acknowledgement failed.") }
+    }
+
+    /// Apply another enrolled device's exclusion rule before rebuilding any queued payload.
+    public func applyCloudPrivacyRule(_ rule: CollectionCloudPrivacyRule) throws {
+        if try pendingPrivacyRules().contains(where: { $0.collectionId == rule.collectionId }) { return }
+        guard let schema = fetchCollection(id: rule.collectionId) else { return }
+        try applyRemoteCollectionForPrivacy(CloudPrivacyPolicy.applyingRule(rule, to: schema))
+    }
+
+    private func applyRemoteCollectionForPrivacy(_ schema: CollectionSchema) throws {
+        // Local policy updates must bypass remote merge, which intentionally retains prior local settings.
+        try saveCollectionStrict(schema, enqueueSync: false)
+        guard fetchCollection(id: schema.id) == schema else { throw PersistenceError.sqlExecutionFailed("Privacy policy could not be saved.") }
+    }
+
     /// Returns all pending `OutboxRecord` items ordered chronologically by creation time.
     public func pendingOutboxItems() -> [OutboxRecord] {
         guard let db else { return [] }
@@ -1121,6 +1191,33 @@ public actor SpaceStore {
         sqlite3_bind_double(stmt, 5, Date().timeIntervalSince1970)
         Self.bindText(stmt, index: 6, value: payloadJSON)
         _ = sqlite3_step(stmt)
+    }
+
+    private func insertOutboxItemInternalStrict(
+        on db: OpaquePointer,
+        entityType: String,
+        entityId: UUID,
+        baseRevision: Int64,
+        payloadJSON: String
+    ) throws {
+        let sql = """
+        INSERT INTO sync_outbox (
+            operation_id, entity_type, entity_id, base_revision, created_at, retry_count, last_error, payload_json
+        ) VALUES (?, ?, ?, ?, ?, 0, NULL, ?);
+        """
+        var stmt: OpaquePointer?
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else {
+            throw PersistenceError.statementPreparationFailed("Sync outbox write failed.")
+        }
+        defer { sqlite3_finalize(stmt) }
+
+        Self.bindText(stmt, index: 1, value: UUID().uuidString)
+        Self.bindText(stmt, index: 2, value: entityType)
+        Self.bindText(stmt, index: 3, value: entityId.uuidString)
+        sqlite3_bind_int64(stmt, 4, baseRevision)
+        sqlite3_bind_double(stmt, 5, Date().timeIntervalSince1970)
+        Self.bindText(stmt, index: 6, value: payloadJSON)
+        guard sqlite3_step(stmt) == SQLITE_DONE else { throw PersistenceError.sqlExecutionFailed("Sync outbox write failed.") }
     }
 
     // MARK: - Search & Filter Evaluation

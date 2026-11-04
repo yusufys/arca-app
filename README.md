@@ -12,6 +12,8 @@ New Spaces default to Arca Sync and can be set to Local-Only. The iOS starter me
 
 [Download or open the standalone iOS release roadmap](ROADMAP.html) for the delivery board, milestone dependencies, release criteria, core features and frontend, backend and end-to-end architecture. Open the file locally to view the formatted page offline.
 
+[RevenueCat setup, product IDs, Apple keys and verification](REVENUECAT.md).
+
 ---
 
 ## Monorepo Structure

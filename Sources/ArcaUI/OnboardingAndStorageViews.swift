@@ -423,19 +423,6 @@ public struct StorageModeComparisonStepView: View {
                     ]
                 )
 
-                storageModeOptionCard(
-                    mode: .personalCloudBackup,
-                    badge: "Pro Adapter",
-                    icon: "externaldrive.fill.badge.icloud",
-                    tint: ArcaTheme.warmAmber,
-                    title: ArcaStrings.text("storage.mode.personalCloud.title", language: language),
-                    bullets: [
-                        "Direct encrypted backup archives to iCloud Drive or Google Drive.",
-                        "Treated as encrypted backup first, separate from live sync.",
-                        "Never silently falls back to Arca Cloud if a provider fails."
-                    ]
-                )
-
                 if selectedMode == .arcaSync {
                     Button {
                         acceptedCloudTerms.toggle()

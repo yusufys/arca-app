@@ -1,4 +1,5 @@
 import SwiftUI
+import UniformTypeIdentifiers
 import ArcaCore
 
 // MARK: - Screen 9: Field Editor & Reorder Interface (with Conversion Preview & Archived Retention)
@@ -16,6 +17,9 @@ public struct FieldEditorSheetView: View {
     @ViewState private var targetConversionType: FieldType = .shortText
     @ViewState private var conversionPreview: FieldConversionPreview?
     @ViewState private var conversionError: String?
+    @ViewState private var privacyTargetFieldId: UUID?
+    @ViewState private var showingPrivacyConsent = false
+    @ViewState private var privacyError: String?
     @ViewState private var newFieldLabel = ""
     @ViewState private var newFieldType: FieldType = .shortText
 
@@ -35,6 +39,21 @@ public struct FieldEditorSheetView: View {
             if let schema = currentSchema {
                 ScrollView(showsIndicators: false) {
                     VStack(alignment: .leading, spacing: 18) {
+                        ArcaSectionCard(title: "Collection privacy", icon: "hand.raised.fill") {
+                            Text(schema.privacy == .localOnly ? "Sensitive · kept on this device" : schema.privacy == .syncWithConsent ? "Sensitive · cloud sync consented" : "Ordinary collection")
+                            Button("Mark collection sensitive / change consent") {
+                                Task {
+                                    do {
+                                        try await viewModel.keepSensitiveDataOnDevice(collectionId: schema.id)
+                                        privacyTargetFieldId = nil; showingPrivacyConsent = true
+                                    } catch { privacyError = error.localizedDescription }
+                                }
+                            }
+                            if viewModel.pendingPrivacyDeletionCollectionIds.contains(schema.id) {
+                                Text("Remote deletion pending. Uploads for this collection remain paused until confirmed. Offline devices may retain earlier copies.").font(.footnote).foregroundStyle(.orange)
+                            }
+                            if let privacyError { Text(privacyError).foregroundStyle(.red) }
+                        }
                         ArcaSectionCard(
                             title: "Active Fields (\(schema.activeFields.count))",
                             subtitle: "Reorder, rename labels without losing values, or preview safe type conversions.",
@@ -85,6 +104,14 @@ public struct FieldEditorSheetView: View {
                                             .opacity(index == schema.activeFields.count - 1 ? 0.35 : 1)
 
                                             Menu {
+                                                Button(field.privacy == nil ? "Mark Sensitive…" : "Sensitive Privacy / Consent…") {
+                                                    Task {
+                                                        do {
+                                                            try await viewModel.keepSensitiveDataOnDevice(collectionId: schema.id, fieldId: field.id)
+                                                            privacyTargetFieldId = field.id; showingPrivacyConsent = true
+                                                        } catch { privacyError = error.localizedDescription }
+                                                    }
+                                                }
                                                 Button("Rename Label (Preserves Values)…") {
                                                     renamingField = field
                                                     renameLabel = field.label
@@ -268,6 +295,9 @@ public struct FieldEditorSheetView: View {
                 }
                 .background(ArcaTheme.canvasBackground(for: colorScheme))
             }
+        }
+        .sheet(isPresented: $showingPrivacyConsent) {
+            SensitivePrivacyConsentView(viewModel: viewModel, collectionId: collectionId, fieldId: privacyTargetFieldId)
         }
     }
 }
@@ -542,6 +572,8 @@ public struct AddEditRecordSheetView: View {
     @ViewState private var isFavorite: Bool = false
     @ViewState private var saveError: String?
     @ViewState private var saving = false
+    @ViewState private var showAttachmentPicker = false
+    @ViewState private var attachmentFieldId: UUID?
     @ViewState private var validationErrors: [RecordValidationError] = []
     @ViewState private var currencyTextInputs: [UUID: String] = [:]
     @ViewState private var numberTextInputs: [UUID: String] = [:]
@@ -621,6 +653,22 @@ public struct AddEditRecordSheetView: View {
         }
         .onAppear {
             populateInitialDraft()
+        }
+        .fileImporter(isPresented: $showAttachmentPicker, allowedContentTypes: [.item]) { result in
+            switch result {
+            case .success(let url):
+                guard let fieldId = attachmentFieldId else { return }
+                Task {
+                    do {
+                        let ref = try await viewModel.attachFile(from: url, to: schema.spaceId)
+                        var refs: [AttachmentReference] = []
+                        if case .attachments(let current) = draftValues[fieldId] { refs = current }
+                        refs.append(ref)
+                        draftValues[fieldId] = .attachments(refs)
+                    } catch { saveError = error.localizedDescription }
+                }
+            case .failure(let error): saveError = error.localizedDescription
+            }
         }
     }
 
@@ -863,17 +911,17 @@ public struct AddEditRecordSheetView: View {
                         .background(RoundedRectangle(cornerRadius: 10).fill(ArcaTheme.subtleFieldBackground(for: colorScheme)))
                     }
                     Button {
-                        Task {
-                            if let ref = await viewModel.attachSampleReceiptFile() {
-                                var updated = currentAttachments
-                                updated.append(ref)
-                                draftValues[field.id] = .attachments(updated)
-                            }
-                        }
+                        attachmentFieldId = field.id
+                        showAttachmentPicker = true
                     } label: {
-                        Label("Attach Receipt or Photo", systemImage: "paperclip.badge.plus")
+                        Label("Attach File from Files", systemImage: "paperclip.badge.plus")
                     }
                     .buttonStyle(ArcaSecondaryButtonStyle())
+                    .disabled(viewModel.spaces.first(where: { $0.id == schema.spaceId })?.storageMode != .localOnly)
+                    if viewModel.spaces.first(where: { $0.id == schema.spaceId })?.storageMode != .localOnly {
+                        Text("File attachments are available in Local-Only Spaces. Cloud attachment upload is not available yet.")
+                            .font(.footnote).foregroundStyle(.secondary)
+                    }
                 }
             }
         }
@@ -1081,6 +1129,7 @@ public struct RecordDetailView: View {
                                     .buttonStyle(ArcaSecondaryButtonStyle(isFullWidth: true))
                                 }
 
+                                #if DEBUG
                                 Button {
                                     selectedSnapshotFieldIds = Set(liveSchema.activeFields.map(\.id))
                                     showingPublicSnapshotSheet = true
@@ -1088,6 +1137,7 @@ public struct RecordDetailView: View {
                                     Label("Create Explicit Public Snapshot…", systemImage: "square.and.arrow.up.on.square")
                                 }
                                 .buttonStyle(ArcaSecondaryButtonStyle(tint: ArcaTheme.secondaryEmerald, isFullWidth: true))
+                                #endif
 
                                 Button {
                                     Task {
