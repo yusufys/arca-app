@@ -29,3 +29,5 @@ Use the exact build that passed the final checks for external beta. The internal
 - The signed archive is ready in Organizer. Xcode reported missing App Store Connect authorization for the team. Make the upload key file available locally or refresh the account in Xcode and retry. Download the Team Key in **Users and Access → Integrations → App Store Connect API → Team Keys**. Keep the private key out of the project.
 - Select an off-server backup destination in Forge and enter its credentials there. After the first scheduled run, restore into an isolated database, record recovery time and verify schema and data before marking recurring recovery complete.
 - Confirm commercial terms, privacy answers, legal owner and regional declarations before public submission.
+
+For an internal-only upload with an App Store Connect key on the build Mac, use `ci/upload-internal-testflight.sh "/path/to/Arca.xcarchive" "/path/to/AuthKey_KEYID.p8" "ISSUER_ID"`. With a working Xcode account, omit the last two arguments. Confirm processing in the app’s TestFlight tab before assigning testers.

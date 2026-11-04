@@ -28,3 +28,7 @@ backend/.env.backup
 backend/.phpunit.result.cache
 backend/database/*.sqlite
 backend/storage/*.key
+
+# Apple signing, upload and purchase credentials
+*.p8
+*.p12

@@ -6,7 +6,7 @@ Arca uses the same account UUID for Forge and RevenueCat. A signed-in user opens
 
 Open `Arca.xcodeproj`. The iOS app target links **RevenueCat** and **RevenueCatUI** from [purchases-ios-spm](https://github.com/RevenueCat/purchases-ios-spm.git). The project resolves version 5.102.0. Xcode’s Package Dependencies and the committed Package.resolved record the integration. [Installation instructions](https://www.revenuecat.com/docs/getting-started/installation/ios#install-via-swift-package-manager)
 
-Debug uses the supplied Test Store public key. Sign into an Arca test account and open the plan screen. The Test Store API returned the current offering `default` and all three package mappings below on 5 November 2026. That lookup verifies the catalog. The Apple public SDK key returned the same current offering with zero packages for Apple. Link the Apple products in step 3. A successful checkout and restore must still be recorded for each store.
+Debug uses the supplied Test Store public key. Sign into an Arca test account and open the plan screen. The Test Store API returned the current offering `default` and all three package mappings below on 5 November 2026. That lookup verifies the catalog. The Apple public SDK key returned the same current offering with zero packages for Apple. Link the Apple products in step 3. Native simulator UI tests completed a Test Store purchase and cold-relaunch restore for each of the three products. Monthly cancellation left the account free. Apple sandbox tests on the TestFlight candidate are still open. The SDK displayed its fallback paywall until a dashboard paywall is published.
 
 ## 2. Connect the real Apple app
 
