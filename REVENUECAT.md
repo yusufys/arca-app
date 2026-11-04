@@ -6,14 +6,14 @@ Arca uses the same account UUID for Forge and RevenueCat. A signed-in user opens
 
 Open `Arca.xcodeproj`. The iOS app target links **RevenueCat** and **RevenueCatUI** from [purchases-ios-spm](https://github.com/RevenueCat/purchases-ios-spm.git). The project resolves version 5.102.0. Xcode’s Package Dependencies and the committed Package.resolved record the integration. [Installation instructions](https://www.revenuecat.com/docs/getting-started/installation/ios#install-via-swift-package-manager)
 
-Debug uses the supplied Test Store public key. Sign into an Arca test account and open the plan screen. The Test Store API returned the current offering `default` and all three package mappings below on 5 November 2026. That lookup verifies the catalog. A successful checkout and restore must still be recorded for each store.
+Debug uses the supplied Test Store public key. Sign into an Arca test account and open the plan screen. The Test Store API returned the current offering `default` and all three package mappings below on 5 November 2026. That lookup verifies the catalog. The Apple public SDK key returned the same current offering with zero packages for Apple. Link the Apple products in step 3. A successful checkout and restore must still be recorded for each store.
 
 ## 2. Connect the real Apple app
 
 1. Open [App Store Connect](https://appstoreconnect.apple.com/) → **Apps**. Select **Arca - Personal Records** (Apple ID 6830898859), which uses `app.arca.personalrecords`, the registered identifier on Yusuf’s team. Complete the Paid Apps Agreement and any missing tax or banking items in Business.
 2. Open **Users and Access → Integrations → In-App Purchase**. Generate an In-App Purchase key, securely download its .p8 file, and copy the Issuer ID. Store the download securely.
 3. Open [RevenueCat](https://app.revenuecat.com/) → Arca → **Apps & providers**. Add an Apple App Store app with that same bundle ID. Upload the .p8 directly to its In-app purchase key configuration, enter the Issuer ID and save. Complete Apple server notifications using the URL in that app’s RevenueCat configuration. [Apple credential guide](https://www.revenuecat.com/docs/service-credentials/itunesconnect-app-specific-shared-secret/in-app-purchase-key-configuration)
-4. In RevenueCat **Project settings → API keys → Public app-specific API keys**, select the Apple app and copy its `appl_…` key. Set the Xcode app target’s **Release** build setting `ARCA_RC_PUBLIC_KEY`, or supply it to the archive command. The Test Store key is scoped to Debug. Use the Apple app key for TestFlight, where Apple purchases run in its sandbox.
+4. In RevenueCat **Project settings → API keys → Public app-specific API keys**, select the Apple app and copy its `appl_…` key. The supplied Apple public key for RevenueCat app `appcf1b74bb7d` is configured in the Xcode app target’s **Release** build setting `ARCA_RC_PUBLIC_KEY`, or supply it to the archive command. The Test Store key is scoped to Debug. Use the Apple app key for TestFlight, where Apple purchases run in its sandbox.
 
 ## 3. Set up three products and one entitlement
 

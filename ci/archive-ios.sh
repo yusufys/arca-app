@@ -1,7 +1,11 @@
 #!/bin/bash
 set -euo pipefail
 cd "$(dirname "$0")/.."
-case "${ARCA_RC_PUBLIC_KEY:-}" in
+# The checked-in target supplies the public Apple key. CI may override it.
+if [[ -z "${ARCA_RC_PUBLIC_KEY:-}" ]]; then
+  ARCA_RC_PUBLIC_KEY=$(xcodebuild -showBuildSettings -project Arca.xcodeproj -scheme Arca -configuration Release -destination generic/platform=iOS | awk '/^[[:space:]]*ARCA_RC_PUBLIC_KEY = / {key=$3} END {print key}')
+fi
+case "$ARCA_RC_PUBLIC_KEY" in
   appl_?*) ;;
   *) echo 'Set ARCA_RC_PUBLIC_KEY to the public Apple-app RevenueCat key before archiving.' >&2; exit 2 ;;
 esac

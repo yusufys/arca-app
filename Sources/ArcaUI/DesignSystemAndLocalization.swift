@@ -170,12 +170,12 @@ public enum ArcaStrings {
     ]
 }
 
-// MARK: - Design Tokens (Warm Stone Canvas + Crisp Elevated Cards + Deep Slate Teal Accent)
+// MARK: - Arca archive palette (see BRAND.md)
 
 public enum ArcaTheme {
-    /// Restrained deep slate teal/blue primary accent (`#1F5673`)
-    public static let accent = Color(red: 0.122, green: 0.337, blue: 0.451)
-    public static let accentSoft = Color(red: 0.122, green: 0.337, blue: 0.451).opacity(0.11)
+    /// Forest ink, sampled for readable white action labels.
+    public static let accent = Color(red: 0.122, green: 0.365, blue: 0.247)
+    public static let accentSoft = accent.opacity(0.11)
     public static let secondaryEmerald = Color(red: 0.165, green: 0.482, blue: 0.388)
     public static let warmAmber = Color(red: 0.725, green: 0.431, blue: 0.129)
     public static let plumSensitive = Color(red: 0.525, green: 0.235, blue: 0.376)
@@ -183,20 +183,20 @@ public enum ArcaTheme {
 
     public static func canvasBackground(for scheme: ColorScheme) -> Color {
         scheme == .dark
-            ? Color(red: 0.067, green: 0.075, blue: 0.090) // #111317
-            : Color(red: 0.961, green: 0.957, blue: 0.941) // #F5F4F0 warm alabaster stone
+            ? Color(red: 0.055, green: 0.102, blue: 0.078) // #0E1A14
+            : Color(red: 0.976, green: 0.961, blue: 0.914) // #F9F5E9
     }
 
     public static func cardBackground(for scheme: ColorScheme) -> Color {
         scheme == .dark
-            ? Color(red: 0.114, green: 0.125, blue: 0.149) // #1D2026
-            : Color.white
+            ? Color(red: 0.090, green: 0.157, blue: 0.122) // #17281F
+            : Color(red: 1, green: 0.992, blue: 0.961) // #FFFDF5
     }
 
     public static func subtleFieldBackground(for scheme: ColorScheme) -> Color {
         scheme == .dark
-            ? Color(red: 0.153, green: 0.169, blue: 0.196) // #272B32
-            : Color(red: 0.945, green: 0.941, blue: 0.922) // #F1F0EB
+            ? Color(red: 0.137, green: 0.208, blue: 0.165) // #23352A
+            : Color(red: 0.941, green: 0.922, blue: 0.863) // #F0EBDC
     }
 
     public static func cardBorder(for scheme: ColorScheme) -> Color {
