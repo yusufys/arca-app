@@ -52,8 +52,8 @@ The screen offers retry for network failures and unavailable offerings. Customer
 
 ## 5. Connect Forge to RevenueCat
 
-1. In RevenueCat **Project settings → API keys**, create a **v1 secret API key** for server-side customer reads. Store it in Forge → **thekernel → Arca site → Environment** as `REVENUECAT_SERVER_API_KEY`. Keep this key on the server.
-2. Generate a random webhook password in a password manager. In the same Forge environment set `REVENUECAT_WEBHOOK_SECRET` to the password alone, `REVENUECAT_PRO_ENTITLEMENT_ID=arca_app_pro` and `REVENUECAT_ENVIRONMENT=PRODUCTION`. Save and redeploy to refresh cached configuration.
+1. The live Forge environment is configured. Its subscriber lookup was verified using the Apple app’s public SDK key. Arca only reads current entitlements. It needs no project-wide secret RevenueCat API key for this lookup.
+2. In Forge → **thekernel → Arca site → Environment**, copy the existing `REVENUECAT_WEBHOOK_SECRET` privately for the next step. Forge has the generated password, entitlement `arca_app_pro` and environment `PRODUCTION`. A live test received HTTP 200 with the correct authorization and 401 with an invalid value.
 3. In RevenueCat **Integrations → Webhooks**, add `https://arca-api.on-forge.com/api/v1/webhooks/revenuecat`. Supply **Bearer** followed by a space and the same webhook password in **Authorization header**. Select production deliveries. Use a separate staging backend and SANDBOX webhook for Test Store and TestFlight quota testing.
 4. Send a test webhook, then exercise a purchase. Check delivery history and the Arca account UUID. The server verifies the header, handles duplicate deliveries, and queries current subscriber entitlements before setting cloud quotas. A generic TEST event confirms connectivity only. [Webhook guide](https://www.revenuecat.com/docs/integrations/webhooks)
 

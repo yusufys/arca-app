@@ -26,6 +26,6 @@ Use the exact build that passed the final checks for external beta. The internal
 ## What still needs the owner
 
 - In RevenueCat, map the three **Apple** products to the entitlement and offering, confirm the Apple In-App Purchase key and complete webhook setup. See [the integration guide](REVENUECAT.md).
-- Authorize Xcode to upload for Yusuf’s team, or provide a local App Store Connect API key path and its identifiers for the upload. Download the Team Key in **Users and Access → Integrations → App Store Connect API → Team Keys**. Keep the private key out of the project.
+- The signed archive is ready in Organizer. Xcode reported missing App Store Connect authorization for the team. Make the upload key file available locally or refresh the account in Xcode and retry. Download the Team Key in **Users and Access → Integrations → App Store Connect API → Team Keys**. Keep the private key out of the project.
 - Select an off-server backup destination in Forge and enter its credentials there. After the first scheduled run, restore into an isolated database, record recovery time and verify schema and data before marking recurring recovery complete.
 - Confirm commercial terms, privacy answers, legal owner and regional declarations before public submission.
