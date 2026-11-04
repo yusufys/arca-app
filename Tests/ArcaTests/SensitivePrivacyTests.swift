@@ -136,6 +136,11 @@ final class SensitivePrivacyTests: XCTestCase {
         let backendB = LaravelArcaSyncBackend(baseURL: url, apiToken: nil)
         let email = "privacy-\(UUID())@example.test", password = "disposable-test-password"
         let account = try await backendA.signIn(email: email, password: password, name: "Privacy integration")
+        addTeardownBlock {
+            if backendA.apiToken != nil {
+                _ = try await backendA.deleteAccountAndRemoteData(accountId: account.accountId)
+            }
+        }
         _ = try await backendB.signIn(email: email, password: password)
         let spaceId = UUID()
         let a = DeviceIdentity(deviceName: "A"), b = DeviceIdentity(deviceName: "B")

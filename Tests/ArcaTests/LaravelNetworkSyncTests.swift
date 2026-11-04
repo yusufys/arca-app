@@ -25,6 +25,11 @@ final class LaravelNetworkSyncTests: XCTestCase {
         let b = LaravelArcaSyncBackend(baseURL: url, apiToken: nil)
         let email = "sync-\(UUID().uuidString)@example.test"
         let account = try await a.signIn(email: email, password: "test-password-123", name: "Sync test")
+        addTeardownBlock {
+            if a.apiToken != nil {
+                _ = try await a.deleteAccountAndRemoteData(accountId: account.accountId)
+            }
+        }
         let da = DeviceIdentity(deviceName: "A")
         let db = DeviceIdentity(deviceName: "B")
         let mak = ClientCryptoEngine.generateSymmetricKey()
