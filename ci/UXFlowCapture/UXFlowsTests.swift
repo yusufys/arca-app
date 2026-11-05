@@ -199,3 +199,92 @@ extension UXFlowsTests {
         }
     }
 }
+
+
+extension UXFlowsTests {
+    func testRedesignRecordModesAndRelaunch() {
+        continueAfterFailure = false
+        let workspace = UUID().uuidString
+        let app = redesignLaunch("collection", workspace: workspace)
+        XCTAssertTrue(app.buttons["Compact"].waitForExistence(timeout: 8))
+        app.buttons["Compact"].tap()
+        XCTAssertTrue(app.buttons["Compact"].isSelected)
+        XCTAssertTrue(app.staticTexts["Beta tool"].exists)
+        shot(app, "redesign-compact-records")
+        app.buttons["Box"].tap()
+        XCTAssertTrue(app.buttons["Box"].isSelected)
+        shot(app, "redesign-box-records")
+        app.terminate()
+        let restored = redesignLaunch("collection", workspace: workspace)
+        XCTAssertTrue(restored.buttons["Box"].isSelected, "Per-collection layout survives process termination")
+        XCTAssertTrue(restored.staticTexts["Beta tool"].exists, "Existing encrypted records survive relaunch")
+        restored.buttons["Normal"].tap()
+        XCTAssertTrue(restored.buttons["Normal"].isSelected)
+        restored.terminate()
+    }
+
+    func testRedesignSettingsAndFullScreenAddPersist() {
+        continueAfterFailure = false
+        let workspace = UUID().uuidString
+        let app = redesignLaunch("collection-settings", workspace: workspace)
+        let name = app.textFields["Collection Name"]
+        XCTAssertTrue(name.waitForExistence(timeout: 8))
+        let original = name.value as? String ?? ""
+        XCTAssertFalse(original.isEmpty)
+        name.coordinate(withNormalizedOffset: CGVector(dx: 0.98, dy: 0.5)).tap()
+        name.typeText(" QA")
+        let save = app.buttons["Save"]
+        XCTAssertTrue(save.waitForExistence(timeout: 5)); save.tap()
+        let mode = app.buttons["“Add Record” Form Style"]
+        reveal(app, mode); mode.tap()
+        let fullScreen = app.buttons["Complete New Screen"]
+        reveal(app, fullScreen); fullScreen.tap()
+        XCTAssertEqual(mode.value as? String, "Complete New Screen")
+        app.terminate()
+        let restored = redesignLaunch("collection-settings", workspace: workspace)
+        XCTAssertEqual(restored.textFields["Collection Name"].value as? String, original + " QA")
+        let restoredMode = restored.buttons["“Add Record” Form Style"]
+        reveal(restored, restoredMode)
+        XCTAssertEqual(restoredMode.value as? String, "Complete New Screen")
+        let testForm = restored.buttons["Test"]
+        reveal(restored, testForm); testForm.tap()
+        XCTAssertTrue(restored.buttons["Cancel"].waitForExistence(timeout: 5))
+        shot(restored, "redesign-fullscreen-add")
+        restored.buttons["Cancel"].tap()
+        XCTAssertTrue(restoredMode.waitForExistence(timeout: 5))
+        restored.terminate()
+    }
+}
+
+extension UXFlowsTests {
+    func testRedesignHomeActionsAndAIFirstCreation() {
+        continueAfterFailure = false
+        for action in ["add", "view", "edit"] {
+            let app = redesignLaunch("home")
+            let card = app.buttons.matching(NSPredicate(format: "identifier MATCHES %@", "home\\.collection\\.[A-Fa-f0-9-]+$")).firstMatch
+            XCTAssertTrue(card.waitForExistence(timeout: 8))
+            card.tap()
+            let button = app.buttons.matching(NSPredicate(format: "identifier ENDSWITH %@", "." + action)).firstMatch
+            XCTAssertTrue(button.waitForExistence(timeout: 5), "Card actions remain open after the initial tap")
+            if action == "add" { shot(app, "redesign-home-actions") }
+            button.tap()
+            switch action {
+            case "add":
+                XCTAssertTrue(app.buttons["Cancel"].waitForExistence(timeout: 5))
+                shot(app, "redesign-popup-add")
+                app.buttons["Cancel"].tap()
+            case "view": XCTAssertTrue(app.buttons["Compact"].waitForExistence(timeout: 5))
+            default: XCTAssertTrue(app.textFields["Collection Name"].waitForExistence(timeout: 5))
+            }
+            app.terminate()
+        }
+        let app = redesignLaunch("home")
+        let newCollection = app.buttons["home.newCollectionTile"]
+        reveal(app, newCollection); newCollection.tap()
+        let ai = app.buttons["Create with AI…"]
+        XCTAssertTrue(ai.waitForExistence(timeout: 5)); ai.tap()
+        XCTAssertTrue(app.textViews["aiCollection.intent"].waitForExistence(timeout: 5))
+        shot(app, "redesign-ai-creation-retained")
+        app.terminate()
+    }
+}
