@@ -2,14 +2,15 @@
 
 App Store Connect record: **Arca - Personal Records**, Apple ID **6830898859**, bundle **app.arca.personalrecords**. Internal beta first. Use fictional data and the supplied build number in all feedback.
 
-## Localization and accessibility candidate (after build 5)
+## Localization and accessibility — build 6
 
 - Native Apple String Catalogs now supply English, Arabic and Turkish UI copy, plural forms, core validation and the Face ID permission explanation. Arabic uses RTL layout; saved personal records are never translated by language changes.
 - The backend catalog supports validated translated schemas and subtitles, cached offline on iOS. AI prompts request labels and options in the selected language while keeping the shared JSON contract unchanged. Forge deployment 82202588 completed; the live catalog returned all three starters with Arabic/Turkish schemas, and the Arabic prompt request passed.
 - Account inputs support email/password semantics, Next/Done and tap-outside keyboard dismissal. Dynamic Type reflows grids and sheet headers; icon choices have spoken labels and selection traits. Reduce Motion is respected.
 - Validation: 44 Swift tests, 48 backend tests, iOS simulator host build, three-language native screen/keyboard/AI/account walkthroughs, and automated accessibility-label audits on selected screens at normal and largest text sizes.
 - Designer handoff: **147 distinct PNG screenshots** (45 English, 45 Arabic, 45 Turkish, 12 enlarged-text views), an offline HTML gallery and flow map. Regenerate with `ci/UXFlowCapture`; implementation guidance is in [I18N_ACCESSIBILITY.html](I18N_ACCESSIBILITY.html). The generated pack is excluded from Git.
-- Remaining: make and install a new signed internal TestFlight build; verify on-device VoiceOver and Switch Control, complete contrast and translation review, and test actual App Store products and RevenueCat-authored paywalls in each language. Build 5 does not contain this pass.
+- Build 1.0 (6): signed Release archive verified and uploaded successfully on November 5, 2026. Apple processing completed as VALID (build ID `c84aaad1-4331-4dce-9730-f800e25831ff`). Test instructions are saved. Availability is blocked by MISSING_EXPORT_COMPLIANCE: the API key cannot update the encryption declaration (403), and the Mac is locked, preventing completion through App Store Connect. Internal group assignment will follow that declaration. The archive contains EN/AR/TR resources and uses the live Forge backend and Apple RevenueCat key.
+- Remaining: install build 6 from TestFlight; verify on-device VoiceOver and Switch Control, complete contrast and translation review, and test actual App Store products and RevenueCat-authored paywalls in each language. Build 5 does not contain this pass.
 
 ## App Store Connect listing draft
 
@@ -23,7 +24,7 @@ App Store Connect record: **Arca - Personal Records**, Apple ID **6830898859**, 
 
 ## Suggested collections and AI design (build 5)
 
-Apple processed build 5 as valid on November 5. App Store Connect requests the owner’s export compliance answer before it can be distributed. Build 4 is separately queued for external beta review.
+Build 5 introduced the features below. Build 6 includes them together with the localization and accessibility pass. Build 4 was withdrawn from beta review when build 5 was submitted; the owner requested retiring build 5 in favor of build 6. Build 5 is still WAITING_FOR_BETA_REVIEW: the API denied expiration (403); cancellation requires the unlocked browser session.
 
 Simulator acceptance covered the published gallery, editing a copied template, prompt preparation against Forge, opening the three assistant sites, native cross-app paste of a fenced reply, invalid schema rejection, and saving then reopening a four-field collection offline. A separate clipboard-writer app supplied the reply for the native paste test; no test prompt was submitted to a provider.
 
