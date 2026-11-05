@@ -1,0 +1,1720 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Arca iOS Redesign — Interactive HTML Prototype (v5)</title>
+  <script src="https://www.gstatic.com/antigravity/web/dev/tailwindcss.min.js"></script>
+  <style>
+    * {
+      box-sizing: border-box;
+      -webkit-font-smoothing: antialiased;
+    }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", system-ui, sans-serif;
+    }
+    .no-scrollbar::-webkit-scrollbar {
+      display: none;
+    }
+    .no-scrollbar {
+      -ms-overflow-style: none;
+      scrollbar-width: none;
+    }
+
+    /* Spring animations for the Grape Cluster Action Popover */
+    @keyframes clusterBackdropIn {
+      from { opacity: 0; }
+      to { opacity: 1; }
+    }
+    @keyframes grapePop1 {
+      0% { opacity: 0; transform: scale(0.3) translate(28px, 34px); }
+      70% { transform: scale(1.08) translate(0, 0); }
+      100% { opacity: 1; transform: scale(1) translate(0, 0); }
+    }
+    @keyframes grapePop2 {
+      0% { opacity: 0; transform: scale(0.3) translate(0px, 42px); }
+      75% { transform: scale(1.08) translate(0, 0); }
+      100% { opacity: 1; transform: scale(1) translate(0, 0); }
+    }
+    @keyframes grapePop3 {
+      0% { opacity: 0; transform: scale(0.3) translate(-28px, 34px); }
+      80% { transform: scale(1.08) translate(0, 0); }
+      100% { opacity: 1; transform: scale(1) translate(0, 0); }
+    }
+    @keyframes cardPulse {
+      0% { transform: scale(0.96); }
+      60% { transform: scale(1.02); }
+      100% { transform: scale(1); }
+    }
+    @keyframes dropdownSlide {
+      0% { opacity: 0; transform: translateY(-8px) scale(0.98); }
+      100% { opacity: 1; transform: translateY(0) scale(1); }
+    }
+
+    .cluster-backdrop {
+      animation: clusterBackdropIn 0.18s ease forwards;
+    }
+    .grape-node-1 {
+      animation: grapePop1 0.34s cubic-bezier(0.22, 1.35, 0.36, 1) forwards;
+    }
+    .grape-node-2 {
+      animation: grapePop2 0.38s cubic-bezier(0.22, 1.35, 0.36, 1) forwards;
+    }
+    .grape-node-3 {
+      animation: grapePop3 0.42s cubic-bezier(0.22, 1.35, 0.36, 1) forwards;
+    }
+    .active-cluster-card {
+      animation: cardPulse 0.3s cubic-bezier(0.22, 1.3, 0.36, 1) forwards;
+    }
+    .sexy-dropdown-menu {
+      animation: dropdownSlide 0.2s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    }
+
+    .orb-btn {
+      transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.2s ease;
+    }
+    .orb-btn:hover {
+      transform: translateY(-4px) scale(1.1);
+    }
+    .orb-btn:active {
+      transform: scale(0.93);
+    }
+    .orb-btn .orb-tooltip {
+      opacity: 0.88;
+      transition: all 0.18s ease;
+    }
+    .orb-btn:hover .orb-tooltip {
+      opacity: 1;
+      transform: scale(1.06);
+    }
+  </style>
+</head>
+<body class="bg-transparent text-[var(--foreground)] antialiased p-3 md:p-5">
+
+  <div class="max-w-6xl mx-auto bg-[var(--card)] border border-[var(--border)] rounded-2xl p-4 md:p-5 shadow-sm">
+    <!-- Top Studio Bar -->
+    <div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3 pb-3.5 border-b border-[var(--border)]">
+      <div class="flex flex-wrap items-center gap-2">
+        <span id="studio-badge" class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold text-white" style="background:#1F5D3F">
+          Arca iOS Redesign · v5
+        </span>
+        <span class="text-xs text-[var(--muted-foreground)]">
+          Collection Settings (⚙️) now controls both <b>Compact Field Beside Title</b> & <b>Add Record Form Mode (Popup Card vs. Full Screen)</b>
+        </span>
+      </div>
+
+      <!-- Main Tab Naming Suggestions + Light/Dark Toggle -->
+      <div class="flex flex-wrap items-center gap-2">
+        <div class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl border border-[var(--border)] bg-[var(--background)] text-xs">
+          <span class="text-[var(--muted-foreground)]">Main Tab:</span>
+          <button onclick="setHomeTabLabel('Home')" id="lbl-Home" class="px-2 py-0.5 rounded-md font-semibold text-white" style="background:#1F5D3F">Home</button>
+          <button onclick="setHomeTabLabel('Hub')" id="lbl-Hub" class="px-2 py-0.5 rounded-md font-medium text-[var(--muted-foreground)]">Hub</button>
+          <button onclick="setHomeTabLabel('Spaces')" id="lbl-Spaces" class="px-2 py-0.5 rounded-md font-medium text-[var(--muted-foreground)]">Spaces</button>
+          <button onclick="setHomeTabLabel('Desk')" id="lbl-Desk" class="px-2 py-0.5 rounded-md font-medium text-[var(--muted-foreground)]">Desk</button>
+        </div>
+
+        <div class="inline-flex rounded-xl border border-[var(--border)] bg-[var(--background)] p-0.5">
+          <button id="theme-light" onclick="setPhoneTheme('light')" class="px-2.5 py-1 rounded-lg text-xs font-semibold transition text-white" style="background:#1F5D3F">
+            ☀️ Light
+          </button>
+          <button id="theme-dark" onclick="setPhoneTheme('dark')" class="px-2.5 py-1 rounded-lg text-xs font-semibold transition text-[var(--muted-foreground)]">
+            🌙 Dark
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Screen Jump Shortcut Strip -->
+    <div class="py-3 flex flex-wrap items-center justify-between gap-2 border-b border-[var(--border)]">
+      <div class="flex flex-wrap gap-1.5" role="tablist">
+        <button onclick="navTo('home')" id="nav-home" class="px-3 py-1.5 rounded-xl text-xs font-semibold transition bg-[var(--background)] text-[var(--foreground)] border border-[var(--border)]">
+          1. Home (Grape-Cluster Menu)
+        </button>
+        <button onclick="openCollection('warranties')" id="nav-collection" class="px-3 py-1.5 rounded-xl text-xs font-semibold transition bg-[var(--background)] text-[var(--foreground)] border border-[var(--border)]">
+          2. Inside Collection (Normal · Compact · Box)
+        </button>
+        <button onclick="openCollectionSettings('warranties')" id="nav-col-settings" class="px-3 py-1.5 rounded-xl text-xs font-semibold transition text-white">
+          3. Collection Settings (⚙️ Compact Field & Add Mode)
+        </button>
+        <button onclick="previewAddFormMode('popup')" id="nav-add-popup" class="px-3 py-1.5 rounded-xl text-xs font-semibold transition bg-[var(--background)] text-[var(--foreground)] border border-[var(--border)]">
+          4a. Add Record (Popup Card)
+        </button>
+        <button onclick="previewAddFormMode('screen')" id="nav-add-screen" class="px-3 py-1.5 rounded-xl text-xs font-semibold transition bg-[var(--background)] text-[var(--foreground)] border border-[var(--border)]">
+          4b. Add Record (Full Screen)
+        </button>
+        <button onclick="navTo('settings')" id="nav-settings" class="px-3 py-1.5 rounded-xl text-xs font-semibold transition bg-[var(--background)] text-[var(--foreground)] border border-[var(--border)]">
+          5. App Settings
+        </button>
+      </div>
+    </div>
+
+    <!-- Main Studio Layout -->
+    <div class="pt-5 grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+
+      <!-- Left: Interactive iPhone 16 Pro Viewport (6 cols) -->
+      <div class="lg:col-span-6 flex flex-col items-center">
+        <div class="w-[378px] h-[760px] rounded-[48px] p-3 bg-[#111614] shadow-2xl border-2 border-white/15 flex flex-col relative">
+          <div id="phone-root" class="w-full h-full rounded-[38px] overflow-hidden flex flex-col relative transition-colors duration-200">
+            <!-- Status Bar -->
+            <div class="px-6 pt-3 pb-1.5 flex items-center justify-between text-xs font-semibold select-none shrink-0">
+              <span>09:41</span>
+              <div class="w-24 h-5 rounded-full bg-black"></div>
+              <span>Wi-Fi · 100%</span>
+            </div>
+
+            <!-- Main Screen Scroll Area -->
+            <div id="phone-body" class="flex-1 overflow-y-auto no-scrollbar px-4 pt-1.5 pb-6 relative"></div>
+
+            <!-- Modal / Sheet Overlay (Spaces Switcher, Quick Add Popup Card, Export) -->
+            <div id="phone-modal-backdrop" onclick="closeModal()" class="hidden absolute inset-0 bg-black/45 backdrop-blur-[2px] z-30 flex flex-col justify-end">
+              <div id="phone-modal-sheet" onclick="event.stopPropagation()" class="w-full max-h-[86%] rounded-t-[30px] overflow-hidden flex flex-col shadow-2xl"></div>
+            </div>
+
+            <!-- Bottom Tab Bar -->
+            <div id="phone-tabbar" class="px-6 py-2.5 border-t flex justify-around items-center shrink-0"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Right: Notes Summary & Interactive Guide (6 cols) -->
+      <div class="lg:col-span-6 space-y-3.5">
+        <div class="bg-[var(--background)] border border-[var(--border)] rounded-2xl p-4 space-y-3">
+          <div class="flex items-center justify-between">
+            <h2 class="text-sm font-bold text-[var(--foreground)]">What’s New in v5</h2>
+            <span class="text-xs px-2.5 py-0.5 rounded-full bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 font-semibold">100% HTML Prototype</span>
+          </div>
+
+          <div class="space-y-2.5 text-xs">
+            <div class="p-3 rounded-xl bg-[var(--card)] border border-[var(--border)] flex items-start gap-2.5">
+              <span class="w-6 h-6 rounded-full bg-[#B45309] text-white font-bold flex items-center justify-center shrink-0">1</span>
+              <div>
+                <div class="font-bold text-[var(--foreground)]">Per-Collection “Add Record Form Style” in Collection Settings (⚙️)</div>
+                <p class="text-[var(--muted-foreground)] mt-0.5">
+                  Inside <b>⚙️ Collection Settings</b>, there is now an <b>Add Record Form Style</b> dropdown with two options:
+                  <b>Popup Card (Sheet)</b> or <b>Complete New Screen (Full Page)</b>. Whatever you choose for that collection is automatically used whenever you tap <b>＋ Add</b> on Home (grape cluster) or inside the Collection!
+                </p>
+                <div class="mt-2 flex flex-wrap gap-1.5">
+                  <button onclick="previewAddFormMode('popup')" class="px-2.5 py-1 rounded-lg bg-[#B45309]/15 text-[#B45309] dark:text-amber-300 font-semibold">
+                    Preview Popup Card →
+                  </button>
+                  <button onclick="previewAddFormMode('screen')" class="px-2.5 py-1 rounded-lg bg-[#B45309] text-white font-semibold">
+                    Preview Complete New Screen →
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div class="p-3 rounded-xl bg-[var(--card)] border border-[var(--border)] flex items-start gap-2.5">
+              <span class="w-6 h-6 rounded-full bg-[#1F5D3F] text-white font-bold flex items-center justify-center shrink-0">2</span>
+              <div>
+                <div class="font-bold text-[var(--foreground)]">“Field Shown Beside Title” Strictly Inside Collection Settings (⚙️)</div>
+                <p class="text-[var(--muted-foreground)] mt-0.5">
+                  Completely removed from the Collection list and filter bar. In <b>⚙️ Collection Settings</b>, use the <b>Field Shown Beside Title (Compact View)</b> dropdown to pick which field (e.g., <i>Product Cost</i>, <i>Expiration Date</i>, <i>Brand</i>) appears beside the title when viewing the collection in <b>Compact</b> mode.
+                </p>
+              </div>
+            </div>
+
+            <div class="p-3 rounded-xl bg-[var(--card)] border border-[var(--border)] flex items-start gap-2.5">
+              <span class="w-6 h-6 rounded-full bg-[#1F5D3F] text-white font-bold flex items-center justify-center shrink-0">3</span>
+              <div>
+                <div class="font-bold text-[var(--foreground)]">All Sexy Dropdowns inside Collection Settings</div>
+                <p class="text-[var(--muted-foreground)] mt-0.5">
+                  Collection Settings now houses three cohesive custom dropdowns:
+                  <b>(1) Collection Theme Color</b>, <b>(2) Field Shown Beside Title (Compact View)</b>, and <b>(3) Add Record Form Style (Popup Card vs. Full Screen)</b>, plus the 4-tab Icon Picker and Schema Fields list.
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <script>
+    // =========================================================================
+    // DATA & ICON CATALOG
+    // =========================================================================
+    const ICON_CATALOG = {
+      "Home & Living": {
+        "Appliances": ["🛡️", "☕", "🧹", "❄️", "🧺", "🔥", "🍽️", "💡"],
+        "Furniture & Rooms": ["🛋️", "🛏️", "🪑", "🚪", "🪴", "🖼️", "🪞", "🛁"],
+        "Security & Keys": ["🔐", "🗝️", "📹", "🚨", "🧯", "🧰", "🧱", "🏡"]
+      },
+      "Finance & Legal": {
+        "Warranties & Receipts": ["🧾", "📜", "🏷️", "💳", "💵", "🏦", "⚖️", "📑"],
+        "Insurance & Tax": ["☂️", "🏛️", "📊", "💼", "🖋️", "🪪", "📁", "🔒"]
+      },
+      "Vehicles & Gear": {
+        "Cars & Service": ["🚗", "🛞", "🔧", "⛽", "🔋", "🛣️", "🛠️", "🚙"],
+        "Electronics & Media": ["💻", "🖥️", "📷", "🎧", "📱", "⌚", "🎮", "🖨️"]
+      },
+      "Health & Personal": {
+        "Medical & Labs": ["🩺", "💊", "🧬", "🏥", "❤️‍🩹", "🦷", "👓", "📋"],
+        "Collections & Hobbies": ["🎸", "🍷", "📚", "🎨", "⛺", "🚲", "🏆", "✈️"]
+      }
+    };
+
+    const EMOJI_LIST = [
+      "🏠", "🛡️", "🚗", "💻", "☕", "🛋️", "🧾", "🩺", "🎸", "🍷", "⌚", "📷",
+      "✈️", "🐾", "🪴", "🔑", "🧰", "💎", "📦", "🎓", "🏋️", "🚲", "🛥️", "🏕️"
+    ];
+
+    const COLLECTION_COLORS = [
+      { name: "Amber Bronze", hex: "#B45309", tag: "Warm" },
+      { name: "Royal Indigo", hex: "#4338CA", tag: "Deep" },
+      { name: "Crimson Rose", hex: "#BE123C", tag: "Bold" },
+      { name: "Ocean Cerulean", hex: "#0369A1", tag: "Crisp" },
+      { name: "Teal Lagoon", hex: "#0F766E", tag: "Calm" },
+      { name: "Violet Amethyst", hex: "#6D28D9", tag: "Rich" },
+      { name: "Copper Terracotta", hex: "#C2410C", tag: "Earth" },
+      { name: "Slate Graphite", hex: "#334155", tag: "Neutral" }
+    ];
+
+    const APP_COLORS = [
+      { name: "Forest Emerald", hex: "#1F5D3F", tag: "Arca Default" },
+      { name: "Midnight Sapphire", hex: "#1E3A8A", tag: "Classic Blue" },
+      { name: "Terracotta Clay", hex: "#7C2D12", tag: "Warm Earth" },
+      { name: "Royal Plum", hex: "#581C87", tag: "Regal Violet" },
+      { name: "Obsidian Ink", hex: "#18181B", tag: "Minimal Monochrome" },
+      { name: "Deep Pine", hex: "#0F3F2A", tag: "Archival Green" }
+    ];
+
+    const ADD_FORM_MODES = [
+      { id: 'popup', name: 'Popup Card', desc: 'Slide-up modal card over current screen', icon: '⧉' },
+      { id: 'screen', name: 'Complete New Screen', desc: 'Dedicated full-page form with extra room', icon: '📱' }
+    ];
+
+    let state = {
+      screen: 'collectionSettings', // 'home' | 'collection' | 'collectionSettings' | 'addRecordScreen' | 'detail' | 'settings'
+      previousScreen: 'collection',
+      theme: 'light',
+      homeTabLabel: 'Home',
+      appColor: '#1F5D3F',
+      activeSpaceId: 'personal',
+      activeCollectionId: 'warranties',
+      activeRecordId: 'rec1',
+
+      // Grape-Cluster Popover state on Home
+      clusterCollectionId: 'warranties',
+
+      // Sexy Dropdown open states
+      appColorDropdownOpen: false,
+      colColorDropdownOpen: false,
+      compactFieldDropdownOpen: false,
+      addFormModeDropdownOpen: false,
+
+      // Inside Collection view state
+      collectionViewMode: 'compact', // 'normal' | 'compact' | 'box'
+      filterPanelOpen: false,
+      activeFilters: [],
+      draftFilterField: 'cost',
+      draftFilterOp: 'between',
+      draftFilterVal1: '400',
+      draftFilterVal2: '1800',
+
+      // Modals
+      modal: null, // null | 'spaces' | 'quickAdd' | 'export'
+      exportFormat: 'csv',
+
+      // Collection Settings (Icon & Color) state
+      iconTab: 'library',
+      libCategory: 'Home & Living',
+      libSubcategory: 'Appliances',
+      customMonogram: 'W',
+
+      spaces: [
+        { id: 'personal', name: 'Personal & Home', icon: '🏠' },
+        { id: 'vehicles', name: 'Vehicles', icon: '🚗' },
+        { id: 'studio', name: 'Work & Studio', icon: '💼' }
+      ],
+
+      collections: {
+        warranties: {
+          id: 'warranties',
+          spaceId: 'personal',
+          name: 'Warranties',
+          subtitle: 'Appliances & protection plans',
+          color: '#B45309',
+          iconType: 'letters',
+          iconValue: 'W',
+          compactSecondaryField: 'cost',
+          addFormMode: 'popup', // 'popup' | 'screen'
+          fields: [
+            { key: 'title', label: 'Product Name', type: 'text', required: true },
+            { key: 'brand', label: 'Brand / Manufacturer', type: 'text', required: true },
+            { key: 'cost', label: 'Product Cost', type: 'number', required: false },
+            { key: 'expires', label: 'Expiration Date', type: 'date', required: true },
+            { key: 'plan', label: 'Coverage Type', type: 'text', required: false }
+          ],
+          records: [
+            { id: 'rec1', title: 'Espresso Machine Pro 300', brand: 'Lucca Kitchen', cost: 749, costFormatted: '$749.00', expires: '2027-01-14', plan: 'Manufacturer Limited', ref: '#LK-88412' },
+            { id: 'rec2', title: 'Cordless Stick Vacuum V12', brand: 'AeroClean', cost: 499, costFormatted: '$499.00', expires: '2026-11-20', plan: 'Extended Care', ref: '#AC-10492' },
+            { id: 'rec3', title: 'OLED 65" Gallery TV', brand: 'LuminaTech', cost: 1899, costFormatted: '$1,899.00', expires: '2028-06-01', plan: '3-Year Panel Care', ref: '#LT-99201' },
+            { id: 'rec4', title: 'Induction Range 36"', brand: 'Valkyrie Home', cost: 2450, costFormatted: '$2,450.00', expires: '2027-09-15', plan: 'Manufacturer Limited', ref: '#VH-33108' }
+          ]
+        },
+        inventory: {
+          id: 'inventory',
+          spaceId: 'personal',
+          name: 'Home Inventory',
+          subtitle: 'Rooms, furniture & valuation',
+          color: '#4338CA',
+          iconType: 'letters',
+          iconValue: 'HI',
+          compactSecondaryField: 'brand',
+          addFormMode: 'screen',
+          fields: [
+            { key: 'title', label: 'Item Name', type: 'text', required: true },
+            { key: 'brand', label: 'Room / Location', type: 'text', required: true },
+            { key: 'cost', label: 'Replacement Value', type: 'number', required: false },
+            { key: 'expires', label: 'Purchase Date', type: 'date', required: false },
+            { key: 'plan', label: 'Category', type: 'text', required: false }
+          ],
+          records: [
+            { id: 'inv1', title: '27-inch Studio Display', brand: 'Home Office', cost: 1599, costFormatted: '$1,599.00', expires: '2025-04-10', plan: 'Electronics', ref: '#AP-4421' },
+            { id: 'inv2', title: 'Solid Walnut Dining Table', brand: 'Dining Room', cost: 2091, costFormatted: '$2,091.00', expires: '2024-11-18', plan: 'Furniture', ref: '#WD-8820' },
+            { id: 'inv3', title: 'Modular Linen Sofa', brand: 'Living Room', cost: 3200, costFormatted: '$3,200.00', expires: '2025-02-01', plan: 'Furniture', ref: '#LN-1094' }
+          ]
+        },
+        medical: {
+          id: 'medical',
+          spaceId: 'personal',
+          name: 'Medical Visits',
+          subtitle: 'Checkups, labs & prescriptions',
+          color: '#BE123C',
+          iconType: 'library',
+          iconValue: '🩺',
+          compactSecondaryField: 'expires',
+          addFormMode: 'screen',
+          fields: [
+            { key: 'title', label: 'Visit / Test', type: 'text', required: true },
+            { key: 'brand', label: 'Clinic / Doctor', type: 'text', required: false },
+            { key: 'cost', label: 'Copay Amount', type: 'number', required: false },
+            { key: 'expires', label: 'Visit Date', type: 'date', required: true },
+            { key: 'plan', label: 'Specialty', type: 'text', required: false }
+          ],
+          records: [
+            { id: 'med1', title: 'Annual Blood Panel', brand: 'Oak Street Lab', cost: 45, costFormatted: '$45.00', expires: '2026-08-12', plan: 'Lab Work', ref: '#LB-201' },
+            { id: 'med2', title: 'Dental Cleaning & X-Ray', brand: 'Smile Studio', cost: 120, costFormatted: '$120.00', expires: '2026-10-03', plan: 'Dental', ref: '#DN-884' }
+          ]
+        },
+        coffee: {
+          id: 'coffee',
+          spaceId: 'personal',
+          name: 'Coffee Bar',
+          subtitle: 'Beans, grinders & recipes',
+          color: '#0F766E',
+          iconType: 'emoji',
+          iconValue: '☕',
+          compactSecondaryField: 'brand',
+          addFormMode: 'popup',
+          fields: [
+            { key: 'title', label: 'Coffee / Gear', type: 'text', required: true },
+            { key: 'brand', label: 'Roaster', type: 'text', required: false },
+            { key: 'cost', label: 'Price', type: 'number', required: false },
+            { key: 'expires', label: 'Roast Date', type: 'date', required: false },
+            { key: 'plan', label: 'Origin', type: 'text', required: false }
+          ],
+          records: [
+            { id: 'cof1', title: 'Worka Sakaro Anaerobic', brand: 'Sey Coffee', cost: 28, costFormatted: '$28.00', expires: '2026-10-28', plan: 'Ethiopia', ref: '18g / 42g' }
+          ]
+        },
+        service: {
+          id: 'service',
+          spaceId: 'vehicles',
+          name: 'Vehicle Maintenance',
+          subtitle: 'Oil changes, tires & mileage',
+          color: '#0369A1',
+          iconType: 'letters',
+          iconValue: 'VM',
+          compactSecondaryField: 'cost',
+          addFormMode: 'popup',
+          fields: [
+            { key: 'title', label: 'Service Performed', type: 'text', required: true },
+            { key: 'brand', label: 'Service Center', type: 'text', required: false },
+            { key: 'cost', label: 'Total Cost', type: 'number', required: false },
+            { key: 'expires', label: 'Service Date', type: 'date', required: true },
+            { key: 'plan', label: 'Vehicle', type: 'text', required: false }
+          ],
+          records: [
+            { id: 'veh1', title: '30,000-Mile Synthetic Oil & Filter', brand: 'Bay Area Euro', cost: 185, costFormatted: '$185.00', expires: '2026-08-12', plan: '911 Carrera', ref: '30,112 mi' },
+            { id: 'veh2', title: 'Michelin Pilot Sport 4S Set', brand: 'Track Tire Co.', cost: 1640, costFormatted: '$1,640.00', expires: '2026-04-03', plan: '911 Carrera', ref: '27,400 mi' }
+          ]
+        },
+        insurance: {
+          id: 'insurance',
+          spaceId: 'vehicles',
+          name: 'Registration & Policies',
+          subtitle: 'Renewals, VINs & coverage',
+          color: '#6D28D9',
+          iconType: 'library',
+          iconValue: '🪪',
+          compactSecondaryField: 'expires',
+          addFormMode: 'screen',
+          fields: [
+            { key: 'title', label: 'Policy / Document', type: 'text', required: true },
+            { key: 'brand', label: 'Carrier', type: 'text', required: false },
+            { key: 'cost', label: 'Annual Premium', type: 'number', required: false },
+            { key: 'expires', label: 'Renewal Date', type: 'date', required: true },
+            { key: 'plan', label: 'Vehicle', type: 'text', required: false }
+          ],
+          records: [
+            { id: 'ins1', title: 'Comprehensive Auto Policy', brand: 'Chubb Collector', cost: 1420, costFormatted: '$1,420.00', expires: '2027-03-01', plan: '911 Carrera', ref: '#POL-992' }
+          ]
+        },
+        studioGear: {
+          id: 'studioGear',
+          spaceId: 'studio',
+          name: 'Production Gear',
+          subtitle: 'Cameras, lenses & serials',
+          color: '#C2410C',
+          iconType: 'library',
+          iconValue: '📷',
+          compactSecondaryField: 'cost',
+          addFormMode: 'screen',
+          fields: [
+            { key: 'title', label: 'Equipment', type: 'text', required: true },
+            { key: 'brand', label: 'Manufacturer', type: 'text', required: false },
+            { key: 'cost', label: 'Insured Value', type: 'number', required: false },
+            { key: 'expires', label: 'Purchase Date', type: 'date', required: false },
+            { key: 'plan', label: 'Kit', type: 'text', required: false }
+          ],
+          records: [
+            { id: 'st1', title: 'Cinema Camera 6K Full Frame', brand: 'Blackmagic', cost: 2595, costFormatted: '$2,595.00', expires: '2025-09-14', plan: 'A-Cam', ref: 'SN-8849201' }
+          ]
+        }
+      }
+    };
+
+    // =========================================================================
+    // HELPERS
+    // =========================================================================
+    function getSurfaceTokens() {
+      if (state.theme === 'dark') {
+        return {
+          canvas: 'bg-[#0D1311] text-[#F7F5F0]',
+          card: 'bg-[#161F1C] border-white/10 text-[#F7F5F0]',
+          subtle: 'bg-[#212E29] text-[#F7F5F0]',
+          muted: 'text-[#96A79E]',
+          divider: 'divide-white/10 border-white/10',
+          tabBar: 'bg-[#0D1311]/95 border-white/10',
+          sheet: 'bg-[#161F1C] text-[#F7F5F0] border-t border-white/15',
+          dropdown: 'bg-[#1B2622] border-white/15 text-[#F7F5F0]'
+        };
+      }
+      return {
+        canvas: 'bg-[#F7F4EB] text-[#111C16]',
+        card: 'bg-[#FFFDF7] border-black/8 text-[#111C16]',
+        subtle: 'bg-[#EDE8DA] text-[#111C16]',
+        muted: 'text-[#5A6B61]',
+        divider: 'divide-black/8 border-black/8',
+        tabBar: 'bg-[#FFFDF7]/95 border-black/10',
+        sheet: 'bg-[#FFFDF7] text-[#111C16] border-t border-black/10',
+        dropdown: 'bg-[#FFFDF9] border-black/12 text-[#111C16]'
+      };
+    }
+
+    function renderCollectionBadge(col, size = 'md') {
+      const dims = size === 'lg' ? 'w-12 h-12 rounded-2xl text-base' : (size === 'sm' ? 'w-8 h-8 rounded-xl text-xs' : 'w-11 h-11 rounded-2xl text-sm');
+      if (col.iconType === 'upload' && col.iconValue) {
+        return `<div class="${dims} overflow-hidden shrink-0 border border-white/20 shadow-sm" style="background:${col.color}">
+          <img src="${col.iconValue}" class="w-full h-full object-cover" alt="${col.name}" />
+        </div>`;
+      }
+      if (col.iconType === 'letters') {
+        return `<div class="${dims} font-black tracking-tight text-white flex items-center justify-center shrink-0 shadow-sm" style="background:${col.color}">
+          ${col.iconValue}
+        </div>`;
+      }
+      return `<div class="${dims} flex items-center justify-center shrink-0 shadow-sm text-white" style="background:${col.color}">
+        <span>${col.iconValue}</span>
+      </div>`;
+    }
+
+    function computeInitials(name) {
+      const words = name.trim().split(/\s+/).filter(Boolean);
+      if (words.length === 0) return 'A';
+      if (words.length === 1) return words[0].slice(0, 2).toUpperCase();
+      return (words[0][0] + words[1][0]).toUpperCase();
+    }
+
+    function setHomeTabLabel(lbl) {
+      state.homeTabLabel = lbl;
+      ['Home', 'Hub', 'Spaces', 'Desk'].forEach(k => {
+        const btn = document.getElementById('lbl-' + k);
+        if (!btn) return;
+        if (k === lbl) {
+          btn.className = 'px-2 py-0.5 rounded-md font-semibold text-white';
+          btn.style.background = state.appColor;
+        } else {
+          btn.className = 'px-2 py-0.5 rounded-md font-medium text-[var(--muted-foreground)]';
+          btn.style.background = 'transparent';
+        }
+      });
+      render();
+    }
+
+    function setPhoneTheme(theme) {
+      state.theme = theme;
+      document.getElementById('theme-light').className = theme === 'light'
+        ? 'px-2.5 py-1 rounded-lg text-xs font-semibold transition text-white'
+        : 'px-2.5 py-1 rounded-lg text-xs font-semibold transition text-[var(--muted-foreground)]';
+      document.getElementById('theme-light').style.background = theme === 'light' ? state.appColor : 'transparent';
+
+      document.getElementById('theme-dark').className = theme === 'dark'
+        ? 'px-2.5 py-1 rounded-lg text-xs font-semibold transition text-white'
+        : 'px-2.5 py-1 rounded-lg text-xs font-semibold transition text-[var(--muted-foreground)]';
+      document.getElementById('theme-dark').style.background = theme === 'dark' ? state.appColor : 'transparent';
+      render();
+    }
+
+    function setAppColor(hex) {
+      state.appColor = hex;
+      state.appColorDropdownOpen = false;
+      document.getElementById('studio-badge').style.background = hex;
+      setHomeTabLabel(state.homeTabLabel);
+      setPhoneTheme(state.theme);
+    }
+
+    function closeAllDropdowns() {
+      state.appColorDropdownOpen = false;
+      state.colColorDropdownOpen = false;
+      state.compactFieldDropdownOpen = false;
+      state.addFormModeDropdownOpen = false;
+    }
+
+    function navTo(screen) {
+      state.screen = screen;
+      state.modal = null;
+      closeAllDropdowns();
+      render();
+    }
+
+    function toggleCluster(colId, ev) {
+      if (ev) ev.stopPropagation();
+      state.clusterCollectionId = (state.clusterCollectionId === colId) ? null : colId;
+      render();
+    }
+
+    function openCollection(colId, ev) {
+      if (ev) ev.stopPropagation();
+      state.activeCollectionId = colId;
+      state.clusterCollectionId = null;
+      state.screen = 'collection';
+      state.modal = null;
+      closeAllDropdowns();
+      render();
+    }
+
+    function openCollectionSettings(colId, ev) {
+      if (ev) ev.stopPropagation();
+      state.activeCollectionId = colId;
+      state.clusterCollectionId = null;
+      const col = state.collections[colId];
+      state.iconTab = col.iconType;
+      state.customMonogram = col.iconType === 'letters' ? col.iconValue : computeInitials(col.name);
+      closeAllDropdowns();
+      state.screen = 'collectionSettings';
+      state.modal = null;
+      render();
+    }
+
+    function openRecordDetail(colId, recId) {
+      state.activeCollectionId = colId;
+      state.activeRecordId = recId;
+      state.screen = 'detail';
+      state.modal = null;
+      render();
+    }
+
+    // Triggers Add Record according to that Collection's configured Add Form Mode ('popup' vs 'screen')!
+    function triggerAddRecord(colId, ev) {
+      if (ev) ev.stopPropagation();
+      state.activeCollectionId = colId;
+      state.clusterCollectionId = null;
+      const col = state.collections[colId];
+      if (col.addFormMode === 'screen') {
+        state.previousScreen = state.screen === 'addRecordScreen' ? 'collection' : state.screen;
+        state.modal = null;
+        state.screen = 'addRecordScreen';
+      } else {
+        state.modal = 'quickAdd';
+      }
+      render();
+    }
+
+    function previewAddFormMode(mode) {
+      const col = state.collections[state.activeCollectionId];
+      col.addFormMode = mode;
+      if (mode === 'screen') {
+        state.previousScreen = 'collection';
+        state.modal = null;
+        state.screen = 'addRecordScreen';
+      } else {
+        if (state.screen === 'addRecordScreen') state.screen = 'collection';
+        state.modal = 'quickAdd';
+      }
+      render();
+    }
+
+    function closeModal() {
+      state.modal = null;
+      render();
+    }
+
+    function switchSpace(spaceId) {
+      state.activeSpaceId = spaceId;
+      const firstCol = Object.values(state.collections).find(c => c.spaceId === spaceId);
+      if (firstCol) state.activeCollectionId = firstCol.id;
+      state.clusterCollectionId = null;
+      state.screen = 'home';
+      state.modal = null;
+      render();
+    }
+
+    function updateNavHighlights() {
+      const inCollectionContext = ['collection', 'collectionSettings', 'addRecordScreen', 'detail'].includes(state.screen) || state.modal === 'quickAdd';
+      const activeAccent = inCollectionContext
+        ? state.collections[state.activeCollectionId].color
+        : state.appColor;
+
+      const map = {
+        'nav-home': state.screen === 'home' && !state.modal,
+        'nav-collection': (state.screen === 'collection' || state.screen === 'detail') && !state.modal,
+        'nav-col-settings': state.screen === 'collectionSettings' && !state.modal,
+        'nav-add-popup': state.modal === 'quickAdd',
+        'nav-add-screen': state.screen === 'addRecordScreen' && !state.modal,
+        'nav-settings': state.screen === 'settings' && !state.modal
+      };
+
+      Object.entries(map).forEach(([id, active]) => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        if (active) {
+          el.className = 'px-3 py-1.5 rounded-xl text-xs font-semibold transition text-white shadow-sm';
+          el.style.background = activeAccent;
+        } else {
+          el.className = 'px-3 py-1.5 rounded-xl text-xs font-semibold transition bg-[var(--background)] text-[var(--foreground)] border border-[var(--border)]';
+          el.style.background = '';
+        }
+      });
+    }
+
+    // =========================================================================
+    // MASTER RENDER
+    // =========================================================================
+    function render() {
+      updateNavHighlights();
+      const s = getSurfaceTokens();
+      const root = document.getElementById('phone-root');
+      root.className = `w-full h-full rounded-[38px] overflow-hidden flex flex-col relative transition-colors duration-200 ${s.canvas}`;
+
+      if (state.screen === 'home') {
+        renderHomeScreen(s);
+      } else if (state.screen === 'collection') {
+        renderCollectionScreen(s);
+      } else if (state.screen === 'collectionSettings') {
+        renderCollectionSettingsScreen(s);
+      } else if (state.screen === 'addRecordScreen') {
+        renderAddRecordFullScreen(s);
+      } else if (state.screen === 'detail') {
+        renderRecordDetailScreen(s);
+      } else if (state.screen === 'settings') {
+        renderAppSettingsScreen(s);
+      }
+
+      // Render Modal Sheet
+      const backdrop = document.getElementById('phone-modal-backdrop');
+      const sheet = document.getElementById('phone-modal-sheet');
+      if (state.modal) {
+        backdrop.classList.remove('hidden');
+        sheet.className = `w-full max-h-[86%] rounded-t-[30px] overflow-hidden flex flex-col shadow-2xl ${s.sheet}`;
+        if (state.modal === 'spaces') renderSpacesModal(s, sheet);
+        else if (state.modal === 'quickAdd') renderQuickAddModal(s, sheet);
+        else if (state.modal === 'export') renderExportModal(s, sheet);
+      } else {
+        backdrop.classList.add('hidden');
+      }
+
+      // Render Bottom Tab Bar
+      const inCollectionContext = ['collection', 'collectionSettings', 'addRecordScreen', 'detail'].includes(state.screen);
+      const tabAccent = inCollectionContext
+        ? state.collections[state.activeCollectionId].color
+        : state.appColor;
+
+      const tabBar = document.getElementById('phone-tabbar');
+      tabBar.className = `px-8 py-2 border-t flex justify-around items-center shrink-0 ${s.tabBar}`;
+      const isHomeSide = state.screen !== 'settings';
+      tabBar.innerHTML = `
+        <button onclick="navTo('home')" class="flex flex-col items-center gap-0.5">
+          <span class="px-4 py-0.5 rounded-full text-xs font-bold transition" style="background:${isHomeSide ? tabAccent : 'transparent'}; color:${isHomeSide ? '#fff' : 'inherit'}">⊞</span>
+          <span class="text-xs font-semibold" style="color:${isHomeSide ? tabAccent : ''}">${state.homeTabLabel}</span>
+        </button>
+        <button onclick="navTo('settings')" class="flex flex-col items-center gap-0.5">
+          <span class="px-4 py-0.5 rounded-full text-xs font-bold transition" style="background:${state.screen === 'settings' ? state.appColor : 'transparent'}; color:${state.screen === 'settings' ? '#fff' : 'inherit'}">⚙️</span>
+          <span class="text-xs font-semibold" style="color:${state.screen === 'settings' ? state.appColor : ''}">Settings</span>
+        </button>
+      `;
+    }
+
+    // =========================================================================
+    // 1. HOME SCREEN
+    // =========================================================================
+    function renderHomeScreen(s) {
+      const space = state.spaces.find(sp => sp.id === state.activeSpaceId);
+      const spaceCollections = Object.values(state.collections).filter(c => c.spaceId === state.activeSpaceId);
+
+      document.getElementById('phone-body').innerHTML = `
+        <div onclick="if(state.clusterCollectionId){state.clusterCollectionId=null;render();}" class="space-y-4 min-h-full pb-8">
+          <div class="pt-1 flex items-center justify-between">
+            <button onclick="event.stopPropagation();state.modal='spaces';render()" class="flex items-center gap-2 group text-left">
+              <span class="w-9 h-9 rounded-2xl flex items-center justify-center text-base text-white shadow-sm" style="background:${state.appColor}">
+                ${space.icon}
+              </span>
+              <div>
+                <div class="flex items-center gap-1.5">
+                  <span class="text-xl font-extrabold tracking-tight">${space.name}</span>
+                  <span class="w-5 h-5 rounded-full ${s.subtle} flex items-center justify-center text-xs font-bold">⌄</span>
+                </div>
+                <div class="text-xs ${s.muted}">${spaceCollections.length} Collections</div>
+              </div>
+            </button>
+
+            <button onclick="event.stopPropagation();state.modal='spaces';render()" class="px-3 py-1.5 rounded-xl border ${s.card} text-xs font-semibold shadow-sm">
+              Spaces
+            </button>
+          </div>
+
+          <div class="grid grid-cols-2 gap-3 pt-1">
+            ${spaceCollections.map(col => {
+              const isClusterOpen = state.clusterCollectionId === col.id;
+              return `
+                <div onclick="toggleCluster('${col.id}', event)" class="${isClusterOpen ? 'active-cluster-card ring-2 z-20' : ''} cursor-pointer rounded-2xl border ${s.card} p-3.5 shadow-sm hover:shadow-md transition flex flex-col justify-between min-h-[146px] relative overflow-visible" style="${isClusterOpen ? `--tw-ring-color:${col.color}` : ''}">
+                  <div class="absolute top-0 left-3 right-3 h-1 rounded-b-full" style="background:${col.color}"></div>
+
+                  <div class="flex items-start justify-between gap-2 pt-1">
+                    ${renderCollectionBadge(col, 'md')}
+                    <span class="px-2 py-0.5 rounded-full text-xs font-bold" style="background:${col.color}18; color:${col.color}">
+                      ${col.records.length}
+                    </span>
+                  </div>
+
+                  <div class="mt-3">
+                    <div class="font-bold text-sm leading-tight">${col.name}</div>
+                    <div class="text-xs ${s.muted} mt-0.5 line-clamp-1">${col.subtitle}</div>
+                  </div>
+
+                  ${isClusterOpen ? `
+                    <div onclick="event.stopPropagation()" class="cluster-backdrop absolute inset-0 rounded-2xl bg-black/60 backdrop-blur-[3px] flex flex-col items-center justify-center p-2 z-20">
+                      <div class="text-xs font-bold text-white/90 mb-2 tracking-wide">${col.name}</div>
+
+                      <div class="flex items-center justify-center gap-2.5">
+                        <!-- 1. ADD (Opens either Popup Card or Full Screen based on Collection Settings!) -->
+                        <button onclick="triggerAddRecord('${col.id}', event)" class="orb-btn grape-node-1 flex flex-col items-center gap-1 group">
+                          <span class="w-11 h-11 rounded-full text-white flex items-center justify-center text-lg font-black shadow-lg border border-white/25" style="background:${col.color}">
+                            ＋
+                          </span>
+                          <span class="orb-tooltip px-2 py-0.5 rounded-full bg-black/75 text-white text-xs font-bold">
+                            Add
+                          </span>
+                        </button>
+
+                        <!-- 2. VIEW -->
+                        <button onclick="openCollection('${col.id}', event)" class="orb-btn grape-node-2 -mt-3 flex flex-col items-center gap-1 group">
+                          <span class="w-12 h-12 rounded-full bg-white text-[#111C16] flex items-center justify-center text-base font-bold shadow-xl border-2" style="border-color:${col.color}">
+                            👁
+                          </span>
+                          <span class="orb-tooltip px-2 py-0.5 rounded-full bg-white text-[#111C16] text-xs font-extrabold shadow">
+                            View
+                          </span>
+                        </button>
+
+                        <!-- 3. EDIT -->
+                        <button onclick="openCollectionSettings('${col.id}', event)" class="orb-btn grape-node-3 flex flex-col items-center gap-1 group">
+                          <span class="w-11 h-11 rounded-full bg-white/20 backdrop-blur-md text-white flex items-center justify-center text-sm font-bold shadow-lg border border-white/30">
+                            ✎
+                          </span>
+                          <span class="orb-tooltip px-2 py-0.5 rounded-full bg-black/75 text-white text-xs font-bold">
+                            Edit
+                          </span>
+                        </button>
+                      </div>
+                    </div>
+                  ` : ''}
+                </div>
+              `;
+            }).join('')}
+
+            <button onclick="event.stopPropagation();openCollectionSettings('${spaceCollections[0].id}')" class="rounded-2xl border-2 border-dashed ${s.divider} p-4 flex flex-col items-center justify-center gap-1.5 min-h-[146px] hover:opacity-80 transition">
+              <span class="w-10 h-10 rounded-2xl flex items-center justify-center text-base font-bold text-white shadow-sm" style="background:${state.appColor}">＋</span>
+              <span class="text-xs font-bold mt-1">New Collection</span>
+              <span class="text-xs ${s.muted} text-center">AI, Starter or Custom</span>
+            </button>
+          </div>
+        </div>
+      `;
+    }
+
+    // =========================================================================
+    // 2. INSIDE COLLECTION PAGE (Pure Compact/Box/Normal List — No settings clutter here!)
+    // =========================================================================
+    function getFilteredRecords(col) {
+      return col.records.filter(r => {
+        for (const f of state.activeFilters) {
+          if (f.field === 'title' || f.field === 'brand' || f.field === 'plan') {
+            const val = String(r[f.field] || '').toLowerCase();
+            const q = String(f.val1 || '').toLowerCase();
+            if (f.op === 'contains' && !val.includes(q)) return false;
+            if (f.op === 'equals' && val !== q) return false;
+            if (f.op === 'starts' && !val.startsWith(q)) return false;
+          } else if (f.field === 'cost') {
+            const num = Number(r.cost);
+            const n1 = Number(f.val1 || 0);
+            const n2 = Number(f.val2 || 999999);
+            if (f.op === 'between' && (num < n1 || num > n2)) return false;
+            if (f.op === 'gt' && !(num > n1)) return false;
+            if (f.op === 'lt' && !(num < n1)) return false;
+            if (f.op === 'eq' && num !== n1) return false;
+          } else if (f.field === 'expires') {
+            const d = r.expires;
+            if (f.op === 'between' && (d < f.val1 || d > f.val2)) return false;
+            if (f.op === 'after' && d < f.val1) return false;
+            if (f.op === 'before' && d > f.val1) return false;
+          }
+        }
+        return true;
+      });
+    }
+
+    function setFilterField(fieldKey) {
+      state.draftFilterField = fieldKey;
+      if (fieldKey === 'cost') {
+        state.draftFilterOp = 'between';
+        state.draftFilterVal1 = '400';
+        state.draftFilterVal2 = '1800';
+      } else if (fieldKey === 'expires') {
+        state.draftFilterOp = 'between';
+        state.draftFilterVal1 = '2026-01-01';
+        state.draftFilterVal2 = '2027-06-01';
+      } else {
+        state.draftFilterOp = 'contains';
+        state.draftFilterVal1 = 'Pro';
+        state.draftFilterVal2 = '';
+      }
+      render();
+    }
+
+    function applyDraftFilter() {
+      const col = state.collections[state.activeCollectionId];
+      const fieldObj = col.fields.find(f => f.key === state.draftFilterField);
+      state.activeFilters.push({
+        id: Date.now(),
+        field: state.draftFilterField,
+        label: fieldObj ? fieldObj.label : state.draftFilterField,
+        op: state.draftFilterOp,
+        val1: state.draftFilterVal1,
+        val2: state.draftFilterVal2
+      });
+      render();
+    }
+
+    function removeFilter(id) {
+      state.activeFilters = state.activeFilters.filter(f => f.id !== id);
+      render();
+    }
+
+    function renderCollectionScreen(s) {
+      const col = state.collections[state.activeCollectionId];
+      const cHex = col.color;
+      const filtered = getFilteredRecords(col);
+      const draftFieldObj = col.fields.find(f => f.key === state.draftFilterField) || col.fields[0];
+
+      let filterInputsHtml = '';
+      if (draftFieldObj.type === 'number') {
+        filterInputsHtml = `
+          <div class="grid grid-cols-3 gap-1.5">
+            <select onchange="state.draftFilterOp=this.value;render()" class="px-2 py-1.5 rounded-lg ${s.subtle} text-xs font-semibold">
+              <option value="between" ${state.draftFilterOp==='between'?'selected':''}>Between</option>
+              <option value="gt" ${state.draftFilterOp==='gt'?'selected':''}>Greater &gt;</option>
+              <option value="lt" ${state.draftFilterOp==='lt'?'selected':''}>Lesser &lt;</option>
+              <option value="eq" ${state.draftFilterOp==='eq'?'selected':''}>Equals =</option>
+            </select>
+            <input type="number" value="${state.draftFilterVal1}" oninput="state.draftFilterVal1=this.value" placeholder="Min" class="px-2 py-1.5 rounded-lg ${s.subtle} text-xs" />
+            ${state.draftFilterOp === 'between'
+              ? `<input type="number" value="${state.draftFilterVal2}" oninput="state.draftFilterVal2=this.value" placeholder="Max" class="px-2 py-1.5 rounded-lg ${s.subtle} text-xs" />`
+              : `<div class="text-xs ${s.muted} flex items-center px-1">USD</div>`
+            }
+          </div>
+        `;
+      } else if (draftFieldObj.type === 'date') {
+        filterInputsHtml = `
+          <div class="space-y-1.5">
+            <select onchange="state.draftFilterOp=this.value;render()" class="w-full px-2 py-1.5 rounded-lg ${s.subtle} text-xs font-semibold">
+              <option value="between" ${state.draftFilterOp==='between'?'selected':''}>Between Dates</option>
+              <option value="after" ${state.draftFilterOp==='after'?'selected':''}>After Date</option>
+              <option value="before" ${state.draftFilterOp==='before'?'selected':''}>Before Date</option>
+            </select>
+            <div class="grid grid-cols-2 gap-1.5">
+              <input type="date" value="${state.draftFilterVal1}" onchange="state.draftFilterVal1=this.value" class="px-2 py-1 rounded-lg ${s.subtle} text-xs" />
+              ${state.draftFilterOp === 'between'
+                ? `<input type="date" value="${state.draftFilterVal2}" onchange="state.draftFilterVal2=this.value" class="px-2 py-1 rounded-lg ${s.subtle} text-xs" />`
+                : `<div></div>`
+              }
+            </div>
+          </div>
+        `;
+      } else {
+        filterInputsHtml = `
+          <div class="grid grid-cols-3 gap-1.5">
+            <select onchange="state.draftFilterOp=this.value;render()" class="px-2 py-1.5 rounded-lg ${s.subtle} text-xs font-semibold">
+              <option value="contains" ${state.draftFilterOp==='contains'?'selected':''}>Contains</option>
+              <option value="equals" ${state.draftFilterOp==='equals'?'selected':''}>Equals</option>
+              <option value="starts" ${state.draftFilterOp==='starts'?'selected':''}>Starts with</option>
+            </select>
+            <input type="text" value="${state.draftFilterVal1}" oninput="state.draftFilterVal1=this.value" placeholder="Value…" class="col-span-2 px-2 py-1.5 rounded-lg ${s.subtle} text-xs" />
+          </div>
+        `;
+      }
+
+      let recordsViewHtml = '';
+      if (state.collectionViewMode === 'compact') {
+        const secKey = col.compactSecondaryField || 'cost';
+        recordsViewHtml = `
+          <div class="rounded-2xl border ${s.card} divide-y ${s.divider} overflow-hidden shadow-sm">
+            ${filtered.map(r => {
+              const displayVal = secKey === 'cost' ? r.costFormatted : r[secKey];
+              return `
+                <div onclick="openRecordDetail('${col.id}', '${r.id}')" class="cursor-pointer px-3.5 py-2.5 flex items-center justify-between gap-2 hover:opacity-85">
+                  <span class="text-xs font-bold truncate">${r.title}</span>
+                  <div class="flex items-center gap-1.5 shrink-0">
+                    <span class="text-xs font-semibold px-2 py-0.5 rounded-md" style="background:${cHex}18; color:${cHex}">${displayVal}</span>
+                    <span class="text-xs ${s.muted}">›</span>
+                  </div>
+                </div>
+              `;
+            }).join('')}
+          </div>
+        `;
+      } else if (state.collectionViewMode === 'box') {
+        recordsViewHtml = `
+          <div class="grid grid-cols-2 gap-2.5">
+            ${filtered.map(r => `
+              <div onclick="openRecordDetail('${col.id}', '${r.id}')" class="cursor-pointer p-3 rounded-2xl border ${s.card} shadow-sm flex flex-col justify-between min-h-[118px]">
+                <div class="w-full flex items-center justify-between">
+                  <span class="text-xs font-mono px-1.5 py-0.5 rounded ${s.subtle}">${r.ref}</span>
+                  <span class="w-2 h-2 rounded-full" style="background:${cHex}"></span>
+                </div>
+                <div class="my-2">
+                  <div class="text-xs font-bold leading-snug line-clamp-2">${r.title}</div>
+                  <div class="text-xs ${s.muted} truncate mt-0.5">${r.brand}</div>
+                </div>
+                <div class="pt-2 border-t ${s.divider} flex items-center justify-between text-xs">
+                  <span class="font-bold" style="color:${cHex}">${r.costFormatted}</span>
+                  <span class="${s.muted}">${r.expires.slice(5)}</span>
+                </div>
+              </div>
+            `).join('')}
+          </div>
+        `;
+      } else {
+        recordsViewHtml = `
+          <div class="space-y-2.5">
+            ${filtered.map(r => `
+              <div onclick="openRecordDetail('${col.id}', '${r.id}')" class="cursor-pointer p-3.5 rounded-2xl border ${s.card} shadow-sm hover:shadow transition">
+                <div class="flex items-start justify-between gap-2">
+                  <div>
+                    <div class="text-xs font-bold">${r.title}</div>
+                    <div class="text-xs ${s.muted} mt-0.5">${r.brand} · ${r.ref}</div>
+                  </div>
+                  <span class="px-2 py-0.5 rounded-full text-xs font-bold shrink-0" style="background:${cHex}20; color:${cHex}">
+                    ${r.costFormatted}
+                  </span>
+                </div>
+                <div class="mt-2.5 pt-2 border-t ${s.divider} flex items-center justify-between text-xs ${s.muted}">
+                  <span>${r.plan}</span>
+                  <span>${col.fields[3].label}: <b class="text-[var(--foreground)]">${r.expires}</b></span>
+                </div>
+              </div>
+            `).join('')}
+          </div>
+        `;
+      }
+
+      document.getElementById('phone-body').innerHTML = `
+        <div class="space-y-3.5">
+          <!-- Top Bar: Back on left; Export (⤓) and Cog Settings (⚙️) on right -->
+          <div class="flex items-center justify-between pt-1">
+            <button onclick="navTo('home')" class="text-xs font-bold flex items-center gap-1" style="color:${cHex}">
+              <span>‹</span>
+              <span>${state.spaces.find(sp => sp.id === col.spaceId).name}</span>
+            </button>
+            <div class="flex items-center gap-1.5">
+              <button onclick="state.modal='export';render()" class="px-2.5 py-1.5 rounded-xl ${s.subtle} text-xs font-semibold flex items-center gap-1" title="Export CSV, Excel, JSON">
+                <span>⤓</span>
+                <span>Export</span>
+              </button>
+              <button onclick="openCollectionSettings('${col.id}')" class="w-8 h-8 rounded-xl ${s.subtle} flex items-center justify-center text-xs font-bold" title="Collection Settings">
+                ⚙️
+              </button>
+            </div>
+          </div>
+
+          <!-- Collection Hero Header -->
+          <div class="p-3.5 rounded-2xl text-white shadow-md flex items-center justify-between" style="background: linear-gradient(135deg, ${cHex}, ${cHex}CC)">
+            <div class="flex items-center gap-3">
+              ${renderCollectionBadge(col, 'md')}
+              <div>
+                <div class="text-base font-extrabold leading-tight">${col.name}</div>
+                <div class="text-xs text-white/80">${filtered.length} records</div>
+              </div>
+            </div>
+            <button onclick="triggerAddRecord('${col.id}')" class="orb-btn px-3 py-1.5 rounded-xl bg-white text-[#111C16] text-xs font-extrabold shadow-sm">
+              ＋ Add
+            </button>
+          </div>
+
+          <!-- 3-View Switcher (Normal | Compact | Box) + Filter Trigger -->
+          <div class="flex items-center justify-between gap-2">
+            <div class="inline-flex rounded-xl p-0.5 ${s.subtle}">
+              <button onclick="state.collectionViewMode='normal';render()" class="px-2.5 py-1 rounded-lg text-xs font-semibold transition ${state.collectionViewMode==='normal'?'text-white shadow-sm':s.muted}" style="background:${state.collectionViewMode==='normal'?cHex:'transparent'}">
+                Normal
+              </button>
+              <button onclick="state.collectionViewMode='compact';render()" class="px-2.5 py-1 rounded-lg text-xs font-semibold transition ${state.collectionViewMode==='compact'?'text-white shadow-sm':s.muted}" style="background:${state.collectionViewMode==='compact'?cHex:'transparent'}">
+                Compact
+              </button>
+              <button onclick="state.collectionViewMode='box';render()" class="px-2.5 py-1 rounded-lg text-xs font-semibold transition ${state.collectionViewMode==='box'?'text-white shadow-sm':s.muted}" style="background:${state.collectionViewMode==='box'?cHex:'transparent'}">
+                Box
+              </button>
+            </div>
+
+            <button onclick="state.filterPanelOpen=!state.filterPanelOpen;render()" class="px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1 border" style="border-color:${cHex}50; color:${cHex}; background:${state.filterPanelOpen ? cHex+'15' : 'transparent'}">
+              <span>Filter</span>
+              ${state.activeFilters.length > 0 ? `<span class="px-1.5 rounded-full text-white" style="background:${cHex}">${state.activeFilters.length}</span>` : ''}
+            </button>
+          </div>
+
+          <!-- Type-Aware Field Filter Drawer -->
+          ${state.filterPanelOpen ? `
+            <div class="p-3 rounded-2xl border ${s.card} space-y-2.5 shadow-sm" style="border-color:${cHex}40">
+              <div class="flex items-center justify-between">
+                <span class="text-xs font-bold" style="color:${cHex}">Filter by Field</span>
+                <span class="text-xs ${s.muted}">Text · Number · Date</span>
+              </div>
+              <div class="flex gap-1.5 overflow-x-auto no-scrollbar">
+                ${col.fields.map(f => `
+                  <button onclick="setFilterField('${f.key}')" class="px-2.5 py-1 rounded-lg text-xs font-semibold shrink-0 ${state.draftFilterField===f.key ? 'text-white' : s.subtle}" style="background:${state.draftFilterField===f.key ? cHex : ''}">
+                    ${f.label}
+                  </button>
+                `).join('')}
+              </div>
+              ${filterInputsHtml}
+              <div class="flex justify-end gap-2 pt-1">
+                ${state.activeFilters.length > 0 ? `<button onclick="state.activeFilters=[];render()" class="px-2.5 py-1 rounded-lg ${s.subtle} text-xs font-semibold">Reset</button>` : ''}
+                <button onclick="applyDraftFilter()" class="px-3 py-1 rounded-lg text-white text-xs font-bold" style="background:${cHex}">
+                  Apply Filter
+                </button>
+              </div>
+            </div>
+          ` : ''}
+
+          ${state.activeFilters.length > 0 ? `
+            <div class="flex flex-wrap gap-1.5">
+              ${state.activeFilters.map(f => `
+                <span class="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold text-white" style="background:${cHex}">
+                  <span>${f.label}: ${f.op} ${f.val1}${f.op==='between' ? '–'+f.val2 : ''}</span>
+                  <button onclick="removeFilter(${f.id})" class="ml-1 font-bold">×</button>
+                </span>
+              `).join('')}
+            </div>
+          ` : ''}
+
+          ${recordsViewHtml}
+        </div>
+      `;
+    }
+
+    // =========================================================================
+    // 3. COLLECTION SETTINGS PAGE (⚙️ Cog Page: Color + Compact Field + Add Record Form Mode + Icon)
+    // =========================================================================
+    function renderCollectionSettingsScreen(s) {
+      const col = state.collections[state.activeCollectionId];
+      const cHex = col.color;
+      const activeColorObj = COLLECTION_COLORS.find(c => c.hex.toLowerCase() === cHex.toLowerCase()) || COLLECTION_COLORS[0];
+      const secondaryFieldOptions = col.fields.filter(f => f.key !== 'title');
+      const activeCompactFieldObj = secondaryFieldOptions.find(f => f.key === col.compactSecondaryField) || secondaryFieldOptions[1];
+      const activeAddFormModeObj = ADD_FORM_MODES.find(m => m.id === col.addFormMode) || ADD_FORM_MODES[0];
+
+      const subcats = Object.keys(ICON_CATALOG[state.libCategory] || {});
+      if (!subcats.includes(state.libSubcategory)) {
+        state.libSubcategory = subcats[0];
+      }
+      const iconsInSubcat = ICON_CATALOG[state.libCategory][state.libSubcategory] || [];
+
+      let iconTabContent = '';
+      if (state.iconTab === 'library') {
+        iconTabContent = `
+          <div class="space-y-2.5">
+            <div class="flex gap-1.5 overflow-x-auto no-scrollbar">
+              ${Object.keys(ICON_CATALOG).map(cat => `
+                <button onclick="state.libCategory='${cat}';render()" class="px-2.5 py-1 rounded-lg text-xs font-semibold shrink-0 ${state.libCategory===cat ? 'text-white' : s.subtle}" style="background:${state.libCategory===cat ? cHex : ''}">
+                  ${cat}
+                </button>
+              `).join('')}
+            </div>
+            <div class="flex gap-1.5 overflow-x-auto no-scrollbar">
+              ${subcats.map(sub => `
+                <button onclick="state.libSubcategory='${sub}';render()" class="px-2 py-1 rounded-lg text-xs font-medium shrink-0 ${state.libSubcategory===sub ? 'text-white' : s.subtle}" style="background:${state.libSubcategory===sub ? cHex+'CC' : ''}">
+                  ${sub}
+                </button>
+              `).join('')}
+            </div>
+            <div class="grid grid-cols-8 gap-1.5 pt-1">
+              ${iconsInSubcat.map(ic => `
+                <button onclick="colSelectIcon('library', '${ic}')" class="h-9 rounded-xl ${s.subtle} flex items-center justify-center text-sm hover:scale-105 transition ${col.iconType==='library' && col.iconValue===ic ? 'ring-2' : ''}" style="--tw-ring-color:${cHex}">
+                  ${ic}
+                </button>
+              `).join('')}
+            </div>
+          </div>
+        `;
+      } else if (state.iconTab === 'emoji') {
+        iconTabContent = `
+          <div class="grid grid-cols-8 gap-1.5 pt-1">
+            ${EMOJI_LIST.map(em => `
+              <button onclick="colSelectIcon('emoji', '${em}')" class="h-9 rounded-xl ${s.subtle} flex items-center justify-center text-sm hover:scale-105 transition">
+                ${em}
+              </button>
+            `).join('')}
+          </div>
+        `;
+      } else if (state.iconTab === 'upload') {
+        iconTabContent = `
+          <div class="space-y-2 text-center py-2">
+            <label class="cursor-pointer block p-3.5 rounded-2xl border-2 border-dashed ${s.divider} ${s.subtle}">
+              <div class="text-xs font-bold">🖼️ Upload Custom Photo / Icon</div>
+              <div class="text-xs ${s.muted} mt-0.5">Choose from Photos or Files</div>
+              <input type="file" accept="image/*" class="hidden" onchange="handleCustomIconUpload(event)" />
+            </label>
+            <button onclick="usePresetSampleLogo()" class="px-3 py-1.5 rounded-xl text-xs font-semibold text-white" style="background:${cHex}">
+              Try Sample Custom Image
+            </button>
+          </div>
+        `;
+      } else if (state.iconTab === 'letters') {
+        const autoLetters = computeInitials(col.name);
+        iconTabContent = `
+          <div class="space-y-2.5 pt-1">
+            <div class="flex items-center justify-between text-xs">
+              <span class="${s.muted}">Suggested from “${col.name}”: <b>${autoLetters}</b></span>
+              <button onclick="colSelectIcon('letters', '${autoLetters}')" class="px-2.5 py-1 rounded-lg font-bold text-white" style="background:${cHex}">
+                Use “${autoLetters}”
+              </button>
+            </div>
+            <div class="flex items-center gap-2">
+              <input type="text" maxlength="3" value="${state.customMonogram}" oninput="state.customMonogram=this.value.toUpperCase();colSelectIcon('letters', state.customMonogram || 'A')" class="w-20 px-3 py-1.5 rounded-xl ${s.subtle} text-xs font-black uppercase text-center" />
+              <span class="text-xs ${s.muted}">Type 1–3 letters (e.g. W, HI, VM)</span>
+            </div>
+          </div>
+        `;
+      }
+
+      document.getElementById('phone-body').innerHTML = `
+        <div class="space-y-3.5">
+          <!-- Header -->
+          <div class="flex items-center justify-between pt-1">
+            <button onclick="openCollection('${col.id}')" class="text-xs font-bold flex items-center gap-1" style="color:${cHex}">
+              <span>‹</span>
+              <span>${col.name}</span>
+            </button>
+            <span class="text-xs font-extrabold">Collection Settings</span>
+            <button onclick="openCollection('${col.id}')" class="px-3 py-1 rounded-full text-white text-xs font-bold" style="background:${cHex}">
+              Done
+            </button>
+          </div>
+
+          <!-- Live Collection Identity Preview -->
+          <div class="p-3.5 rounded-2xl border ${s.card} flex items-center gap-3 shadow-sm">
+            ${renderCollectionBadge(col, 'lg')}
+            <div class="flex-1 min-w-0">
+              <input type="text" value="${col.name}" oninput="col.name=this.value" class="font-extrabold text-sm bg-transparent w-full focus:outline-none" />
+              <div class="text-xs ${s.muted} truncate">${col.subtitle}</div>
+            </div>
+          </div>
+
+          <!-- 1. SEXY COLOR DROPDOWN FOR COLLECTION -->
+          <div class="p-3.5 rounded-2xl border ${s.card} space-y-2 shadow-sm relative">
+            <div class="text-xs font-bold">Collection Theme Color</div>
+            <button onclick="state.colColorDropdownOpen=!state.colColorDropdownOpen;state.compactFieldDropdownOpen=false;state.addFormModeDropdownOpen=false;render()" class="w-full p-2.5 rounded-xl ${s.subtle} flex items-center justify-between transition">
+              <div class="flex items-center gap-2.5">
+                <span class="w-6 h-6 rounded-full shadow-inner border border-white/30 flex items-center justify-center" style="background:${cHex}">
+                  <span class="w-2 h-2 rounded-full bg-white/60"></span>
+                </span>
+                <div class="text-left">
+                  <div class="text-xs font-bold">${activeColorObj.name}</div>
+                  <div class="text-xs ${s.muted}">${activeColorObj.tag} · ${cHex}</div>
+                </div>
+              </div>
+              <span class="w-6 h-6 rounded-full ${s.card} flex items-center justify-center text-xs font-bold">${state.colColorDropdownOpen ? '▴' : '▾'}</span>
+            </button>
+
+            ${state.colColorDropdownOpen ? `
+              <div class="sexy-dropdown-menu mt-1.5 rounded-2xl border ${s.dropdown} shadow-xl divide-y ${s.divider} overflow-hidden z-30">
+                ${COLLECTION_COLORS.map(item => {
+                  const selected = item.hex.toLowerCase() === cHex.toLowerCase();
+                  return `
+                    <button onclick="colSelectColor('${item.hex}')" class="w-full px-3 py-2.5 flex items-center justify-between hover:opacity-90 transition ${selected ? s.subtle : ''}">
+                      <div class="flex items-center gap-2.5">
+                        <span class="w-5 h-5 rounded-full shadow-sm border border-white/25" style="background:${item.hex}"></span>
+                        <span class="text-xs font-bold">${item.name}</span>
+                        <span class="text-xs ${s.muted}">· ${item.tag}</span>
+                      </div>
+                      <div class="flex items-center gap-2">
+                        <span class="px-2 py-0.5 rounded-full text-xs font-semibold text-white" style="background:${item.hex}">Sample</span>
+                        ${selected ? `<span class="text-xs font-black" style="color:${item.hex}">✓</span>` : `<span class="w-3"></span>`}
+                      </div>
+                    </button>
+                  `;
+                }).join('')}
+              </div>
+            ` : ''}
+          </div>
+
+          <!-- 2. COMPACT VIEW FIELD BESIDE TITLE (Strictly inside Settings!) -->
+          <div class="p-3.5 rounded-2xl border ${s.card} space-y-2 shadow-sm relative">
+            <div>
+              <div class="text-xs font-bold">Field Shown Beside Title (Compact View)</div>
+              <p class="text-xs ${s.muted} mt-0.5">Select which field appears next to the title when using Compact View.</p>
+            </div>
+
+            <button onclick="state.compactFieldDropdownOpen=!state.compactFieldDropdownOpen;state.colColorDropdownOpen=false;state.addFormModeDropdownOpen=false;render()" class="w-full p-2.5 rounded-xl ${s.subtle} flex items-center justify-between transition">
+              <div class="flex items-center gap-2.5">
+                <span class="px-2 py-1 rounded-lg text-xs font-bold text-white" style="background:${cHex}">
+                  ${activeCompactFieldObj.type.toUpperCase()}
+                </span>
+                <div class="text-left">
+                  <div class="text-xs font-bold">${activeCompactFieldObj.label}</div>
+                  <div class="text-xs ${s.muted}">Shown beside ${col.fields[0].label}</div>
+                </div>
+              </div>
+              <span class="w-6 h-6 rounded-full ${s.card} flex items-center justify-center text-xs font-bold">${state.compactFieldDropdownOpen ? '▴' : '▾'}</span>
+            </button>
+
+            ${state.compactFieldDropdownOpen ? `
+              <div class="sexy-dropdown-menu mt-1.5 rounded-2xl border ${s.dropdown} shadow-xl divide-y ${s.divider} overflow-hidden z-30">
+                ${secondaryFieldOptions.map(f => {
+                  const selected = f.key === col.compactSecondaryField;
+                  return `
+                    <button onclick="col.compactSecondaryField='${f.key}';state.compactFieldDropdownOpen=false;render()" class="w-full px-3 py-2.5 flex items-center justify-between hover:opacity-90 transition ${selected ? s.subtle : ''}">
+                      <div class="flex items-center gap-2">
+                        <span class="text-xs font-bold">${f.label}</span>
+                        <span class="px-1.5 py-0.5 rounded text-xs ${s.subtle} ${s.muted}">${f.type}</span>
+                      </div>
+                      ${selected ? `<span class="text-xs font-black" style="color:${cHex}">✓</span>` : `<span class="w-3"></span>`}
+                    </button>
+                  `;
+                }).join('')}
+              </div>
+            ` : ''}
+          </div>
+
+          <!-- 3. ADD RECORD FORM STYLE (Popup Card vs. Complete New Screen) -->
+          <div class="p-3.5 rounded-2xl border ${s.card} space-y-2 shadow-sm relative">
+            <div class="flex items-center justify-between">
+              <div>
+                <div class="text-xs font-bold">“Add Record” Form Style</div>
+                <p class="text-xs ${s.muted} mt-0.5">Open as a popup card or a complete new screen.</p>
+              </div>
+              <button onclick="triggerAddRecord('${col.id}')" class="px-2.5 py-1 rounded-lg text-xs font-bold text-white" style="background:${cHex}">
+                Test →
+              </button>
+            </div>
+
+            <button onclick="state.addFormModeDropdownOpen=!state.addFormModeDropdownOpen;state.colColorDropdownOpen=false;state.compactFieldDropdownOpen=false;render()" class="w-full p-2.5 rounded-xl ${s.subtle} flex items-center justify-between transition">
+              <div class="flex items-center gap-2.5">
+                <span class="w-7 h-7 rounded-xl text-white flex items-center justify-center text-xs font-bold" style="background:${cHex}">
+                  ${activeAddFormModeObj.icon}
+                </span>
+                <div class="text-left">
+                  <div class="text-xs font-bold">${activeAddFormModeObj.name}</div>
+                  <div class="text-xs ${s.muted}">${activeAddFormModeObj.desc}</div>
+                </div>
+              </div>
+              <span class="w-6 h-6 rounded-full ${s.card} flex items-center justify-center text-xs font-bold">${state.addFormModeDropdownOpen ? '▴' : '▾'}</span>
+            </button>
+
+            ${state.addFormModeDropdownOpen ? `
+              <div class="sexy-dropdown-menu mt-1.5 rounded-2xl border ${s.dropdown} shadow-xl divide-y ${s.divider} overflow-hidden z-30">
+                ${ADD_FORM_MODES.map(m => {
+                  const selected = m.id === col.addFormMode;
+                  return `
+                    <button onclick="col.addFormMode='${m.id}';state.addFormModeDropdownOpen=false;render()" class="w-full px-3 py-2.5 flex items-center justify-between hover:opacity-90 transition ${selected ? s.subtle : ''}">
+                      <div class="flex items-center gap-2.5">
+                        <span class="w-6 h-6 rounded-lg flex items-center justify-center text-xs font-bold text-white" style="background:${cHex}">${m.icon}</span>
+                        <div class="text-left">
+                          <div class="text-xs font-bold">${m.name}</div>
+                          <div class="text-xs ${s.muted}">${m.desc}</div>
+                        </div>
+                      </div>
+                      ${selected ? `<span class="text-xs font-black" style="color:${cHex}">✓</span>` : `<span class="w-3"></span>`}
+                    </button>
+                  `;
+                }).join('')}
+              </div>
+            ` : ''}
+          </div>
+
+          <!-- 4. 4-Category Icon Picker -->
+          <div class="p-3.5 rounded-2xl border ${s.card} space-y-3 shadow-sm text-xs">
+            <div class="font-bold">Collection Icon</div>
+            <div class="grid grid-cols-4 gap-1 p-1 rounded-xl ${s.subtle}">
+              <button onclick="state.iconTab='library';render()" class="py-1.5 rounded-lg font-semibold ${state.iconTab==='library'?'text-white':s.muted}" style="background:${state.iconTab==='library'?cHex:''}">Library</button>
+              <button onclick="state.iconTab='emoji';render()" class="py-1.5 rounded-lg font-semibold ${state.iconTab==='emoji'?'text-white':s.muted}" style="background:${state.iconTab==='emoji'?cHex:''}">Emoji</button>
+              <button onclick="state.iconTab='upload';render()" class="py-1.5 rounded-lg font-semibold ${state.iconTab==='upload'?'text-white':s.muted}" style="background:${state.iconTab==='upload'?cHex:''}">Upload</button>
+              <button onclick="state.iconTab='letters';render()" class="py-1.5 rounded-lg font-semibold ${state.iconTab==='letters'?'text-white':s.muted}" style="background:${state.iconTab==='letters'?cHex:''}">Letters</button>
+            </div>
+            ${iconTabContent}
+          </div>
+
+          <!-- 5. Schema Fields Summary -->
+          <div class="p-3.5 rounded-2xl border ${s.card} space-y-2 shadow-sm text-xs">
+            <div class="flex items-center justify-between">
+              <span class="font-bold">Fields (${col.fields.length})</span>
+              <span class="font-semibold" style="color:${cHex}">+ Add Field</span>
+            </div>
+            <div class="divide-y ${s.divider}">
+              ${col.fields.map(f => `
+                <div class="py-2 flex items-center justify-between">
+                  <span class="font-semibold">${f.label}</span>
+                  <span class="px-2 py-0.5 rounded ${s.subtle} ${s.muted}">${f.type}</span>
+                </div>
+              `).join('')}
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    // =========================================================================
+    // 4. COMPLETE NEW SCREEN FOR "ADD RECORD" (When addFormMode === 'screen')
+    // =========================================================================
+    function renderAddRecordFullScreen(s) {
+      const col = state.collections[state.activeCollectionId];
+      const cHex = col.color;
+
+      document.getElementById('phone-body').innerHTML = `
+        <div class="space-y-4">
+          <!-- Full-Screen Navigation Bar -->
+          <div class="flex items-center justify-between pt-1">
+            <button onclick="openCollection('${col.id}')" class="text-xs font-bold flex items-center gap-1" style="color:${cHex}">
+              <span>‹</span>
+              <span>Cancel</span>
+            </button>
+            <span class="text-xs font-extrabold">New ${col.name}</span>
+            <button onclick="openCollection('${col.id}')" class="px-3 py-1 rounded-full text-white text-xs font-bold shadow-sm" style="background:${cHex}">
+              Save
+            </button>
+          </div>
+
+          <!-- Full-Screen Collection Banner -->
+          <div class="p-3.5 rounded-2xl text-white shadow-sm flex items-center justify-between" style="background: linear-gradient(135deg, ${cHex}, ${cHex}CC)">
+            <div class="flex items-center gap-2.5">
+              ${renderCollectionBadge(col, 'sm')}
+              <div>
+                <div class="text-sm font-extrabold">Create ${col.name} Record</div>
+                <div class="text-xs text-white/80">Full-Screen Form Mode · Switchable in ⚙️ Settings</div>
+              </div>
+            </div>
+            <button onclick="openCollectionSettings('${col.id}')" class="w-7 h-7 rounded-lg bg-white/20 flex items-center justify-center text-xs">
+              ⚙️
+            </button>
+          </div>
+
+          <!-- Full-Screen Grouped Fields Card -->
+          <div class="p-3.5 rounded-2xl border ${s.card} space-y-3 shadow-sm text-xs">
+            ${col.fields.map(f => `
+              <div>
+                <div class="flex items-center justify-between mb-1">
+                  <label class="font-bold">${f.label}</label>
+                  ${f.required
+                    ? `<span class="px-1.5 py-0.5 rounded text-xs font-semibold" style="background:${cHex}18; color:${cHex}">Required</span>`
+                    : `<span class="text-xs ${s.muted}">Optional</span>`
+                  }
+                </div>
+                <input type="${f.type==='number'?'number':(f.type==='date'?'date':'text')}" placeholder="Enter ${f.label}…" class="w-full px-3 py-2.5 rounded-xl ${s.subtle} focus:outline-none" />
+              </div>
+            `).join('')}
+
+            <!-- Extra Full-Screen Attachments & Notes Section -->
+            <div class="pt-2 border-t ${s.divider}">
+              <label class="font-bold block mb-1">Notes & Claim Instructions</label>
+              <textarea rows="2" placeholder="Add serial numbers, repair center notes, or details…" class="w-full px-3 py-2 rounded-xl ${s.subtle} focus:outline-none"></textarea>
+            </div>
+
+            <div class="p-3 rounded-xl border border-dashed ${s.divider} ${s.subtle} flex items-center justify-between">
+              <span class="font-semibold">📎 Attach Receipt or Photo</span>
+              <span class="px-2 py-1 rounded-lg text-white font-bold" style="background:${cHex}">Choose File</span>
+            </div>
+          </div>
+
+          <button onclick="openCollection('${col.id}')" class="w-full py-3 rounded-2xl text-white text-xs font-extrabold shadow-md" style="background:${cHex}">
+            ✓ Save Record to ${col.name}
+          </button>
+        </div>
+      `;
+    }
+
+    function colSelectIcon(type, val) {
+      const col = state.collections[state.activeCollectionId];
+      col.iconType = type;
+      col.iconValue = val;
+      render();
+    }
+
+    function colSelectColor(hex) {
+      const col = state.collections[state.activeCollectionId];
+      col.color = hex;
+      state.colColorDropdownOpen = false;
+      render();
+    }
+
+    function usePresetSampleLogo() {
+      const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="80" height="80"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#f59e0b"/><stop offset="100%" stop-color="#7c2d12"/></linearGradient></defs><rect width="80" height="80" fill="url(#g)"/><circle cx="40" cy="40" r="22" fill="#fff" opacity="0.9"/><text x="40" y="45" font-size="14" font-family="sans-serif" font-weight="bold" text-anchor="middle" fill="#7c2d12">IMG</text></svg>`;
+      colSelectIcon('upload', 'data:image/svg+xml;utf8,' + encodeURIComponent(svg));
+    }
+
+    function handleCustomIconUpload(ev) {
+      const file = ev.target.files && ev.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = function(e) { colSelectIcon('upload', e.target.result); };
+      reader.readAsDataURL(file);
+    }
+
+    // =========================================================================
+    // 5. RECORD DETAIL SCREEN
+    // =========================================================================
+    function renderRecordDetailScreen(s) {
+      const col = state.collections[state.activeCollectionId];
+      const cHex = col.color;
+      const rec = col.records.find(r => r.id === state.activeRecordId) || col.records[0];
+
+      document.getElementById('phone-body').innerHTML = `
+        <div class="space-y-3.5">
+          <div class="flex items-center justify-between pt-1">
+            <button onclick="openCollection('${col.id}')" class="text-xs font-bold flex items-center gap-1" style="color:${cHex}">
+              <span>‹</span>
+              <span>${col.name}</span>
+            </button>
+            <button class="px-3 py-1 rounded-full text-white text-xs font-bold" style="background:${cHex}">Edit</button>
+          </div>
+
+          <div class="rounded-2xl border ${s.card} p-4 shadow-sm relative overflow-hidden">
+            <div class="absolute top-0 left-0 right-0 h-1.5" style="background:${cHex}"></div>
+            <div class="flex items-center justify-between pt-1">
+              <span class="text-xs font-bold uppercase tracking-wider" style="color:${cHex}">${col.name}</span>
+              <span class="px-2 py-0.5 rounded-full text-xs font-bold" style="background:${cHex}20; color:${cHex}">${rec.ref}</span>
+            </div>
+            <h2 class="text-base font-extrabold mt-1">${rec.title}</h2>
+            <p class="text-xs ${s.muted}">${rec.brand} · ${rec.plan}</p>
+
+            <div class="grid grid-cols-2 gap-2 mt-3 pt-3 border-t ${s.divider}">
+              <div class="p-2.5 rounded-xl ${s.subtle}">
+                <div class="text-xs ${s.muted} font-semibold">${col.fields[2].label}</div>
+                <div class="text-sm font-extrabold mt-0.5" style="color:${cHex}">${rec.costFormatted}</div>
+              </div>
+              <div class="p-2.5 rounded-xl ${s.subtle}">
+                <div class="text-xs ${s.muted} font-semibold">${col.fields[3].label}</div>
+                <div class="text-sm font-bold mt-0.5">${rec.expires}</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="rounded-2xl border ${s.card} overflow-hidden shadow-sm">
+            <div class="px-3.5 py-2 border-b ${s.divider} text-xs font-bold uppercase tracking-wider ${s.muted}">Details</div>
+            <div class="divide-y ${s.divider} text-xs">
+              <div class="px-3.5 py-2.5 flex justify-between"><span class="${s.muted}">${col.fields[1].label}</span><span class="font-semibold">${rec.brand}</span></div>
+              <div class="px-3.5 py-2.5 flex justify-between"><span class="${s.muted}">${col.fields[4].label}</span><span class="font-semibold">${rec.plan}</span></div>
+              <div class="px-3.5 py-2.5 flex justify-between"><span class="${s.muted}">Reference</span><span class="font-mono font-semibold">${rec.ref}</span></div>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    // =========================================================================
+    // 6. APP SETTINGS SCREEN
+    // =========================================================================
+    function renderAppSettingsScreen(s) {
+      const activeAppColorObj = APP_COLORS.find(c => c.hex.toLowerCase() === state.appColor.toLowerCase()) || APP_COLORS[0];
+
+      document.getElementById('phone-body').innerHTML = `
+        <div class="space-y-4">
+          <div class="pt-1">
+            <h2 class="text-2xl font-extrabold tracking-tight">Settings</h2>
+          </div>
+
+          <div class="p-3.5 rounded-2xl border ${s.card} space-y-2 shadow-sm relative">
+            <div>
+              <div class="text-xs font-bold">App Theme Color</div>
+              <p class="text-xs ${s.muted} mt-0.5">Used on ${state.homeTabLabel} and Settings. Each Collection uses its own color.</p>
+            </div>
+
+            <button onclick="state.appColorDropdownOpen=!state.appColorDropdownOpen;render()" class="w-full p-2.5 rounded-xl ${s.subtle} flex items-center justify-between transition">
+              <div class="flex items-center gap-2.5">
+                <span class="w-6 h-6 rounded-full shadow-inner border border-white/30 flex items-center justify-center" style="background:${state.appColor}">
+                  <span class="w-2 h-2 rounded-full bg-white/60"></span>
+                </span>
+                <div class="text-left">
+                  <div class="text-xs font-bold">${activeAppColorObj.name}</div>
+                  <div class="text-xs ${s.muted}">${activeAppColorObj.tag}</div>
+                </div>
+              </div>
+              <span class="w-6 h-6 rounded-full ${s.card} flex items-center justify-center text-xs font-bold">${state.appColorDropdownOpen ? '▴' : '▾'}</span>
+            </button>
+
+            ${state.appColorDropdownOpen ? `
+              <div class="sexy-dropdown-menu mt-1.5 rounded-2xl border ${s.dropdown} shadow-xl divide-y ${s.divider} overflow-hidden z-30">
+                ${APP_COLORS.map(item => {
+                  const selected = item.hex.toLowerCase() === state.appColor.toLowerCase();
+                  return `
+                    <button onclick="setAppColor('${item.hex}')" class="w-full px-3 py-2.5 flex items-center justify-between hover:opacity-90 transition ${selected ? s.subtle : ''}">
+                      <div class="flex items-center gap-2.5">
+                        <span class="w-5 h-5 rounded-full shadow-sm border border-white/25" style="background:${item.hex}"></span>
+                        <span class="text-xs font-bold">${item.name}</span>
+                        <span class="text-xs ${s.muted}">· ${item.tag}</span>
+                      </div>
+                      ${selected ? `<span class="text-xs font-black" style="color:${item.hex}">✓</span>` : `<span class="w-3"></span>`}
+                    </button>
+                  `;
+                }).join('')}
+              </div>
+            ` : ''}
+          </div>
+
+          <div class="p-3.5 rounded-2xl border ${s.card} space-y-2.5 shadow-sm">
+            <div class="flex items-center justify-between">
+              <div class="text-xs font-bold">Spaces</div>
+              <button onclick="state.modal='spaces';render()" class="px-2.5 py-1 rounded-lg text-white text-xs font-bold" style="background:${state.appColor}">
+                Switch Space
+              </button>
+            </div>
+            <div class="divide-y ${s.divider} text-xs">
+              ${state.spaces.map(sp => {
+                const count = Object.values(state.collections).filter(c => c.spaceId === sp.id).length;
+                return `
+                  <div onclick="switchSpace('${sp.id}')" class="cursor-pointer py-2.5 flex items-center justify-between">
+                    <div class="flex items-center gap-2.5">
+                      <span class="w-7 h-7 rounded-xl ${s.subtle} flex items-center justify-center">${sp.icon}</span>
+                      <div>
+                        <div class="font-bold">${sp.name}</div>
+                        <div class="${s.muted}">${count} Collections</div>
+                      </div>
+                    </div>
+                    ${sp.id === state.activeSpaceId ? `<span class="px-2 py-0.5 rounded-full text-white font-bold" style="background:${state.appColor}">Current</span>` : ''}
+                  </div>
+                `;
+              }).join('')}
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    // =========================================================================
+    // MODALS (Spaces Switcher · Popup Card Add Record · Export)
+    // =========================================================================
+    function renderSpacesModal(s, container) {
+      container.innerHTML = `
+        <div class="p-4 border-b ${s.divider} flex items-center justify-between">
+          <div class="text-sm font-extrabold">Spaces</div>
+          <button onclick="closeModal()" class="px-2.5 py-1 rounded-full ${s.subtle} text-xs font-bold">Done</button>
+        </div>
+        <div class="p-4 space-y-2.5 overflow-y-auto">
+          ${state.spaces.map(sp => {
+            const count = Object.values(state.collections).filter(c => c.spaceId === sp.id).length;
+            const active = sp.id === state.activeSpaceId;
+            return `
+              <div onclick="switchSpace('${sp.id}')" class="cursor-pointer p-3.5 rounded-2xl border ${s.card} flex items-center justify-between" style="border-color:${active ? state.appColor : ''}">
+                <div class="flex items-center gap-3">
+                  <span class="w-10 h-10 rounded-2xl ${s.subtle} flex items-center justify-center text-base">${sp.icon}</span>
+                  <div>
+                    <div class="text-xs font-extrabold">${sp.name}</div>
+                    <div class="text-xs ${s.muted}">${count} Collections</div>
+                  </div>
+                </div>
+                ${active
+                  ? `<span class="px-2.5 py-1 rounded-full text-xs font-bold text-white" style="background:${state.appColor}">Current</span>`
+                  : `<span class="px-2.5 py-1 rounded-full ${s.subtle} text-xs font-semibold">Open</span>`
+                }
+              </div>
+            `;
+          }).join('')}
+        </div>
+      `;
+    }
+
+    function renderQuickAddModal(s, container) {
+      const col = state.collections[state.activeCollectionId];
+      const cHex = col.color;
+      container.innerHTML = `
+        <div class="p-3.5 border-b ${s.divider} flex items-center justify-between">
+          <div class="flex items-center gap-2">
+            ${renderCollectionBadge(col, 'sm')}
+            <div>
+              <div class="text-xs font-extrabold">New ${col.name} Record</div>
+              <div class="text-xs ${s.muted}">Popup Card Mode · <button onclick="previewAddFormMode('screen')" class="underline font-semibold" style="color:${cHex}">Switch to Full Screen</button></div>
+            </div>
+          </div>
+          <button onclick="closeModal()" class="px-2.5 py-1 rounded-full ${s.subtle} text-xs font-semibold">Cancel</button>
+        </div>
+        <div class="p-4 space-y-3 overflow-y-auto text-xs">
+          ${col.fields.map(f => `
+            <div>
+              <label class="font-bold block mb-1">${f.label}</label>
+              <input type="${f.type==='number'?'number':(f.type==='date'?'date':'text')}" placeholder="${f.label}…" class="w-full px-3 py-2 rounded-xl ${s.subtle}" />
+            </div>
+          `).join('')}
+          <button onclick="openCollection('${col.id}')" class="w-full py-2.5 rounded-xl text-white font-bold shadow-sm mt-2" style="background:${cHex}">
+            Save Record
+          </button>
+        </div>
+      `;
+    }
+
+    function renderExportModal(s, container) {
+      const col = state.collections[state.activeCollectionId];
+      const cHex = col.color;
+      container.innerHTML = `
+        <div class="p-3.5 border-b ${s.divider} flex items-center justify-between">
+          <div>
+            <div class="text-sm font-extrabold">Export ${col.name}</div>
+            <div class="text-xs ${s.muted}">${col.records.length} records</div>
+          </div>
+          <button onclick="closeModal()" class="px-2.5 py-1 rounded-full ${s.subtle} text-xs font-bold">Close</button>
+        </div>
+        <div class="p-4 space-y-3 text-xs">
+          <div class="grid grid-cols-3 gap-2">
+            ${[
+              { id: 'csv', title: 'CSV', ext: '.csv', desc: 'Spreadsheet' },
+              { id: 'xlsx', title: 'Excel', ext: '.xlsx', desc: 'Workbook' },
+              { id: 'json', title: 'JSON', ext: '.json', desc: 'Structured' }
+            ].map(fmt => `
+              <button onclick="state.exportFormat='${fmt.id}';render()" class="p-3 rounded-2xl border text-left ${s.card}" style="border-color:${state.exportFormat===fmt.id ? cHex : ''}">
+                <div class="font-extrabold text-sm" style="color:${state.exportFormat===fmt.id ? cHex : ''}">${fmt.title}</div>
+                <div class="font-mono text-xs ${s.muted}">${fmt.ext}</div>
+                <div class="text-xs ${s.muted} mt-1">${fmt.desc}</div>
+              </button>
+            `).join('')}
+          </div>
+          <button onclick="closeModal()" class="w-full py-2.5 rounded-xl text-white font-bold shadow-sm" style="background:${cHex}">
+            ⤓ Export as ${state.exportFormat.toUpperCase()}
+          </button>
+        </div>
+      `;
+    }
+
+    render();
+  </script>
+</body>
+</html>

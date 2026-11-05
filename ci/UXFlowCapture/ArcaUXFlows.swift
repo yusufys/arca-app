@@ -4,7 +4,7 @@ import ArcaCore
 
 @main
 struct ArcaUXFlows: App {
-    @State private var model = ArcaAppViewModel(rootDirectoryURL: FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0].appendingPathComponent(UUID().uuidString))
+    @State private var model = ArcaAppViewModel(rootDirectoryURL: FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0].appendingPathComponent(ProcessInfo.processInfo.environment["ARCA_FIXTURE_WORKSPACE"] ?? UUID().uuidString))
     @State private var fixtureError: String?
     @State private var ready = false
     @StateObject private var purchases = ArcaPurchases()
@@ -19,12 +19,12 @@ struct ArcaUXFlows: App {
             .environment(\.arcaSubscriptionScreen, AnyView(ArcaPlanView(purchases: purchases, model: model)))
             .environment(\.locale, model.language.locale)
             .environment(\.layoutDirection, model.language.layoutDirection)
-            .preferredColorScheme(.light)
+            .preferredColorScheme(ProcessInfo.processInfo.environment["ARCA_FIXTURE_DARK"] == "1" ? .dark : .light)
             .background(KeyboardDismissal())
             .task {
                 await model.bootstrapIfNeeded()
                 await model.refreshSuggestedTemplates()
-                if scenario != "onboarding" {
+                if scenario != "onboarding" && !model.hasCompletedOnboarding {
                     await model.finishOnboarding(defaultMode: .localOnly, acceptedCloudTerms: false, selectedTemplates: model.suggestedTemplates)
                     if let schema = model.collectionsInCurrentSpace.first {
                         var values: [UUID: FieldValue] = [:]
@@ -75,6 +75,7 @@ struct ArcaUXFlows: App {
                 case "migration": if let space = model.currentSpace { StorageModeMigrationScreenView(viewModel: model, space: space) }
                 case "sensitive": if let schema = model.collectionsInCurrentSpace.first { SensitivePrivacyConsentView(viewModel: model, collectionId: schema.id) }
                 case "fields": if let schema = model.collectionsInCurrentSpace.first { FieldEditorSheetView(viewModel: model, collectionId: schema.id) }
+                case "collection-settings": if let schema = model.collectionsInCurrentSpace.first { CollectionSettingsView(viewModel: model, schema: schema) }
                 case "collection": if let schema = model.collectionsInCurrentSpace.first { CollectionRecordListView(viewModel: model, schema: schema) }
                 case "record-new": if let schema = model.collectionsInCurrentSpace.first { AddEditRecordSheetView(viewModel: model, schema: schema, existingRecord: nil) }
                 case "record-edit": if let schema = model.collectionsInCurrentSpace.first, let record = model.recordsInCurrentSpace.first { AddEditRecordSheetView(viewModel: model, schema: schema, existingRecord: record) }
