@@ -1,0 +1,370 @@
+{
+  "vehicle_maintenance": {
+    "tr": {
+      "subtitle": "Servis geçmişi, kilometre, onarım ve faturalar.",
+      "schema": {
+        "name": "Araç Bakımı",
+        "iconName": "car.fill",
+        "colorHex": "#2B5B84",
+        "fields": [
+          {
+            "label": "Servis Özeti",
+            "type": "short_text",
+            "isRequired": true,
+            "isPrimaryTitle": true
+          },
+          {
+            "label": "Servis Tarihi",
+            "type": "date",
+            "isRequired": false,
+            "isPrimaryTitle": false
+          },
+          {
+            "label": "Kilometre Sayacı",
+            "type": "number",
+            "isRequired": false,
+            "isPrimaryTitle": false
+          },
+          {
+            "label": "Kategori",
+            "type": "single_select",
+            "isRequired": false,
+            "isPrimaryTitle": false,
+            "options": [
+              "Yağ ve Sıvılar",
+              "Lastikler ve Frenler",
+              "Muayene",
+              "Onarım"
+            ]
+          },
+          {
+            "label": "Toplam Tutar",
+            "type": "currency",
+            "isRequired": false,
+            "isPrimaryTitle": false
+          },
+          {
+            "label": "Servis veya Usta",
+            "type": "short_text",
+            "isRequired": false,
+            "isPrimaryTitle": false
+          },
+          {
+            "label": "Notlar",
+            "type": "long_text",
+            "isRequired": false,
+            "isPrimaryTitle": false
+          },
+          {
+            "label": "Faturalar ve Fotoğraflar",
+            "type": "attachment",
+            "isRequired": false,
+            "isPrimaryTitle": false
+          }
+        ]
+      }
+    },
+    "ar": {
+      "subtitle": "سجل الصيانة والمسافة المقطوعة والإصلاحات والفواتير.",
+      "schema": {
+        "name": "صيانة المركبة",
+        "iconName": "car.fill",
+        "colorHex": "#2B5B84",
+        "fields": [
+          {
+            "label": "ملخّص الصيانة",
+            "type": "short_text",
+            "isRequired": true,
+            "isPrimaryTitle": true
+          },
+          {
+            "label": "تاريخ الصيانة",
+            "type": "date",
+            "isRequired": false,
+            "isPrimaryTitle": false
+          },
+          {
+            "label": "عداد المسافة",
+            "type": "number",
+            "isRequired": false,
+            "isPrimaryTitle": false
+          },
+          {
+            "label": "الفئة",
+            "type": "single_select",
+            "isRequired": false,
+            "isPrimaryTitle": false,
+            "options": [
+              "الزيوت والسوائل",
+              "الإطارات والمكابح",
+              "الفحص",
+              "الإصلاح"
+            ]
+          },
+          {
+            "label": "التكلفة الإجمالية",
+            "type": "currency",
+            "isRequired": false,
+            "isPrimaryTitle": false
+          },
+          {
+            "label": "الورشة أو الفني",
+            "type": "short_text",
+            "isRequired": false,
+            "isPrimaryTitle": false
+          },
+          {
+            "label": "ملاحظات",
+            "type": "long_text",
+            "isRequired": false,
+            "isPrimaryTitle": false
+          },
+          {
+            "label": "الفواتير والصور",
+            "type": "attachment",
+            "isRequired": false,
+            "isPrimaryTitle": false
+          }
+        ]
+      }
+    }
+  },
+  "home_inventory": {
+    "tr": {
+      "subtitle": "Değerli eşyalar, seri numaraları, odalar ve yenileme bedelleri.",
+      "schema": {
+        "name": "Ev Envanteri",
+        "iconName": "house.fill",
+        "colorHex": "#3A6B5C",
+        "fields": [
+          {
+            "label": "Eşya Adı",
+            "type": "short_text",
+            "isRequired": true,
+            "isPrimaryTitle": true
+          },
+          {
+            "label": "Oda",
+            "type": "single_select",
+            "isRequired": false,
+            "isPrimaryTitle": false,
+            "options": [
+              "Oturma Odası",
+              "Mutfak",
+              "Çalışma Odası",
+              "Yatak Odası",
+              "Garaj"
+            ]
+          },
+          {
+            "label": "Satın Alma Fiyatı",
+            "type": "currency",
+            "isRequired": false,
+            "isPrimaryTitle": false
+          },
+          {
+            "label": "Satın Alma Tarihi",
+            "type": "date",
+            "isRequired": false,
+            "isPrimaryTitle": false
+          },
+          {
+            "label": "Seri / Model Numarası",
+            "type": "short_text",
+            "isRequired": false,
+            "isPrimaryTitle": false
+          },
+          {
+            "label": "Durum",
+            "type": "rating",
+            "isRequired": false,
+            "isPrimaryTitle": false
+          },
+          {
+            "label": "Makbuzlar ve Fotoğraflar",
+            "type": "attachment",
+            "isRequired": false,
+            "isPrimaryTitle": false
+          }
+        ]
+      }
+    },
+    "ar": {
+      "subtitle": "المقتنيات والأرقام التسلسلية والغرف وتكاليف الاستبدال.",
+      "schema": {
+        "name": "مقتنيات المنزل",
+        "iconName": "house.fill",
+        "colorHex": "#3A6B5C",
+        "fields": [
+          {
+            "label": "اسم المقتنى",
+            "type": "short_text",
+            "isRequired": true,
+            "isPrimaryTitle": true
+          },
+          {
+            "label": "الغرفة",
+            "type": "single_select",
+            "isRequired": false,
+            "isPrimaryTitle": false,
+            "options": [
+              "غرفة المعيشة",
+              "المطبخ",
+              "المكتب",
+              "غرفة النوم",
+              "المرآب"
+            ]
+          },
+          {
+            "label": "سعر الشراء",
+            "type": "currency",
+            "isRequired": false,
+            "isPrimaryTitle": false
+          },
+          {
+            "label": "تاريخ الشراء",
+            "type": "date",
+            "isRequired": false,
+            "isPrimaryTitle": false
+          },
+          {
+            "label": "الرقم التسلسلي أو رقم الطراز",
+            "type": "short_text",
+            "isRequired": false,
+            "isPrimaryTitle": false
+          },
+          {
+            "label": "الحالة",
+            "type": "rating",
+            "isRequired": false,
+            "isPrimaryTitle": false
+          },
+          {
+            "label": "الإيصالات والصور",
+            "type": "attachment",
+            "isRequired": false,
+            "isPrimaryTitle": false
+          }
+        ]
+      }
+    }
+  },
+  "warranties": {
+    "tr": {
+      "subtitle": "Garanti tarihleri, satın alma belgeleri ve destek bilgileri.",
+      "schema": {
+        "name": "Garantiler",
+        "iconName": "checkmark.shield.fill",
+        "colorHex": "#8C5A2B",
+        "fields": [
+          {
+            "label": "Ürün Adı",
+            "type": "short_text",
+            "isRequired": true,
+            "isPrimaryTitle": true
+          },
+          {
+            "label": "Marka / Üretici",
+            "type": "short_text",
+            "isRequired": false,
+            "isPrimaryTitle": false
+          },
+          {
+            "label": "Satın Alma Tarihi",
+            "type": "date",
+            "isRequired": false,
+            "isPrimaryTitle": false
+          },
+          {
+            "label": "Bitiş Tarihi",
+            "type": "date",
+            "isRequired": false,
+            "isPrimaryTitle": false
+          },
+          {
+            "label": "Ürün Tutarı",
+            "type": "currency",
+            "isRequired": false,
+            "isPrimaryTitle": false
+          },
+          {
+            "label": "Aktif Garanti",
+            "type": "boolean",
+            "isRequired": false,
+            "isPrimaryTitle": false
+          },
+          {
+            "label": "Başvuru Talimatları",
+            "type": "long_text",
+            "isRequired": false,
+            "isPrimaryTitle": false
+          },
+          {
+            "label": "Makbuz ve Garanti Belgesi",
+            "type": "attachment",
+            "isRequired": false,
+            "isPrimaryTitle": false
+          }
+        ]
+      }
+    },
+    "ar": {
+      "subtitle": "تواريخ التغطية وإثبات الشراء وتفاصيل الدعم.",
+      "schema": {
+        "name": "الضمانات",
+        "iconName": "checkmark.shield.fill",
+        "colorHex": "#8C5A2B",
+        "fields": [
+          {
+            "label": "اسم المنتج",
+            "type": "short_text",
+            "isRequired": true,
+            "isPrimaryTitle": true
+          },
+          {
+            "label": "العلامة التجارية أو المصنّع",
+            "type": "short_text",
+            "isRequired": false,
+            "isPrimaryTitle": false
+          },
+          {
+            "label": "تاريخ الشراء",
+            "type": "date",
+            "isRequired": false,
+            "isPrimaryTitle": false
+          },
+          {
+            "label": "تاريخ الانتهاء",
+            "type": "date",
+            "isRequired": false,
+            "isPrimaryTitle": false
+          },
+          {
+            "label": "تكلفة المنتج",
+            "type": "currency",
+            "isRequired": false,
+            "isPrimaryTitle": false
+          },
+          {
+            "label": "تغطية سارية",
+            "type": "boolean",
+            "isRequired": false,
+            "isPrimaryTitle": false
+          },
+          {
+            "label": "تعليمات المطالبة بالضمان",
+            "type": "long_text",
+            "isRequired": false,
+            "isPrimaryTitle": false
+          },
+          {
+            "label": "الإيصال وبطاقة الضمان",
+            "type": "attachment",
+            "isRequired": false,
+            "isPrimaryTitle": false
+          }
+        ]
+      }
+    }
+  }
+}

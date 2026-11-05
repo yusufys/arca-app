@@ -9,6 +9,7 @@ class CollectionTemplateSeeder extends Seeder
 {
     public function run(): void
     {
+        $localizations = json_decode(file_get_contents(resource_path('contracts/starter-localizations.json')), true, 512, JSON_THROW_ON_ERROR);
         $templates = [
             ['vehicle_maintenance', 'Vehicle Maintenance', 'Service history, mileage, repairs, and receipts.', 'car.fill', '#2B5B84', [
                 ['Service Summary', 'short_text'], ['Service Date', 'date'], ['Odometer', 'number'],
@@ -29,6 +30,7 @@ class CollectionTemplateSeeder extends Seeder
         foreach ($templates as $index => [$slug, $name, $subtitle, $icon, $color, $fields]) {
             CollectionTemplate::firstOrCreate(['slug' => $slug], [
                 'subtitle' => $subtitle,
+                'localizations' => $localizations[$slug],
                 'is_active' => true,
                 'sort_order' => $index,
                 'schema_definition' => [
