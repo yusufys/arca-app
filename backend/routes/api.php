@@ -3,6 +3,7 @@
 use App\Http\Controllers\Api\V1\AppFeedController;
 use App\Http\Controllers\Api\V1\AttachmentController;
 use App\Http\Controllers\Api\V1\AuthController;
+use App\Http\Controllers\Api\V1\CollectionCatalogController;
 use App\Http\Controllers\Api\V1\DeviceController;
 use App\Http\Controllers\Api\V1\PublicSnapshotController;
 use App\Http\Controllers\Api\V1\RevenueCatWebhookController;
@@ -25,6 +26,10 @@ Route::prefix('v1')->middleware('throttle:120,1')->group(function () {
 
     // Public App announcements / ad feed
     Route::get('/app-feed', [AppFeedController::class, 'index']);
+
+    Route::get('/collection-templates', [CollectionCatalogController::class, 'index']);
+    Route::get('/collection-schema', [CollectionCatalogController::class, 'schema']);
+    Route::post('/collection-prompt', [CollectionCatalogController::class, 'prompt'])->middleware('throttle:30,1');
 
     // RevenueCat Webhook (verified via Bearer secret)
     Route::post('/webhooks/revenuecat', [RevenueCatWebhookController::class, 'handle']);

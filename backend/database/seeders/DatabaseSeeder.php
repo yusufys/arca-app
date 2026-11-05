@@ -15,6 +15,8 @@ class DatabaseSeeder extends Seeder
      */
     public function run(): void
     {
+        $this->call(CollectionTemplateSeeder::class);
+
         // 2. Seed Default Active App Announcement Banner
         AppAnnouncement::firstOrCreate(
             ['title' => 'Welcome to Arca Zero-Knowledge Sync'],

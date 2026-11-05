@@ -92,6 +92,8 @@
             </div>
         @endif
 
+        <div class="mt-6"><a href="{{ route('admin.collection-templates') }}" class="text-indigo-300 underline">Manage suggested collections</a></div>
+
         <!-- Stats Overview Cards -->
         <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5 mt-8">
             <!-- Total Users -->
