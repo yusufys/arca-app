@@ -48,7 +48,10 @@ public final class ArcaAppViewModel {
             }
         }
     }
-    public var appearanceMode: AppAppearanceMode = .light
+    private let appearancePreferences: AppAppearancePreferencesStore
+    public var appearanceMode: AppAppearanceMode {
+        didSet { appearancePreferences.saveAppearanceMode(appearanceMode) }
+    }
     public let appLock: LocalAppLock
     public var biometricLockEnabled: Bool { appLock.enabled }
     public var isAppLocked: Bool { appLock.isLocked }
@@ -102,7 +105,13 @@ public final class ArcaAppViewModel {
     private var accountId: String = "acct-local-default"
     private var isBootstrapped: Bool = false
 
-    public init(rootDirectoryURL: URL? = nil, startWithCompletedOnboarding: Bool = false) {
+    public init(
+        rootDirectoryURL: URL? = nil,
+        startWithCompletedOnboarding: Bool = false,
+        appearancePreferences: AppAppearancePreferencesStore = .init()
+    ) {
+        self.appearancePreferences = appearancePreferences
+        self.appearanceMode = appearancePreferences.loadAppearanceMode()
         let baseDir = rootDirectoryURL ?? CatalogStore.defaultBaseDirectoryURL()
         self.rootDirectoryURL = baseDir
         // iOS may relocate the data container on update. The default vault keeps stable identifiers.

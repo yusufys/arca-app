@@ -63,4 +63,27 @@ final class AppAppearancePreferencesTests: XCTestCase {
             XCTAssertNotEqual(option.localizedName(in: .english), option.localizedName(in: .turkish))
         }
     }
+
+    @MainActor
+    func testAppearanceModeRestoresWhenTheAppModelIsRecreated() throws {
+        let suiteName = "com.arca.tests.appearance.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        let workspace = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer {
+            defaults.removePersistentDomain(forName: suiteName)
+            try? FileManager.default.removeItem(at: workspace)
+        }
+        let preferences = AppAppearancePreferencesStore(defaults: defaults)
+        let model = ArcaAppViewModel(rootDirectoryURL: workspace, appearancePreferences: preferences)
+        XCTAssertEqual(model.appearanceMode, .light)
+
+        model.appearanceMode = .dark
+        let reopened = ArcaAppViewModel(rootDirectoryURL: workspace, appearancePreferences: preferences)
+        XCTAssertEqual(reopened.appearanceMode, .dark)
+
+        reopened.appearanceMode = .system
+        let followsSystem = ArcaAppViewModel(rootDirectoryURL: workspace, appearancePreferences: preferences)
+        XCTAssertEqual(followsSystem.appearanceMode, .system)
+        XCTAssertNil(followsSystem.appearanceMode.colorScheme)
+    }
 }

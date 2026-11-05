@@ -103,7 +103,7 @@ public struct InsightsScreenView: View {
                                     x: .value("Month", point.yearMonth),
                                     y: .value("Amount", point.totalAmount)
                                 )
-                                .foregroundStyle(appAccentColor.gradient)
+                                .foregroundStyle(appForegroundTint.gradient)
                                 .cornerRadius(7)
                             }
                             .frame(height: 185)
@@ -305,7 +305,7 @@ public struct SettingsHubScreenView: View {
                                     tint: appForegroundTint,
                                     title: viewModel.language.localized("Sync Status, Outbox & Conflicts"),
                                     subtitle: viewModel.cloudAccountConnected ? viewModel.syncStatus : viewModel.language.localized("Sign in to sync your cloud Spaces"),
-                                    badge: viewModel.syncConflicts.isEmpty ? nil : "\(viewModel.syncConflicts.count) conflict"
+                                    badge: viewModel.syncConflicts.isEmpty ? nil : viewModel.language.format("count.conflicts", viewModel.syncConflicts.count)
                                 )
                             }
                             .buttonStyle(.plain)
@@ -345,12 +345,15 @@ public struct SettingsHubScreenView: View {
 
                     // 6. Appearance & Language
                     ArcaSectionCard(title: ArcaStrings.text("settings.appearanceAndLanguage", language: viewModel.language), icon: "paintbrush.fill") {
+                        let choicesLayout = dynamicTypeSize.isAccessibilitySize
+                            ? AnyLayout(VStackLayout(spacing: 8))
+                            : AnyLayout(HStackLayout(spacing: 8))
                         VStack(alignment: .leading, spacing: 14) {
                             VStack(alignment: .leading, spacing: 6) {
                                 Text(viewModel.language.localized("Appearance"))
                                     .font(.footnote.weight(.semibold))
                                     .foregroundStyle(.secondary)
-                                HStack(spacing: 8) {
+                                choicesLayout {
                                     appearancePill(.light, label: viewModel.language.localized("Light"), icon: "sun.max.fill")
                                     appearancePill(.dark, label: viewModel.language.localized("Dark"), icon: "moon.fill")
                                     appearancePill(.system, label: viewModel.language.localized("Auto"), icon: "circle.lefthalf.filled")
@@ -361,7 +364,7 @@ public struct SettingsHubScreenView: View {
                                 Text(viewModel.language.localized("Language & RTL Layout"))
                                     .font(.footnote.weight(.semibold))
                                     .foregroundStyle(.secondary)
-                                HStack(spacing: 8) {
+                                choicesLayout {
                                     ForEach(AppLanguage.allCases) { lang in
                                         let selected = viewModel.language == lang
                                         Button {
@@ -375,6 +378,7 @@ public struct SettingsHubScreenView: View {
                                                     RoundedRectangle(cornerRadius: 10, style: .continuous)
                                                         .fill(selected ? appAccentColor : ArcaTheme.subtleFieldBackground(for: colorScheme))
                                                 )
+                                                .contentShape(Rectangle())
                                         }
                                         .buttonStyle(.plain)
                                         .accessibilityAddTraits(selected ? .isSelected : [])
@@ -459,7 +463,7 @@ public struct SettingsHubScreenView: View {
             #endif
             .sheet(isPresented: $showingSpaceManager) {
                 ManageSpacesSheetView(viewModel: viewModel)
-                    .frame(minWidth: 370, idealWidth: 400, minHeight: 580, idealHeight: 680)
+                    .arcaDesktopSheetSize()
             }
         }
     }
@@ -507,6 +511,7 @@ public struct SettingsHubScreenView: View {
                             .font(.caption)
                             .foregroundStyle(ArcaTheme.mutedText(for: colorScheme))
                     }
+                    .fixedSize(horizontal: false, vertical: true)
 
                     Spacer()
 
@@ -527,6 +532,7 @@ public struct SettingsHubScreenView: View {
                     RoundedRectangle(cornerRadius: 12, style: .continuous)
                         .fill(ArcaTheme.subtleFieldBackground(for: colorScheme))
                 )
+                .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .accessibilityLabel(viewModel.language.localized("App Theme Color"))
@@ -561,6 +567,7 @@ public struct SettingsHubScreenView: View {
                                         .font(.caption)
                                         .foregroundStyle(ArcaTheme.mutedText(for: colorScheme))
                                 }
+                                .fixedSize(horizontal: false, vertical: true)
 
                                 Spacer()
 
@@ -660,17 +667,18 @@ public struct SettingsHubScreenView: View {
                                 Text(viewModel.language.format("count.collections", collectionCount))
                                     .font(.caption)
                                     .foregroundStyle(ArcaTheme.mutedText(for: colorScheme))
+
+                                if isCurrent && dynamicTypeSize.isAccessibilitySize {
+                                    currentSpaceLabel
+                                }
                             }
+                            .fixedSize(horizontal: false, vertical: true)
+                            .layoutPriority(1)
 
-                            Spacer()
+                            Spacer(minLength: 0)
 
-                            if isCurrent {
-                                Text(viewModel.language.localized("Current"))
-                                    .font(.caption2.weight(.bold))
-                                    .foregroundStyle(.white)
-                                    .padding(.horizontal, 10)
-                                    .padding(.vertical, 4)
-                                    .background(Capsule().fill(appAccentColor))
+                            if isCurrent && !dynamicTypeSize.isAccessibilitySize {
+                                currentSpaceLabel
                             }
                         }
                         .padding(.vertical, 10)
@@ -699,6 +707,16 @@ public struct SettingsHubScreenView: View {
         .shadow(color: Color.black.opacity(colorScheme == .dark ? 0.22 : 0.035), radius: 10, x: 0, y: 4)
     }
 
+    private var currentSpaceLabel: some View {
+        Text(viewModel.language.localized("Current"))
+            .font(.caption2.weight(.bold))
+            .foregroundStyle(.white)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 4)
+            .background(Capsule().fill(appAccentColor))
+            .accessibilityHidden(true)
+    }
+
     private var switchSpaceButton: some View {
         Button {
             showingSpaceManager = true
@@ -723,7 +741,6 @@ public struct SettingsHubScreenView: View {
         let selected = viewModel.appearanceMode == mode
         return Button {
             viewModel.appearanceMode = mode
-            AppAppearancePreferencesStore().saveAppearanceMode(mode)
         } label: {
             HStack(spacing: 5) {
                 Image(systemName: icon)
@@ -737,9 +754,11 @@ public struct SettingsHubScreenView: View {
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
                     .fill(selected ? appAccentColor : ArcaTheme.subtleFieldBackground(for: colorScheme))
             )
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .accessibilityAddTraits(selected ? .isSelected : [])
+        .accessibilityIdentifier("settings.appearance.\(mode.rawValue)")
     }
 
     private func settingsRow(icon: String, tint: Color, title: String, subtitle: String, badge: String? = nil) -> some View {
@@ -777,6 +796,7 @@ public struct SettingsHubScreenView: View {
                 .font(.footnote.weight(.bold))
                 .foregroundStyle(.tertiary)
         }
+        .frame(minHeight: 44)
         .contentShape(Rectangle())
     }
 }

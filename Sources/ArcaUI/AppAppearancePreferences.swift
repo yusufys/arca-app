@@ -168,6 +168,7 @@ public extension EnvironmentValues {
 public struct ArcaAppAccentEnvironmentModifier: ViewModifier {
     @AppStorage(AppAppearancePreferencesStore.accentColorDefaultsKey)
     private var storedAccentHex: String = AppAccentColorOption.defaultOption.rawValue
+    @Environment(\.colorScheme) private var colorScheme
 
     public init() {}
 
@@ -180,7 +181,7 @@ public struct ArcaAppAccentEnvironmentModifier: ViewModifier {
         content
             .environment(\.arcaAppAccentOption, option)
             .environment(\.arcaAppAccentColor, option.color)
-            .tint(option.color)
+            .tint(option.foregroundTint(for: colorScheme))
     }
 }
 

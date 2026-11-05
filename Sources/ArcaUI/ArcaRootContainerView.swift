@@ -145,9 +145,9 @@ public struct ArcaRootContainerView: View {
             VStack(spacing: 4) {
                 ZStack(alignment: .topTrailing) {
                     Image(systemName: icon)
-                        .font(.system(size: 16, weight: isSelected ? .bold : .medium))
+                        .font(.footnote.weight(isSelected ? .bold : .medium))
                         .foregroundStyle(isSelected ? .white : .secondary)
-                        .frame(width: 48, height: 26)
+                        .frame(minWidth: 48, minHeight: 26)
                         .background(
                             Capsule()
                                 .fill(isSelected ? appAccentColor : .clear)
@@ -160,20 +160,22 @@ public struct ArcaRootContainerView: View {
                             .padding(.horizontal, 5)
                             .padding(.vertical, 1)
                             .background(Capsule().fill(ArcaTheme.plumSensitive))
-                            .offset(x: 6, y: -3)
+                            .offset(y: -3)
                     }
                 }
 
                 Text(title)
                     .font(.caption.weight(isSelected ? .bold : .semibold))
                     .foregroundStyle(isSelected ? labelTint : .secondary)
-                    .lineLimit(1)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             .frame(maxWidth: .infinity, minHeight: 44)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .accessibilityLabel(Text(title))
+        .accessibilityValue(badgeCount > 0 ? viewModel.language.format("count.conflicts", badgeCount) : "")
         .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 

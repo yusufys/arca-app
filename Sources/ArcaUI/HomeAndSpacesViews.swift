@@ -17,6 +17,7 @@ public struct HomeScreenView: View {
     @ViewState private var editingSettingsCollection: CollectionSchema?
     @ViewState private var activeClusterCollectionId: UUID?
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.arcaAppAccentColor) private var appAccentColor
     @Environment(\.arcaAppAccentOption) private var appAccentOption
@@ -71,16 +72,14 @@ public struct HomeScreenView: View {
                 .padding(.horizontal, 18)
                 .padding(.top, 14)
                 .padding(.bottom, 28)
-                .contentShape(Rectangle())
-                .simultaneousGesture(
-                    TapGesture().onEnded {
-                        if activeClusterCollectionId != nil {
-                            withAnimation(.spring(response: 0.22, dampingFraction: 0.85)) {
-                                activeClusterCollectionId = nil
-                            }
-                        }
+                .background {
+                    if activeClusterCollectionId != nil {
+                        Color.clear
+                            .contentShape(Rectangle())
+                            .onTapGesture(perform: dismissCollectionActions)
+                            .accessibilityHidden(true)
                     }
-                )
+                }
             }
             .background(ArcaTheme.canvasBackground(for: colorScheme))
             #if os(iOS)
@@ -101,22 +100,22 @@ public struct HomeScreenView: View {
             .sheet(isPresented: $showingSpaceManager) {
                 ManageSpacesSheetView(viewModel: viewModel)
                     .arcaApplyAppAccentEnvironment()
-                    .frame(minWidth: 370, idealWidth: 400, minHeight: 580, idealHeight: 680)
+                    .arcaDesktopSheetSize()
             }
             .sheet(isPresented: $showingAIAssistant) {
                 AICollectionAssistantSheetView(viewModel: viewModel)
                     .arcaApplyAppAccentEnvironment()
-                    .frame(minWidth: 370, idealWidth: 400, minHeight: 580, idealHeight: 680)
+                    .arcaDesktopSheetSize()
             }
             .sheet(isPresented: $showingTemplateGallery) {
                 TemplateGallerySheetView(viewModel: viewModel)
                     .arcaApplyAppAccentEnvironment()
-                    .frame(minWidth: 370, idealWidth: 400, minHeight: 580, idealHeight: 680)
+                    .arcaDesktopSheetSize()
             }
             .sheet(isPresented: $showingManualBuilder) {
                 ManualCollectionBuilderSheetView(viewModel: viewModel)
                     .arcaApplyAppAccentEnvironment()
-                    .frame(minWidth: 370, idealWidth: 400, minHeight: 580, idealHeight: 680)
+                    .arcaDesktopSheetSize()
             }
             .modifier(
                 CollectionAddRecordPresenter(
@@ -127,6 +126,12 @@ public struct HomeScreenView: View {
             .onChange(of: viewModel.currentSpaceId) { _, _ in
                 activeClusterCollectionId = nil
                 showingSpacePicker = false
+            }
+            .onChange(of: viewModel.globalSearchText) { _, _ in
+                activeClusterCollectionId = nil
+            }
+            .onDisappear {
+                activeClusterCollectionId = nil
             }
         }
         .arcaApplyAppAccentEnvironment()
@@ -187,7 +192,7 @@ public struct HomeScreenView: View {
         subtitleText: String
     ) -> some View {
         Button {
-            withAnimation(.spring(response: 0.25, dampingFraction: 0.82)) {
+            withAnimation(reduceMotion ? nil : .spring(response: 0.25, dampingFraction: 0.82)) {
                 activeClusterCollectionId = nil
                 showingSpacePicker.toggle()
             }
@@ -202,22 +207,25 @@ public struct HomeScreenView: View {
                         .font(.headline.weight(.semibold))
                         .foregroundStyle(.white)
                 }
+                .accessibilityHidden(true)
 
                 VStack(alignment: .leading, spacing: 2) {
                     HStack(spacing: 6) {
                         Text(spaceName)
                             .font(.title2.weight(.bold))
                             .foregroundStyle(.primary)
-                            .lineLimit(1)
+                            .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 2)
+                            .fixedSize(horizontal: false, vertical: true)
                         Image(systemName: showingSpacePicker ? "chevron.up" : "chevron.down")
                             .font(.caption.weight(.bold))
                             .foregroundStyle(.secondary)
+                            .accessibilityHidden(true)
                     }
 
                     Text(subtitleText)
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(.secondary)
-                        .lineLimit(1)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
             .contentShape(Rectangle())
@@ -244,7 +252,7 @@ public struct HomeScreenView: View {
             .foregroundStyle(.primary)
             .padding(.horizontal, 12)
             .padding(.vertical, 9)
-            .frame(minHeight: 40)
+            .frame(minHeight: 44)
             .background(
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
                     .fill(ArcaTheme.cardBackground(for: colorScheme))
@@ -284,7 +292,7 @@ public struct HomeScreenView: View {
                 .foregroundStyle(appForegroundTint)
                 .padding(.horizontal, 10)
                 .padding(.vertical, 8)
-                .frame(minHeight: 40)
+                .frame(minHeight: 44)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
@@ -322,6 +330,7 @@ public struct HomeScreenView: View {
                         .font(.subheadline.weight(.semibold))
                         .foregroundStyle(isSelected ? .white : .primary)
                 }
+                .accessibilityHidden(true)
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(space.name)
@@ -330,17 +339,18 @@ public struct HomeScreenView: View {
                     Text(subtitle)
                         .font(.caption)
                         .foregroundStyle(.secondary)
+
+                    if isSelected && dynamicTypeSize.isAccessibilitySize {
+                        currentSpaceBadge
+                    }
                 }
+                .fixedSize(horizontal: false, vertical: true)
+                .layoutPriority(1)
 
-                Spacer()
+                Spacer(minLength: 0)
 
-                if isSelected {
-                    Text(viewModel.language.localized("Current"))
-                        .font(.caption2.weight(.bold))
-                        .foregroundStyle(appForegroundTint)
-                        .padding(.horizontal, 9)
-                        .padding(.vertical, 4)
-                        .background(Capsule().fill(appAccentColor.opacity(colorScheme == .dark ? 0.24 : 0.12)))
+                if isSelected && !dynamicTypeSize.isAccessibilitySize {
+                    currentSpaceBadge
                 }
             }
             .padding(10)
@@ -356,30 +366,37 @@ public struct HomeScreenView: View {
         .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 
+    private var currentSpaceBadge: some View {
+        Text(viewModel.language.localized("Current"))
+            .font(.caption2.weight(.bold))
+            .foregroundStyle(appForegroundTint)
+            .padding(.horizontal, 9)
+            .padding(.vertical, 4)
+            .background(Capsule().fill(appAccentColor.opacity(colorScheme == .dark ? 0.24 : 0.12)))
+            .accessibilityHidden(true)
+    }
+
     private var collectionsSection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Text(ArcaStrings.text("home.collections", language: viewModel.language).uppercased())
+            let headingLayout = dynamicTypeSize.isAccessibilitySize
+                ? AnyLayout(VStackLayout(alignment: .leading))
+                : AnyLayout(HStackLayout())
+            headingLayout {
+                Text(ArcaStrings.text("home.collections", language: viewModel.language).uppercased(with: viewModel.language.locale))
                     .font(.caption.weight(.bold))
                     .tracking(0.6)
                     .foregroundStyle(.secondary)
-
-                Spacer()
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .accessibilityAddTraits(.isHeader)
 
                 Menu {
-                    Button { showingAIAssistant = true } label: {
-                        Label(creationText("creation.aiMenu"), systemImage: "sparkles")
-                    }
-                    Button { showingTemplateGallery = true } label: {
-                        Label(creationText("creation.templatesMenu"), systemImage: "rectangle.stack")
-                    }
-                    Button { showingManualBuilder = true } label: {
-                        Label(creationText("creation.manualMenu"), systemImage: "slider.horizontal.3")
-                    }
+                    creationMenuItems
                 } label: {
                     Label(ArcaStrings.text("home.newCollection", language: viewModel.language), systemImage: "plus")
                         .font(.footnote.weight(.bold))
                         .foregroundStyle(appForegroundTint)
+                        .frame(minHeight: 44)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
             }
@@ -404,9 +421,20 @@ public struct HomeScreenView: View {
                         Label(creationText("creation.ai"), systemImage: "sparkles")
                     }
                     .buttonStyle(ArcaPrimaryButtonStyle(tint: appAccentColor))
-                    HStack(spacing: 18) {
-                        Button(creationText("creation.templates")) { showingTemplateGallery = true }
-                        Button(creationText("creation.manual")) { showingManualBuilder = true }
+                    let choicesLayout = dynamicTypeSize.isAccessibilitySize
+                        ? AnyLayout(VStackLayout(spacing: 8))
+                        : AnyLayout(HStackLayout(spacing: 18))
+                    choicesLayout {
+                        Button { showingTemplateGallery = true } label: {
+                            Text(creationText("creation.templates"))
+                                .frame(minHeight: 44)
+                                .contentShape(Rectangle())
+                        }
+                        Button { showingManualBuilder = true } label: {
+                            Text(creationText("creation.manual"))
+                                .frame(minHeight: 44)
+                                .contentShape(Rectangle())
+                        }
                     }
                     .font(.footnote.weight(.semibold))
                     .foregroundStyle(appForegroundTint)
@@ -454,7 +482,7 @@ public struct HomeScreenView: View {
                     .transition(.opacity.combined(with: .scale(scale: 0.96)))
             } else {
                 Button {
-                    withAnimation(.spring(response: 0.25, dampingFraction: 0.82)) {
+                    withAnimation(reduceMotion ? nil : .spring(response: 0.25, dampingFraction: 0.82)) {
                         showingSpacePicker = false
                         activeClusterCollectionId = col.id
                     }
@@ -463,7 +491,7 @@ public struct HomeScreenView: View {
                 }
                 .buttonStyle(.plain)
                 .accessibilityElement(children: .combine)
-                .accessibilityLabel("\(col.name), \(count), \(fieldCountText)")
+                .accessibilityLabel("\(col.name), \(viewModel.language.format("count.records", count)), \(fieldCountText)")
                 .accessibilityHint(viewModel.language.localized("Opens Add, View, and Edit actions"))
                 .accessibilityAction(named: Text(viewModel.language.format("View %@", col.name))) {
                     viewingCollection = col
@@ -504,13 +532,14 @@ public struct HomeScreenView: View {
                 Text(col.name)
                     .font(.callout.weight(.bold))
                     .foregroundStyle(.primary)
-                    .lineLimit(2)
+                    .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 2)
+                    .fixedSize(horizontal: false, vertical: true)
                     .multilineTextAlignment(.leading)
 
                 Text(fieldCountText)
                     .font(.caption.weight(.medium))
                     .foregroundStyle(.secondary)
-                    .lineLimit(1)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
         .padding(14)
@@ -538,127 +567,115 @@ public struct HomeScreenView: View {
         .shadow(color: Color.black.opacity(colorScheme == .dark ? 0.20 : 0.03), radius: 8, x: 0, y: 4)
     }
 
-    private func collectionActionClusterOverlay(_ col: CollectionSchema) -> some View {
-        let tint = ArcaTheme.color(fromHex: col.colorHex)
+    private func dismissCollectionActions() {
+        withAnimation(reduceMotion ? nil : .spring(response: 0.22, dampingFraction: 0.85)) {
+            activeClusterCollectionId = nil
+        }
+    }
 
-        return ZStack {
+    private func collectionActionClusterOverlay(_ col: CollectionSchema) -> some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 5) {
+                collectionActions(col)
+            }
+            .fixedSize(horizontal: true, vertical: false)
+
+            VStack(spacing: 6) {
+                collectionActions(col)
+            }
+        }
+        .padding(8)
+        .frame(maxWidth: .infinity, minHeight: 146)
+        .background {
             RoundedRectangle(cornerRadius: 22, style: .continuous)
                 .fill(Color(red: 0.055, green: 0.082, blue: 0.071).opacity(colorScheme == .dark ? 0.92 : 0.86))
                 .contentShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
-                .onTapGesture {
-                    withAnimation(.spring(response: 0.22, dampingFraction: 0.85)) {
-                        activeClusterCollectionId = nil
-                    }
-                }
+                .onTapGesture(perform: dismissCollectionActions)
                 .accessibilityHidden(true)
-
-            HStack(spacing: 10) {
-                // 1. Add Record Orb
-                Button {
-                    activeClusterCollectionId = nil
-                    activeRecordSheetCollection = col
-                } label: {
-                    VStack(spacing: 5) {
-                        ZStack {
-                            Circle()
-                                .fill(tint)
-                                .frame(width: 44, height: 44)
-                                .shadow(color: Color.black.opacity(0.28), radius: 6, x: 0, y: 3)
-                            Image(systemName: "plus")
-                                .font(.callout.weight(.bold))
-                                .foregroundStyle(.white)
-                        }
-                        Text(viewModel.language.localized("Add"))
-                            .font(.caption2.weight(.bold))
-                            .foregroundStyle(.white)
-                            .lineLimit(1)
-                    }
-                    .frame(minWidth: 44, minHeight: 62)
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel(viewModel.language.format("Add Record to %@", col.name))
-                .accessibilityIdentifier("home.collection.\(col.id.uuidString).add")
-
-                // 2. View Records Orb
-                Button {
-                    activeClusterCollectionId = nil
-                    viewingCollection = col
-                } label: {
-                    VStack(spacing: 5) {
-                        ZStack {
-                            Circle()
-                                .fill(Color.white.opacity(0.14))
-                                .frame(width: 44, height: 44)
-                                .overlay(
-                                    Circle().strokeBorder(Color.white.opacity(0.24), lineWidth: 1)
-                                )
-                            Image(systemName: "arrow.up.forward")
-                                .font(.callout.weight(.bold))
-                                .foregroundStyle(.white)
-                        }
-                        Text(viewModel.language.localized("View"))
-                            .font(.caption2.weight(.bold))
-                            .foregroundStyle(.white)
-                            .lineLimit(1)
-                    }
-                    .frame(minWidth: 44, minHeight: 62)
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel(viewModel.language.format("View %@", col.name))
-                .accessibilityIdentifier("home.collection.\(col.id.uuidString).view")
-
-                // 3. Edit Collection Settings Orb
-                Button {
-                    activeClusterCollectionId = nil
-                    editingSettingsCollection = col
-                } label: {
-                    VStack(spacing: 5) {
-                        ZStack {
-                            Circle()
-                                .fill(Color.white.opacity(0.14))
-                                .frame(width: 44, height: 44)
-                                .overlay(
-                                    Circle().strokeBorder(Color.white.opacity(0.24), lineWidth: 1)
-                                )
-                            Image(systemName: "slider.horizontal.3")
-                                .font(.callout.weight(.bold))
-                                .foregroundStyle(.white)
-                        }
-                        Text(viewModel.language.localized("Edit"))
-                            .font(.caption2.weight(.bold))
-                            .foregroundStyle(.white)
-                            .lineLimit(1)
-                    }
-                    .frame(minWidth: 44, minHeight: 62)
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel(viewModel.language.format("Edit %@", col.name))
-                .accessibilityIdentifier("home.collection.\(col.id.uuidString).edit")
-            }
-            .padding(.horizontal, 8)
         }
-        .frame(maxWidth: .infinity, minHeight: 146)
-        .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
         .accessibilityElement(children: .contain)
-        .accessibilityAction(named: Text(ArcaStrings.text("creation.close", language: viewModel.language))) {
+        .accessibilityAction(.escape, dismissCollectionActions)
+        .accessibilityAction(named: Text(ArcaStrings.text("creation.close", language: viewModel.language)), dismissCollectionActions)
+    }
+
+    @ViewBuilder
+    private func collectionActions(_ col: CollectionSchema) -> some View {
+        let palette = CollectionColorPalette(hex: col.colorHex)
+        let identifier = "home.collection.\(col.id.uuidString)"
+
+        collectionActionButton("Add", icon: "plus", fill: palette.fill, ink: palette.onFill) {
+            activeRecordSheetCollection = col
+        }
+        .accessibilityLabel(viewModel.language.format("Add Record to %@", col.name))
+        .accessibilityIdentifier("\(identifier).add")
+
+        collectionActionButton("View", icon: "eye.fill", fill: .white, ink: .black) {
+            viewingCollection = col
+        }
+        .accessibilityLabel(viewModel.language.format("View %@", col.name))
+        .accessibilityIdentifier("\(identifier).view")
+
+        collectionActionButton("Edit", icon: "slider.horizontal.3") {
+            editingSettingsCollection = col
+        }
+        .accessibilityLabel(viewModel.language.format("Edit %@", col.name))
+        .accessibilityIdentifier("\(identifier).edit")
+    }
+
+    private func collectionActionButton(
+        _ title: String,
+        icon: String,
+        fill: Color = .white.opacity(0.14),
+        ink: Color = .white,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button {
             activeClusterCollectionId = nil
+            action()
+        } label: {
+            VStack(spacing: 5) {
+                Image(systemName: icon)
+                    .font(.callout.weight(.bold))
+                    .foregroundStyle(ink)
+                    .frame(width: 44, height: 44)
+                    .background(fill, in: Circle())
+                    .overlay(Circle().strokeBorder(.white.opacity(0.24), lineWidth: 1))
+                    .accessibilityHidden(true)
+                Text(viewModel.language.localized(title))
+                    .font(.caption2.weight(.bold))
+                    .foregroundStyle(.white)
+            }
+            .frame(minWidth: 44, minHeight: 62)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    @ViewBuilder
+    private var creationMenuItems: some View {
+        Button {
+            activeClusterCollectionId = nil
+            showingAIAssistant = true
+        } label: {
+            Label(creationText("creation.aiMenu"), systemImage: "sparkles")
+        }
+        Button {
+            activeClusterCollectionId = nil
+            showingTemplateGallery = true
+        } label: {
+            Label(creationText("creation.templatesMenu"), systemImage: "rectangle.stack")
+        }
+        Button {
+            activeClusterCollectionId = nil
+            showingManualBuilder = true
+        } label: {
+            Label(creationText("creation.manualMenu"), systemImage: "slider.horizontal.3")
         }
     }
 
     private var newCollectionGridTile: some View {
         Menu {
-            Button { showingAIAssistant = true } label: {
-                Label(creationText("creation.aiMenu"), systemImage: "sparkles")
-            }
-            Button { showingTemplateGallery = true } label: {
-                Label(creationText("creation.templatesMenu"), systemImage: "rectangle.stack")
-            }
-            Button { showingManualBuilder = true } label: {
-                Label(creationText("creation.manualMenu"), systemImage: "slider.horizontal.3")
-            }
+            creationMenuItems
         } label: {
             VStack(spacing: 10) {
                 ZStack {
@@ -887,6 +904,7 @@ public struct ManageSpacesSheetView: View {
     @Bindable var viewModel: ArcaAppViewModel
     @Environment(\.dismiss) private var dismiss
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.arcaAppAccentColor) private var appAccentColor
     @Environment(\.arcaAppAccentOption) private var appAccentOption
 
@@ -956,7 +974,10 @@ public struct ManageSpacesSheetView: View {
                                 .font(.footnote.weight(.semibold))
                                 .foregroundStyle(.secondary)
 
-                            HStack(spacing: 8) {
+                            let choiceLayout = dynamicTypeSize.isAccessibilitySize
+                                ? AnyLayout(VStackLayout(spacing: 8))
+                                : AnyLayout(HStackLayout(spacing: 8))
+                            choiceLayout {
                                 modeChoicePill(.localOnly, label: viewModel.language.localized("Local Only"), icon: "iphone")
                                 modeChoicePill(.arcaSync, label: viewModel.language.localized("Arca Sync (E2EE)"), icon: "icloud.fill")
                             }
@@ -1028,20 +1049,28 @@ public struct ManageSpacesSheetView: View {
                 : viewModel.language.localized("Personal Cloud Backup"))
         let subtitle = "\(viewModel.language.format("count.collections", count)) · \(storageLabel)"
 
-        return HStack(spacing: 12) {
-            ZStack {
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(isActive ? appAccentColor : ArcaTheme.subtleFieldBackground(for: colorScheme))
-                    .frame(width: 38, height: 38)
-                Image(systemName: space.iconName)
-                    .font(.body.weight(.semibold))
-                    .foregroundStyle(isActive ? .white : .primary)
-            }
+        let rowLayout = dynamicTypeSize.isAccessibilitySize
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 8))
+            : AnyLayout(HStackLayout(spacing: 12))
 
-            VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: 6) {
+        return rowLayout {
+            HStack(spacing: 12) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .fill(isActive ? appAccentColor : ArcaTheme.subtleFieldBackground(for: colorScheme))
+                        .frame(width: 38, height: 38)
+                    Image(systemName: space.iconName)
+                        .font(.body.weight(.semibold))
+                        .foregroundStyle(isActive ? .white : .primary)
+                }
+                .accessibilityHidden(true)
+
+                VStack(alignment: .leading, spacing: 2) {
                     Text(space.name)
                         .font(.body.weight(.bold))
+                    Text(subtitle)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                     if isActive {
                         Text(viewModel.language.localized("Current"))
                             .font(.caption2.weight(.bold))
@@ -1051,38 +1080,42 @@ public struct ManageSpacesSheetView: View {
                             .background(Capsule().fill(appAccentColor))
                     }
                 }
-                Text(subtitle)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+                Spacer(minLength: 0)
             }
 
-            Spacer()
-
-            if !isActive {
-                ArcaPillActionButton(viewModel.language.localized("Switch"), tint: appAccentColor) {
-                    Task {
-                        await viewModel.selectSpace(space.id)
-                        dismiss()
+            HStack(spacing: 4) {
+                if !isActive {
+                    ArcaPillActionButton(viewModel.language.localized("Switch")) {
+                        Task {
+                            await viewModel.selectSpace(space.id)
+                            dismiss()
+                        }
                     }
                 }
-            }
 
-            Menu {
-                Button(viewModel.language.localized("Rename Space…")) {
-                    renamingSpace = space
-                    renameText = space.name
-                }
-                if viewModel.spaces.count > 1 {
-                    Button(viewModel.language.localized("Delete Space"), role: .destructive) {
-                        pendingSpaceDeletion = space
+                Menu {
+                    Button(viewModel.language.localized("Rename Space…")) {
+                        renamingSpace = space
+                        renameText = space.name
                     }
+                    if viewModel.spaces.count > 1 {
+                        Button(viewModel.language.localized("Delete Space"), role: .destructive) {
+                            pendingSpaceDeletion = space
+                        }
+                    }
+                } label: {
+                    Image(systemName: "ellipsis.circle.fill")
+                        .font(.title3)
+                        .foregroundStyle(.secondary)
+                        .frame(minWidth: 44, minHeight: 44)
+                        .contentShape(Rectangle())
                 }
-            } label: {
-                Image(systemName: "ellipsis.circle.fill")
-                    .font(.title3)
-                    .foregroundStyle(.secondary)
+                .buttonStyle(.plain)
+                .accessibilityLabel(viewModel.language.localized("More actions"))
+                .accessibilityValue(space.name)
             }
-            .buttonStyle(.plain)
         }
         .padding(10)
         .background(
@@ -1103,14 +1136,15 @@ public struct ManageSpacesSheetView: View {
                     .font(.footnote.weight(.semibold))
             }
             .foregroundStyle(selected ? .white : .primary)
-            .frame(maxWidth: .infinity)
             .padding(.vertical, 10)
+            .frame(maxWidth: .infinity, minHeight: 44)
             .background(
                 RoundedRectangle(cornerRadius: 11, style: .continuous)
                     .fill(selected ? appAccentColor : ArcaTheme.subtleFieldBackground(for: colorScheme))
             )
         }
         .buttonStyle(.plain)
+        .accessibilityAddTraits(selected ? .isSelected : [])
     }
 }
 

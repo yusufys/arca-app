@@ -5,6 +5,16 @@ import ArcaCore
 /// when building with Command Line Tools where `libSwiftUIMacros.dylib` is not bundled.
 public typealias ViewState<Value> = SwiftUI.State<Value>
 
+extension View {
+    func arcaDesktopSheetSize() -> some View {
+        #if os(macOS)
+        frame(minWidth: 370, idealWidth: 400, minHeight: 580, idealHeight: 680)
+        #else
+        self
+        #endif
+    }
+}
+
 // MARK: - Localization Support (English, Arabic RTL, Turkish)
 
 public enum AppLanguage: String, CaseIterable, Codable, Sendable, Identifiable {
@@ -152,22 +162,22 @@ public enum ArcaTheme {
 
 @available(macOS 14.0, iOS 17.0, *)
 public struct ArcaPrimaryButtonStyle: ButtonStyle {
-    public var tint: Color
+    public var tint: Color?
+    public var foreground: Color
     public var isFullWidth: Bool
-    private let usesAppAccentDefault: Bool
     @Environment(\.isEnabled) private var isEnabled
     @Environment(\.arcaAppAccentOption) private var envAccentOption
     @AppStorage(AppAppearancePreferencesStore.accentColorDefaultsKey)
     private var storedAccentHex: String = AppAccentColorOption.defaultOption.rawValue
 
-    public init(tint: Color = ArcaTheme.accent, isFullWidth: Bool = true) {
+    public init(tint: Color? = nil, foreground: Color = .white, isFullWidth: Bool = true) {
         self.tint = tint
+        self.foreground = foreground
         self.isFullWidth = isFullWidth
-        self.usesAppAccentDefault = (tint == ArcaTheme.accent)
     }
 
     private var resolvedTint: Color {
-        guard usesAppAccentDefault else { return tint }
+        if let tint { return tint }
         let option = envAccentOption != .defaultOption
             ? envAccentOption
             : AppAccentColorOption.resolve(from: storedAccentHex)
@@ -178,10 +188,11 @@ public struct ArcaPrimaryButtonStyle: ButtonStyle {
         let activeTint = resolvedTint
         configuration.label
             .font(.body.weight(.semibold))
-            .foregroundStyle(.white)
+            .foregroundStyle(foreground)
             .frame(maxWidth: isFullWidth ? .infinity : nil)
             .padding(.horizontal, 18)
             .padding(.vertical, 13)
+            .frame(minHeight: 44)
             .background(
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
                     .fill(
@@ -208,22 +219,20 @@ public struct ArcaPrimaryButtonStyle: ButtonStyle {
 
 @available(macOS 14.0, iOS 17.0, *)
 public struct ArcaSecondaryButtonStyle: ButtonStyle {
-    public var tint: Color
+    public var tint: Color?
     public var isFullWidth: Bool
-    private let usesAppAccentDefault: Bool
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.arcaAppAccentOption) private var envAccentOption
     @AppStorage(AppAppearancePreferencesStore.accentColorDefaultsKey)
     private var storedAccentHex: String = AppAccentColorOption.defaultOption.rawValue
 
-    public init(tint: Color = ArcaTheme.accent, isFullWidth: Bool = false) {
+    public init(tint: Color? = nil, isFullWidth: Bool = false) {
         self.tint = tint
         self.isFullWidth = isFullWidth
-        self.usesAppAccentDefault = (tint == ArcaTheme.accent)
     }
 
     private var resolvedTint: Color {
-        guard usesAppAccentDefault else { return tint }
+        if let tint { return tint }
         let option = envAccentOption != .defaultOption
             ? envAccentOption
             : AppAccentColorOption.resolve(from: storedAccentHex)
@@ -238,6 +247,7 @@ public struct ArcaSecondaryButtonStyle: ButtonStyle {
             .frame(maxWidth: isFullWidth ? .infinity : nil)
             .padding(.horizontal, 16)
             .padding(.vertical, 11)
+            .frame(minHeight: 44)
             .background(
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
                     .fill(activeTint.opacity(configuration.isPressed ? 0.18 : 0.10))
@@ -263,20 +273,18 @@ public struct ArcaPillActionButton: View {
 
     public let title: String
     public let icon: String?
-    public var tint: Color = ArcaTheme.accent
+    public var tint: Color?
     public let action: () -> Void
-    private let usesAppAccentDefault: Bool
 
-    public init(_ title: String, icon: String? = nil, tint: Color = ArcaTheme.accent, action: @escaping () -> Void) {
+    public init(_ title: String, icon: String? = nil, tint: Color? = nil, action: @escaping () -> Void) {
         self.title = title
         self.icon = icon
         self.tint = tint
         self.action = action
-        self.usesAppAccentDefault = (tint == ArcaTheme.accent)
     }
 
     private var resolvedTint: Color {
-        guard usesAppAccentDefault else { return tint }
+        if let tint { return tint }
         let option = envAccentOption != .defaultOption
             ? envAccentOption
             : AppAccentColorOption.resolve(from: storedAccentHex)
@@ -297,7 +305,9 @@ public struct ArcaPillActionButton: View {
             .foregroundStyle(activeTint)
             .padding(.horizontal, 12)
             .padding(.vertical, 7)
+            .frame(minWidth: 44, minHeight: 44)
             .background(Capsule().fill(activeTint.opacity(0.12)))
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
     }
@@ -315,8 +325,7 @@ public struct ArcaSectionCard<Content: View>: View {
     public let title: String?
     public let subtitle: String?
     public let icon: String?
-    public let iconTint: Color
-    private let usesAppAccentDefault: Bool
+    public let iconTint: Color?
     @ViewBuilder public let content: () -> Content
     @Environment(\.colorScheme) private var colorScheme
 
@@ -324,19 +333,18 @@ public struct ArcaSectionCard<Content: View>: View {
         title: String? = nil,
         subtitle: String? = nil,
         icon: String? = nil,
-        iconTint: Color = ArcaTheme.accent,
+        iconTint: Color? = nil,
         @ViewBuilder content: @escaping () -> Content
     ) {
         self.title = title
         self.subtitle = subtitle
         self.icon = icon
         self.iconTint = iconTint
-        self.usesAppAccentDefault = (iconTint == ArcaTheme.accent)
         self.content = content
     }
 
     private var resolvedIconTint: Color {
-        guard usesAppAccentDefault else { return iconTint }
+        if let iconTint { return iconTint }
         let option = envAccentOption != .defaultOption
             ? envAccentOption
             : AppAccentColorOption.resolve(from: storedAccentHex)
@@ -351,6 +359,7 @@ public struct ArcaSectionCard<Content: View>: View {
                         Image(systemName: icon)
                             .font(.footnote.weight(.bold))
                             .foregroundStyle(resolvedIconTint)
+                            .accessibilityHidden(true)
                     }
                     Text(verbatim: title.uppercased(with: locale))
                         .accessibilityAddTraits(.isHeader)
@@ -431,9 +440,10 @@ public struct ArcaStyledTextField: View {
                     Image(systemName: "xmark.circle.fill")
                         .font(.subheadline)
                         .foregroundStyle(.tertiary)
+                        .frame(minWidth: 44, minHeight: 44)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .frame(minWidth: 44, minHeight: 44)
                 .accessibilityLabel(language.format("Clear %@", placeholder))
             }
         }
@@ -470,6 +480,7 @@ public struct ArcaSearchBar: View {
             Image(systemName: "magnifyingglass")
                 .font(.body.weight(.medium))
                 .foregroundStyle(.secondary)
+                .accessibilityHidden(true)
 
             TextField(placeholder, text: $text)
                 .textFieldStyle(.plain)
@@ -482,8 +493,11 @@ public struct ArcaSearchBar: View {
                     Image(systemName: "xmark.circle.fill")
                         .font(.body)
                         .foregroundStyle(.secondary)
+                        .frame(minWidth: 44, minHeight: 44)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel(language.format("Clear %@", placeholder))
             }
         }
         .padding(.horizontal, 14)
