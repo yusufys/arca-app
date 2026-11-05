@@ -277,6 +277,7 @@ public enum FieldType: String, Codable, CaseIterable, Sendable, Equatable {
     case multiSelect = "multi_select"
     case rating = "rating"
     case attachment = "attachment"
+    case image = "image"
 
     public var iconName: String {
         switch self {
@@ -291,6 +292,7 @@ public enum FieldType: String, Codable, CaseIterable, Sendable, Equatable {
         case .multiSelect: return "checklist"
         case .rating: return "star.fill"
         case .attachment: return "paperclip"
+        case .image: return "photo"
         }
     }
 
@@ -444,8 +446,16 @@ public struct CollectionSchema: Identifiable, Codable, Sendable, Equatable, Hash
         fields.filter { $0.isArchived }.sorted { $0.sortOrder < $1.sortOrder }
     }
 
+    /// A collection can contain any number of image fields. Each stores one attachment reference.
+    public var imageFields: [FieldDefinition] { activeFields.filter { $0.type == .image } }
+
+    public func thumbnailField(preferredId: UUID?) -> FieldDefinition? {
+        if let preferredId, let field = imageFields.first(where: { $0.id == preferredId }) { return field }
+        return imageFields.count == 1 ? imageFields.first : nil
+    }
+
     public var primaryTitleField: FieldDefinition? {
-        activeFields.first(where: { $0.isPrimaryTitle }) ?? activeFields.first(where: { $0.type == .shortText }) ?? activeFields.first
+        activeFields.first(where: { $0.isPrimaryTitle && $0.type != .image }) ?? activeFields.first(where: { $0.type == .shortText }) ?? activeFields.first(where: { $0.type != .image })
     }
 }
 
@@ -628,7 +638,7 @@ public struct RecordItem: Identifiable, Codable, Sendable, Equatable, Hashable {
     public func subtitle(using schema: CollectionSchema, locale: Locale = .current) -> String {
         let primaryId = schema.primaryTitleField?.id
         var parts: [String] = []
-        for field in schema.activeFields where field.id != primaryId {
+        for field in schema.activeFields where field.id != primaryId && field.type != .image {
             if let val = values[field.id], !val.isNullOrEmpty {
                 let text = val.plainTextSummary(for: field, locale: locale)
                 if !text.isEmpty {

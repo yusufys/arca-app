@@ -367,14 +367,17 @@ class SyncController extends Controller
                     $purge[] = $op;
                 }
             }
-            // Cloud attachment object deletion is not shipped. Never claim success while an object may remain.
-            abort_if(EncryptedAttachment::where('space_id', $spaceId)->exists(), 409, 'Attachment deletion requires verified object removal.');
+            // Legacy external objects still require verified object deletion. Inline blobs are transactional.
+            abort_if(EncryptedAttachment::where('space_id', $spaceId)->whereNull('encrypted_blob')->exists(), 409, 'Attachment deletion requires verified object removal.');
+            $imageQuery = EncryptedAttachment::where('space_id', $spaceId)->where('user_id', $user->id)->where('collection_id', $collectionId);
+            $imageBytes = (int) (clone $imageQuery)->sum('byte_size');
+            $imageQuery->delete();
             $allEntityIds = $operations->pluck('entity_id')->all();
             // Old snapshots without a classifiable synced record cannot be safely assigned to a collection.
             abort_if(PublicRecordSnapshot::where('space_id', $spaceId)->where('user_id', $user->id)->whereNotIn('record_id', $allEntityIds)->exists(), 409, 'Legacy public snapshots require explicit removal before scoped privacy deletion.');
             $recordIds = array_map(fn ($op) => $op->entity_id, $purge);
             PublicRecordSnapshot::where('space_id', $spaceId)->where('user_id', $user->id)->whereIn('record_id', $recordIds)->delete();
-            $bytes = array_sum(array_map(fn ($op) => (int) $op->ciphertext_bytes, $purge));
+            $bytes = $imageBytes + array_sum(array_map(fn ($op) => (int) $op->ciphertext_bytes, $purge));
             SyncOperation::whereIn('server_cursor', array_map(fn ($op) => $op->server_cursor, $purge))->delete();
             $rules = array_values(array_filter($rules, fn ($rule) => strcasecmp($rule['collectionId'], $collectionId) !== 0));
             $rules[] = $validated['rule'];

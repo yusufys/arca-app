@@ -745,7 +745,7 @@ public struct HomeScreenView: View {
                     NavigationLink {
                         RecordDetailView(viewModel: viewModel, recordId: record.id, schema: schema)
                     } label: {
-                        RecordRowCardView(record: record, schema: schema, locale: viewModel.language.locale)
+                        RecordRowCardView(record: record, schema: schema, locale: viewModel.language.locale, viewModel: viewModel)
                     }
                     .buttonStyle(.plain)
                 }
@@ -771,7 +771,7 @@ public struct HomeScreenView: View {
                         NavigationLink {
                             RecordDetailView(viewModel: viewModel, recordId: record.id, schema: schema)
                         } label: {
-                            RecordRowCardView(record: record, schema: schema, locale: viewModel.language.locale)
+                            RecordRowCardView(record: record, schema: schema, locale: viewModel.language.locale, viewModel: viewModel)
                         }
                         .buttonStyle(.plain)
                     }
@@ -809,7 +809,7 @@ public struct HomeScreenView: View {
                         NavigationLink {
                             RecordDetailView(viewModel: viewModel, recordId: record.id, schema: schema)
                         } label: {
-                            RecordRowCardView(record: record, schema: schema, locale: viewModel.language.locale)
+                            RecordRowCardView(record: record, schema: schema, locale: viewModel.language.locale, viewModel: viewModel)
                         }
                         .buttonStyle(.plain)
                     }
@@ -821,6 +821,7 @@ public struct HomeScreenView: View {
 
 @available(macOS 14.0, iOS 17.0, *)
 public struct RecordRowCardView: View {
+    public let viewModel: ArcaAppViewModel?
     public let record: RecordItem
     public let schema: CollectionSchema
     public let locale: Locale
@@ -831,7 +832,8 @@ public struct RecordRowCardView: View {
         appAccentOption.foregroundTint(for: colorScheme)
     }
 
-    public init(record: RecordItem, schema: CollectionSchema, locale: Locale = .current) {
+    public init(record: RecordItem, schema: CollectionSchema, locale: Locale = .current, viewModel: ArcaAppViewModel? = nil) {
+        self.viewModel = viewModel
         self.record = record
         self.schema = schema
         self.locale = locale
@@ -840,7 +842,11 @@ public struct RecordRowCardView: View {
     public var body: some View {
         let tint = ArcaTheme.color(fromHex: schema.colorHex)
         HStack(spacing: 13) {
-            CollectionBadgeView(schema: schema, size: 40)
+            if let viewModel, CollectionPresentationStore.shared.thumbnailReference(for: record, schema: schema) != nil {
+                RecordThumbnail(viewModel: viewModel, record: record, schema: schema, size: 40)
+            } else {
+                CollectionBadgeView(schema: schema, size: 40)
+            }
 
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 6) {

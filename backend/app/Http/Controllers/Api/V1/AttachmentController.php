@@ -4,99 +4,94 @@ namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
 use App\Models\EncryptedAttachment;
-use App\Models\SyncedSpace;
 use App\Models\User;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 class AttachmentController extends Controller
 {
+    private function authorizeDevice(Request $request): void
+    {
+        $deviceId = $request->header('X-Device-Id');
+        abort_unless($deviceId && $request->user()->enrolledDevices()->whereKey($deviceId)->whereNull('revoked_at')->exists(), 403);
+    }
+
     public function store(Request $request, string $spaceId): JsonResponse
     {
-        /** @var User $user */
-        $user = $request->user();
-
-        $validated = $request->validate([
-            'id' => 'required|uuid',
-            'record_id' => 'required|uuid',
-            'byte_size' => 'required|integer|min:1',
-            'ciphertext_sha256' => 'required|string',
-            'key_version' => 'nullable|integer|min:1',
-        ]);
-
-        $byteSize = (int) $validated['byte_size'];
-
-        // Enforce storage quota
-        if (($user->remote_storage_bytes_used + $byteSize) > $user->maxAllowedStorageBytes()) {
-            return response()->json([
-                'error' => 'REMOTE_STORAGE_QUOTA_EXCEEDED',
-                'message' => 'Uploading this attachment exceeds your remote ciphertext storage quota. Please upgrade to Pro.',
-                'used_bytes' => $user->remote_storage_bytes_used,
-                'attempted_bytes' => $byteSize,
-                'max_allowed_bytes' => $user->maxAllowedStorageBytes(),
-            ], 403);
+        $this->authorizeDevice($request);
+        $rules = [
+            'privacy_generation' => 'required|integer|min:0',
+            'blob' => 'required|array:attachmentId,spaceId,collectionId,recordId,authorDeviceId,keyGeneration,ciphertextSHA256Hex,encryptedMetadataEnvelope,encryptedDataEnvelope,uploadedAt',
+            'blob.attachmentId' => 'required|uuid',
+            'blob.spaceId' => 'required|uuid',
+            'blob.collectionId' => 'required|uuid',
+            'blob.recordId' => 'required|uuid',
+            'blob.authorDeviceId' => 'required|string|max:128',
+            'blob.keyGeneration' => 'required|integer|min:1',
+            'blob.ciphertextSHA256Hex' => 'required|string|size:64|regex:/^[a-fA-F0-9]+$/',
+            'blob.uploadedAt' => 'required|date',
+        ];
+        foreach (['encryptedMetadataEnvelope' => 16384, 'encryptedDataEnvelope' => 6990508] as $field => $limit) {
+            $prefix = "blob.{$field}";
+            $rules[$prefix] = 'required|array:version,keyId,nonceBase64,ciphertextBase64,tagBase64,aadDescription';
+            $rules["{$prefix}.version"] = 'required|integer|in:1';
+            $rules["{$prefix}.keyId"] = 'required|uuid';
+            $rules["{$prefix}.nonceBase64"] = 'required|string|size:16';
+            $rules["{$prefix}.ciphertextBase64"] = "required|string|max:{$limit}";
+            $rules["{$prefix}.tagBase64"] = 'required|string|size:24';
+            $rules["{$prefix}.aadDescription"] = 'required|string|max:160';
         }
-
-        $disk = config('arca.attachments_disk', 'r2');
-        $objectKey = "spaces/{$spaceId}/records/{$validated['record_id']}/{$validated['id']}.enc";
-
-        $attachment = EncryptedAttachment::updateOrCreate(
-            [
-                'id' => $validated['id'],
-                'user_id' => $user->id,
-            ],
-            [
-                'space_id' => $spaceId,
-                'record_id' => $validated['record_id'],
-                'byte_size' => $byteSize,
-                'ciphertext_sha256' => $validated['ciphertext_sha256'],
-                'storage_disk' => $disk,
-                'object_key' => $objectKey,
-                'key_version' => $validated['key_version'] ?? 1,
-            ]
-        );
-
-        $user->increment('remote_storage_bytes_used', $byteSize);
-
-        $space = SyncedSpace::where('id', $spaceId)->where('user_id', $user->id)->first();
-        if ($space) {
-            $space->increment('ciphertext_bytes', $byteSize);
+        $validated = $request->validate($rules);
+        $blob = $validated['blob'];
+        abort_unless(strcasecmp($blob['spaceId'], $spaceId) === 0 && strcasecmp($blob['authorDeviceId'], $request->header('X-Device-Id')) === 0, 422);
+        foreach (['encryptedMetadataEnvelope', 'encryptedDataEnvelope'] as $field) {
+            $envelope = $blob[$field];
+            abort_unless(strlen(base64_decode($envelope['nonceBase64'], true) ?: '') === 12 && strlen(base64_decode($envelope['tagBase64'], true) ?: '') === 16, 422);
+            abort_unless(base64_decode($envelope['ciphertextBase64'], true) !== false, 422);
         }
+        $data = $blob['encryptedDataEnvelope'];
+        abort_if(strlen(base64_decode($data['ciphertextBase64'], true)) > 5 * 1024 * 1024, 413);
+        abort_unless(hash_equals(strtolower($blob['ciphertextSHA256Hex']), hash('sha256', $data['ciphertextBase64'].':'.$data['tagBase64'])), 422, 'Ciphertext checksum mismatch.');
+        $encoded = json_encode($blob, JSON_THROW_ON_ERROR);
+        $bytes = strlen($encoded);
+        abort_if($bytes > 7 * 1024 * 1024, 413);
 
-        $presignedUploadUrl = "https://r2.arca.internal/{$objectKey}?expires=" . (time() + 3600);
+        return DB::transaction(function () use ($request, $spaceId, $validated, $blob, $encoded, $bytes) {
+            $user = User::whereKey($request->user()->id)->lockForUpdate()->firstOrFail();
+            $space = $user->syncedSpaces()->whereKey($spaceId)->lockForUpdate()->firstOrFail();
+            abort_unless($space->storage_mode === 'arca_sync', 403);
+            abort_unless((int) $space->privacy_generation === $validated['privacy_generation'], 409, 'Pull current privacy rules before uploading images.');
+            abort_unless($user->postExpiryPolicy()['canPushRemoteSync'], 403);
+            $existing = EncryptedAttachment::where('space_id', $spaceId)->where('user_id', $user->id)->where('reference_id', $blob['attachmentId'])->first();
+            if ($existing) {
+                abort_unless(strcasecmp($existing->record_id, $blob['recordId']) === 0 && strcasecmp($existing->collection_id, $blob['collectionId']) === 0, 409);
+            }
+            $delta = $bytes - ($existing?->byte_size ?? 0);
+            abort_if($user->remote_storage_bytes_used + $delta > $user->maxAllowedStorageBytes(), 403, 'Image exceeds your cloud storage quota.');
+            $attachment = $existing ?? new EncryptedAttachment;
+            $attachment->fill([
+                'reference_id' => $blob['attachmentId'], 'collection_id' => strtolower($blob['collectionId']),
+                'space_id' => $spaceId, 'user_id' => $user->id, 'record_id' => $blob['recordId'],
+                'byte_size' => $bytes, 'ciphertext_sha256' => $blob['ciphertextSHA256Hex'],
+                'storage_disk' => 'database', 'object_key' => 'inline', 'key_version' => $blob['keyGeneration'],
+                'encrypted_blob' => $encoded,
+            ])->save();
+            $space->increment('ciphertext_bytes', $delta);
+            $user->increment('remote_storage_bytes_used', $delta);
 
-        return response()->json([
-            'message' => 'Attachment metadata registered.',
-            'attachment' => $attachment,
-            'storage_disk' => $disk,
-            'object_key' => $objectKey,
-            'upload_url' => $presignedUploadUrl,
-        ], 201);
+            return response()->json(['stored' => true, 'attachment_id' => $blob['attachmentId']], 201);
+        });
     }
 
     public function show(Request $request, string $spaceId, string $attachmentId): JsonResponse
     {
-        /** @var User $user */
-        $user = $request->user();
+        $this->authorizeDevice($request);
+        $request->user()->syncedSpaces()->whereKey($spaceId)->where('storage_mode', 'arca_sync')->firstOrFail();
+        $attachment = EncryptedAttachment::where('reference_id', $attachmentId)->where('space_id', $spaceId)
+            ->where('user_id', $request->user()->id)->whereNotNull('encrypted_blob')->firstOrFail();
 
-        $attachment = EncryptedAttachment::where('id', $attachmentId)
-            ->where('space_id', $spaceId)
-            ->where('user_id', $user->id)
-            ->first();
-
-        if (! $attachment) {
-            return response()->json([
-                'error' => 'NOT_FOUND',
-                'message' => 'Encrypted attachment not found.',
-            ], 404);
-        }
-
-        $presignedDownloadUrl = "https://r2.arca.internal/{$attachment->object_key}?expires=" . (time() + 3600);
-
-        return response()->json([
-            'attachment' => $attachment,
-            'ciphertext_sha256' => $attachment->ciphertext_sha256,
-            'download_url' => $presignedDownloadUrl,
-        ]);
+        return response()->json(['blob' => json_decode($attachment->encrypted_blob, true, 512, JSON_THROW_ON_ERROR)])
+            ->header('Cache-Control', 'no-store');
     }
 }

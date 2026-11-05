@@ -36,6 +36,18 @@ class CollectionCatalogTest extends TestCase
         ]);
     }
 
+    public function test_image_templates_and_prompt_are_versioned_for_older_clients(): void
+    {
+        $schema = ['name' => 'Recipes', 'fields' => [['label' => 'Cover', 'type' => 'image'], ['label' => 'Ingredients', 'type' => 'image']]];
+        CollectionTemplate::factory()->create(['slug' => 'photos', 'is_active' => true, 'schema_definition' => $schema]);
+        $this->getJson('/api/v1/collection-templates')->assertOk()->assertJsonCount(0, 'templates');
+        $this->getJson('/api/v1/collection-schema')->assertOk()->assertJsonPath('x-arca-version', 1);
+        $this->withHeader('X-Arca-Collection-Contract', '2')->getJson('/api/v1/collection-templates')->assertOk()->assertJsonPath('templates.0.schema.fields.1.type', 'image');
+        $this->getJson('/api/v1/collection-schema')->assertOk()->assertJsonPath('x-arca-version', 2);
+        $response = $this->postJson('/api/v1/collection-prompt', ['intent' => 'Recipe photos', 'language' => 'en'])->assertOk();
+        $this->assertStringContainsString('"image"', $response->json('prompt'));
+    }
+
     public function test_translated_catalog_is_validated_and_preserved_on_legacy_admin_updates(): void
     {
         $this->actingAs(User::factory()->create(['is_admin' => true]));

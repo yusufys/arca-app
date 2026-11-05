@@ -34,6 +34,7 @@ struct CollectionCatalogClient {
     private func request(_ endpoint: String, body: Data? = nil, byteLimit: Int) async throws -> Data {
         var req = URLRequest(url: baseURL.appendingPathComponent("api/v1").appendingPathComponent(endpoint))
         req.setValue("application/json", forHTTPHeaderField: "Accept")
+        req.setValue("2", forHTTPHeaderField: "X-Arca-Collection-Contract")
         if let body {
             req.httpMethod = "POST"
             req.httpBody = body

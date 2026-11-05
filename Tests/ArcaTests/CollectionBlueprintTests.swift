@@ -5,8 +5,8 @@ import ArcaCore
 final class CollectionBlueprintTests: XCTestCase {
     func testBackendContractMatchesBundledRulesAndRendererTypes() throws {
         let repo = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
-        let source = try Data(contentsOf: repo.appendingPathComponent("backend/resources/contracts/collection-v1.json"))
-        let bundled = try Data(contentsOf: repo.appendingPathComponent("Sources/ArcaCore/Resources/collection-v1.json"))
+        let source = try Data(contentsOf: repo.appendingPathComponent("backend/resources/contracts/collection-v2.json"))
+        let bundled = try Data(contentsOf: repo.appendingPathComponent("Sources/ArcaCore/Resources/collection-v2.json"))
         XCTAssertEqual(source, bundled)
         let fields = FieldType.allCases.map { type -> [String: Any] in
             var field: [String: Any] = ["label": type.rawValue, "type": type.rawValue]

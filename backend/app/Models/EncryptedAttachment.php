@@ -13,8 +13,13 @@ class EncryptedAttachment extends Model
 
     protected $table = 'encrypted_attachments';
 
+    protected $hidden = ['encrypted_blob'];
+
     protected $fillable = [
         'id',
+        'reference_id',
+        'collection_id',
+        'encrypted_blob',
         'space_id',
         'user_id',
         'record_id',

@@ -729,11 +729,20 @@ public final class ArcaAppViewModel {
         await reloadSpaceFromDisk(rec.spaceId)
     }
 
-    public func duplicateRecord(_ record: RecordItem) async {
+    public func duplicateRecord(_ record: RecordItem) async throws {
         guard let col = schema(for: record.collectionId) else { return }
-        let copy = record.duplicated(byDeviceId: currentDeviceIdentity?.deviceId ?? "unavailable")
+        var copy = record.duplicated(byDeviceId: currentDeviceIdentity?.deviceId ?? "unavailable")
         let store = await spaceStore(for: record.spaceId)
-        try? await store.saveRecord(copy, schema: col, enqueueSync: currentSpace?.storageMode == .arcaSync)
+        for field in col.fields where field.type == .image {
+            guard case .attachments(let refs) = copy.values[field.id] else { continue }
+            var copied: [AttachmentReference] = []
+            for ref in refs {
+                let bytes = try await store.loadAttachmentData(for: ref)
+                copied.append(try await store.storeAttachment(data: bytes, filename: ref.filename, mimeType: ref.mimeType))
+            }
+            copy.values[field.id] = .attachments(copied)
+        }
+        try await store.saveRecord(copy, schema: col, enqueueSync: currentSpace?.storageMode == .arcaSync)
         await reloadSpaceFromDisk(record.spaceId)
     }
 
@@ -763,6 +772,30 @@ public final class ArcaAppViewModel {
         let store = await spaceStore(for: spaceId)
         return try await store.storeAttachment(data: data, filename: url.lastPathComponent,
                                                mimeType: values.contentType?.preferredMIMEType ?? "application/octet-stream")
+    }
+
+    public func attachImage(from url: URL, to spaceId: UUID) async throws -> AttachmentReference {
+        let access = url.startAccessingSecurityScopedResource()
+        defer { if access { url.stopAccessingSecurityScopedResource() } }
+        let info = try url.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey])
+        guard info.isRegularFile == true, let size = info.fileSize, size <= 15 * 1024 * 1024 else {
+            throw CollectionIconImageError.fileTooLarge
+        }
+        let data = try Data(contentsOf: url)
+        return try await attachImage(data: data, to: spaceId)
+    }
+
+    public func attachImage(data: Data, to spaceId: UUID) async throws -> AttachmentReference {
+        let normalized = try await Task.detached(priority: .userInitiated) { try RecordImageCodec.prepare(data) }.value
+        let store = await spaceStore(for: spaceId)
+        return try await store.storeAttachment(data: normalized, filename: "image.jpg", mimeType: "image/jpeg")
+    }
+
+    public func imageData(_ reference: AttachmentReference, spaceId: UUID) async throws -> Data {
+        guard reference.mimeType.hasPrefix("image/"), reference.byteSize <= 5 * 1024 * 1024 else {
+            throw CollectionIconImageError.invalidImageData
+        }
+        return try await spaceStore(for: spaceId).loadAttachmentData(for: reference)
     }
 
     public func searchRecordsInCurrentSpace(queryText: String) -> [RecordItem] {
@@ -1104,7 +1137,14 @@ public final class ArcaAppViewModel {
         defer { isSyncing = false }
         if targetMode == .arcaSync {
             let store = await spaceStore(for: spaceId)
-            guard await store.listRecords().allSatisfy({ $0.allAttachments.isEmpty }) else {
+            let collections = await store.listCollections()
+            guard await store.listRecords().allSatisfy({ record in
+                guard let schema = collections.first(where: { $0.id == record.collectionId }) else { return record.allAttachments.isEmpty }
+                return record.values.allSatisfy { fieldId, value in
+                    guard case .attachments(let refs) = value, !refs.isEmpty else { return true }
+                    return schema.fields.first(where: { $0.id == fieldId })?.type == .image
+                }
+            }) else {
                 throw PersistenceError.ioError("Cloud attachment upload is not available yet. Keep this Space Local-Only or remove its attachments before enabling Sync.")
             }
             try await store.enqueueInitialSyncSnapshot()

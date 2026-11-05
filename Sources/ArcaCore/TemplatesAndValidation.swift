@@ -290,6 +290,11 @@ public enum SchemaEngine {
                         reason: String(format: String(localized: "Rating must be between 0 and %d.", bundle: bundle, locale: locale), locale: locale, field.validation.maxRating)
                     ))
                 }
+            case (.image, .attachments(let images)):
+                if images.count > 1 || images.contains(where: { !$0.mimeType.hasPrefix("image/") || $0.byteSize <= 0 || $0.byteSize > 5 * 1024 * 1024 }) {
+                    errors.append(RecordValidationError(fieldId: field.id, fieldLabel: field.label,
+                        reason: String(localized: "Choose one image up to 5 MB for this field.", bundle: bundle, locale: locale)))
+                }
             case (.currency, .currency),
                  (.date, .date),
                  (.dateTime, .dateTime),

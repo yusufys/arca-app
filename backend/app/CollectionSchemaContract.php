@@ -8,9 +8,9 @@ use stdClass;
 /** Validates the deliberately small JSON Schema vocabulary used by collection-v1.json. */
 class CollectionSchemaContract
 {
-    public function schema(): array
+    public function schema(int $version = 2): array
     {
-        return json_decode(file_get_contents(resource_path('contracts/collection-v1.json')), true, 512, JSON_THROW_ON_ERROR);
+        return json_decode(file_get_contents(resource_path('contracts/collection-v'.($version === 2 ? '2' : '1').'.json')), true, 512, JSON_THROW_ON_ERROR);
     }
 
     public function validate(mixed $document): array

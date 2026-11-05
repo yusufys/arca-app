@@ -2,6 +2,15 @@
 
 App Store Connect record: **Arca - Personal Records**, Apple ID **6830898859**, bundle **app.arca.personalrecords**. Internal beta first. Use fictional data and the supplied build number in all feedback.
 
+## Next release — record images (not in TestFlight build 7)
+
+- Collections support multiple Image fields, with one image per field. The only image field automatically supplies record thumbnails. With several fields, Collection Settings lets the user choose a source; this presentation preference is device-local and survives relaunch. Normal, Compact, Box, Home and search rows use the selected image. Record details show each image separately.
+- Photos and Files imports are decoded with Image I/O, normalized to JPEG at a maximum 2048 pixels, and stripped of source metadata. Input is capped at 15 MB and stored images at 5 MB. Replacing or removing one field does not clear another. Duplicates receive independent image references.
+- Image bytes and metadata use the existing authenticated client encryption. The Laravel transport stores bounded ciphertext blobs transactionally, checks account/device access and quotas, and fences uploads with privacy generations. Scoped privacy deletion removes image ciphertext before sanitized records are republished. General file attachments remain local-only.
+- Backend deployment must run the new `add_encrypted_blobs_to_attachments` migration before distributing the client. It adds nullable columns and an index; do not roll it back after images have been uploaded because dropping the ciphertext column destroys those cloud copies. Original file bytes are not sent to third-party image services.
+- The version 2 collection contract adds `image`; old catalog clients retain version 1 and do not receive incompatible templates. Update both sync devices to the new app before adding Image fields: build 7 cannot decode the new field type in synced collection schemas.
+- Validation: 66 Swift tests passed with the isolated Laravel HTTP server, including two clients exchanging images, reopening storage, and verified privacy removal. All 53 backend tests passed; the targeted security tests were rerun after tightening tenant and size checks. Native iOS simulator acceptance passed multiple-image rendering, choosing a thumbnail source, persistence after process termination, removing one image while retaining the other, Normal/Box thumbnails and Arabic controls. See [the offline screenshot gallery](artifacts/record-images/index.html). Forge and TestFlight have not been changed in this feature pass.
+
 ## Native redesign and Arabic typography — build 7
 
 - Home collection cards expose Add/View/Edit. Collection records support Normal, Compact and Box layouts, search/sort and text/number/date filters. Collection settings save name, color, icon, compact secondary field and popup/full-screen entry preferences. App accent and light/dark/system appearance remain independent of collection colors.

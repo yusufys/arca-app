@@ -296,10 +296,14 @@ public final class LaravelArcaSyncBackend: ArcaSyncBackendProtocol, @unchecked S
         return SyncPullBatch(spaceId: spaceId, operations: operations, nextCursor: SyncCursor(sequenceNumber: value.latest_cursor), hasMore: value.has_more ?? false)
     }
     public func uploadEncryptedAttachment(accountId: String, deviceId: String, blob: EncryptedAttachmentBlob) async throws {
-        throw SyncServiceError.invalidOperationEnvelope("Remote attachment transport is not enabled on this server.")
+        struct Payload: Encodable { let blob: EncryptedAttachmentBlob; let privacy_generation: Int }
+        guard blob.collectionId != nil else { throw SyncServiceError.invalidOperationEnvelope("Image collection is missing.") }
+        _ = try await request("spaces/\(blob.spaceId.uuidString)/attachments", method: "POST",
+            body: jsonEncoder.encode(Payload(blob: blob, privacy_generation: privacyGenerations[blob.spaceId] ?? 0)), deviceId: deviceId)
     }
     public func downloadEncryptedAttachment(accountId: String, spaceId: UUID, attachmentId: UUID, deviceId: String) async throws -> EncryptedAttachmentBlob {
-        throw SyncServiceError.invalidOperationEnvelope("Remote attachment transport is not enabled on this server.")
+        struct Response: Decodable { let blob: EncryptedAttachmentBlob }
+        return try jsonDecoder.decode(Response.self, from: await request("spaces/\(spaceId.uuidString)/attachments/\(attachmentId.uuidString)", deviceId: deviceId)).blob
     }
     /// An explicitly opted-in device may resume a previously disabled Space.
     /// A new Space will be registered when its first wrapped key is published.
