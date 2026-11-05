@@ -19,6 +19,9 @@ public struct CollectionSettingsView: View {
     private let presentationStore: CollectionPresentationStore = .shared
 
     @ViewState private var draftName: String
+    @ViewState private var didLoadIconState = false
+    @ViewState private var metadataSaving = false
+    @ViewState private var metadataError: String?
     @ViewState private var colColorDropdownOpen = false
     @ViewState private var compactFieldDropdownOpen = false
     @ViewState private var addFormModeDropdownOpen = false
@@ -50,9 +53,11 @@ public struct CollectionSettingsView: View {
         viewModel.schema(for: schema.id) ?? schema
     }
 
-    private var tint: Color {
-        ArcaTheme.color(fromHex: liveSchema.colorHex)
-    }
+    private var palette: CollectionColorPalette { CollectionColorPalette(hex: liveSchema.colorHex) }
+    private var tint: Color { palette.fill }
+    private var ink: Color { palette.ink(for: colorScheme) }
+    private var trimmedName: String { draftName.trimmingCharacters(in: .whitespacesAndNewlines) }
+    private var nameNeedsSave: Bool { trimmedName != liveSchema.name }
 
     private var activeColorOption: CollectionColorOption {
         CollectionDesignCatalog.colorOption(for: liveSchema.colorHex)
@@ -91,16 +96,28 @@ public struct CollectionSettingsView: View {
         #if os(iOS)
         .toolbar(.hidden, for: .navigationBar)
         #endif
+        .disabled(metadataSaving)
+        .interactiveDismissDisabled(metadataSaving || nameNeedsSave)
         .onAppear {
+            guard !didLoadIconState else { return }
+            didLoadIconState = true
             syncInitialState()
         }
-        .onDisappear {
-            commitNameIfNeeded()
+        .onChange(of: liveSchema.name) { oldName, newName in
+            if trimmedName == oldName { draftName = newName }
+        }
+        .alert(isPresented: Binding(get: { metadataError != nil }, set: { if !$0 { metadataError = nil } })) {
+            Alert(
+                title: Text(metadataError ?? ""),
+                dismissButton: .default(Text(viewModel.language.localized("common.ok")))
+            )
         }
         .modifier(CollectionAddRecordPresenter(viewModel: viewModel, schema: $activeTestAddRecordSchema))
         .sheet(isPresented: $showingFieldEditor) {
             FieldEditorSheetView(viewModel: viewModel, collectionId: liveSchema.id)
+                #if os(macOS)
                 .frame(minWidth: 370, idealWidth: 400, minHeight: 580, idealHeight: 680)
+                #endif
         }
         .sheet(isPresented: $showingPrivacyConsent) {
             SensitivePrivacyConsentView(viewModel: viewModel, collectionId: liveSchema.id, fieldId: nil)
@@ -115,10 +132,12 @@ public struct CollectionSettingsView: View {
                     try presentationStore.saveCustomIconImage(fromFileURL: url, for: liveSchema.id)
                     iconUploadError = nil
                 } catch {
-                    iconUploadError = error.localizedDescription
+                    iconUploadError = viewModel.language.localized((error as? CollectionIconImageError)?.errorDescription ?? "Could not load the selected photo.")
                 }
             case .failure(let error):
-                iconUploadError = error.localizedDescription
+                if (error as? CocoaError)?.code != .userCancelled {
+                    iconUploadError = viewModel.language.localized("Could not load the selected photo.")
+                }
             }
         }
         #if os(iOS)
@@ -126,14 +145,14 @@ public struct CollectionSettingsView: View {
             guard let newItem else { return }
             Task { @MainActor in
                 do {
-                    if let data = try await newItem.loadTransferable(type: Data.self) {
-                        try presentationStore.saveCustomIconImageData(data, for: liveSchema.id)
-                        iconUploadError = nil
-                    } else {
-                        iconUploadError = viewModel.language.localized("Could not load the selected photo.")
-                    }
+                    let data = try await newItem.loadTransferable(type: Data.self)
+                    guard selectedPhotoPickerItem == newItem else { return }
+                    guard let data else { throw CollectionIconImageError.invalidImageData }
+                    try presentationStore.saveCustomIconImageData(data, for: schema.id)
+                    iconUploadError = nil
                 } catch {
-                    iconUploadError = error.localizedDescription
+                    guard selectedPhotoPickerItem == newItem else { return }
+                    iconUploadError = viewModel.language.localized((error as? CollectionIconImageError)?.errorDescription ?? "Could not load the selected photo.")
                 }
                 selectedPhotoPickerItem = nil
             }
@@ -167,12 +186,39 @@ public struct CollectionSettingsView: View {
         }
     }
 
-    private func commitNameIfNeeded() {
-        let trimmed = draftName.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty, trimmed != liveSchema.name else { return }
-        let collectionId = liveSchema.id
+    private func commitNameIfNeeded(dismissAfterSaving: Bool = false) {
+        guard !metadataSaving else { return }
+        let name = trimmedName
+        guard !name.isEmpty else {
+            metadataError = viewModel.language.localized("Enter a collection name.")
+            return
+        }
+        guard nameNeedsSave else {
+            if dismissAfterSaving { dismiss() }
+            return
+        }
+        saveMetadata(name: name) {
+            draftName = name
+            if dismissAfterSaving { dismiss() }
+        }
+    }
+
+    private func saveMetadata(
+        name: String? = nil, icon: String? = nil, color: String? = nil,
+        onSaved: @escaping () -> Void = {}
+    ) {
+        guard !metadataSaving else { return }
+        metadataSaving = true
         Task {
-            await viewModel.updateCollectionMetadata(collectionId: collectionId, name: trimmed)
+            defer { metadataSaving = false }
+            do {
+                try await viewModel.updateCollectionMetadata(
+                    collectionId: schema.id, name: name, iconName: icon, colorHex: color
+                )
+                onSaved()
+            } catch {
+                metadataError = viewModel.language.localized("Could not save collection settings. Try again.")
+            }
         }
     }
 
@@ -185,64 +231,69 @@ public struct CollectionSettingsView: View {
     // MARK: - Top Header Bar
 
     private var settingsHeaderBar: some View {
-        HStack(spacing: 10) {
-            Button {
-                commitNameIfNeeded()
-                dismiss()
-            } label: {
-                HStack(spacing: 4) {
-                    Image(systemName: "chevron.backward")
-                        .font(.footnote.weight(.bold))
-                    Text(liveSchema.name)
-                        .font(.subheadline.weight(.bold))
-                        .lineLimit(1)
+        let title = Text(viewModel.language.localized("Collection Settings"))
+            .font(.subheadline.weight(.bold))
+            .accessibilityAddTraits(.isHeader)
+
+        return Group {
+            if dynamicTypeSize.isAccessibilitySize {
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack {
+                        settingsBackButton
+                        Spacer()
+                        settingsDoneButton
+                    }
+                    title
                 }
-                .foregroundStyle(tint)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
-                .frame(minHeight: 44)
-                .background(Capsule().fill(tint.opacity(0.12)))
+            } else {
+                HStack(spacing: 10) {
+                    settingsBackButton
+                    Spacer()
+                    title
+                    Spacer()
+                    settingsDoneButton
+                }
             }
-            .buttonStyle(.plain)
-
-            Spacer()
-
-            Text(viewModel.language.localized("Collection Settings"))
-                .font(.subheadline.weight(.bold))
-                .accessibilityAddTraits(.isHeader)
-                .lineLimit(1)
-
-            Spacer()
-
-            Button {
-                commitNameIfNeeded()
-                dismiss()
-            } label: {
-                Text(viewModel.language.localized("Done"))
-                    .font(.subheadline.weight(.bold))
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 15)
-                    .padding(.vertical, 8)
-                    .frame(minWidth: 44, minHeight: 44)
-                    .background(Capsule().fill(tint))
-            }
-            .buttonStyle(.plain)
         }
         .padding(.horizontal, 18)
         .padding(.vertical, 10)
         .background(ArcaTheme.cardBackground(for: colorScheme).opacity(0.96))
-        .overlay(alignment: .bottom) {
-            Divider().opacity(0.45)
+        .overlay(alignment: .bottom) { Divider().opacity(0.45) }
+    }
+
+    private var settingsBackButton: some View {
+        Button {
+            commitNameIfNeeded(dismissAfterSaving: true)
+        } label: {
+            Image(systemName: "chevron.backward")
+                .font(.footnote.weight(.bold))
+                .foregroundStyle(ink)
+                .frame(minWidth: 44, minHeight: 44)
+                .background(Capsule().fill(tint.opacity(0.12)))
         }
+        .buttonStyle(.plain)
+        .accessibilityLabel(viewModel.language.localized("Back"))
+    }
+
+    private var settingsDoneButton: some View {
+        Button {
+            commitNameIfNeeded(dismissAfterSaving: true)
+        } label: {
+            Text(viewModel.language.localized("Done"))
+                .font(.subheadline.weight(.bold))
+                .foregroundStyle(palette.onFill)
+                .padding(.horizontal, 15)
+                .padding(.vertical, 8)
+                .frame(minWidth: 44, minHeight: 44)
+                .background(Capsule().fill(tint))
+        }
+        .buttonStyle(.plain)
     }
 
     // MARK: - Live Identity Card
 
     private var identityPreviewCard: some View {
         let recordCount = viewModel.recordCount(for: liveSchema.id)
-        let nameChanged = !draftName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            && draftName.trimmingCharacters(in: .whitespacesAndNewlines) != liveSchema.name
-
         return VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 14) {
                 CollectionBadgeView(schema: liveSchema, size: 52, presentationStore: presentationStore)
@@ -262,22 +313,21 @@ public struct CollectionSettingsView: View {
                         .foregroundStyle(.secondary)
                 }
 
-                Spacer(minLength: 4)
-
-                if nameChanged {
-                    Button {
-                        commitNameIfNeeded()
-                    } label: {
-                        Text(viewModel.language.localized("Save"))
-                            .font(.caption.weight(.bold))
-                            .foregroundStyle(.white)
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 7)
-                            .frame(minHeight: 44)
-                            .background(Capsule().fill(tint))
-                    }
-                    .buttonStyle(.plain)
+            }
+            if nameNeedsSave {
+                Button {
+                    commitNameIfNeeded()
+                } label: {
+                    Text(viewModel.language.localized("Save"))
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(palette.onFill)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 7)
+                        .frame(minWidth: 44, minHeight: 44)
+                        .background(Capsule().fill(tint))
                 }
+                .buttonStyle(.plain)
+                .frame(maxWidth: .infinity, alignment: .trailing)
             }
         }
         .padding(16)
@@ -351,12 +401,7 @@ public struct CollectionSettingsView: View {
                         let itemColor = ArcaTheme.color(fromHex: item.hex)
 
                         Button {
-                            colColorDropdownOpen = false
-                            let targetHex = item.hex
-                            let collectionId = liveSchema.id
-                            Task {
-                                await viewModel.updateCollectionMetadata(collectionId: collectionId, colorHex: targetHex)
-                            }
+                            saveMetadata(color: item.hex) { colColorDropdownOpen = false }
                         } label: {
                             HStack(spacing: 10) {
                                 Circle()
@@ -369,24 +414,22 @@ public struct CollectionSettingsView: View {
                                     .font(.footnote.weight(.bold))
                                     .foregroundStyle(.primary)
 
-                                Text("· " + viewModel.language.localized(item.tagKey))
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
+                                Spacer(minLength: 4)
 
-                                Spacer()
-
-                                Text(viewModel.language.localized("Sample"))
-                                    .font(.caption2.weight(.semibold))
-                                    .foregroundStyle(.white)
-                                    .padding(.horizontal, 8)
-                                    .padding(.vertical, 3)
-                                    .background(Capsule().fill(itemColor))
-                                    .accessibilityHidden(true)
+                                if !dynamicTypeSize.isAccessibilitySize {
+                                    Text(viewModel.language.localized("Sample"))
+                                        .font(.caption2.weight(.semibold))
+                                        .foregroundStyle(CollectionColorPalette(hex: item.hex).onFill)
+                                        .padding(.horizontal, 8)
+                                        .padding(.vertical, 3)
+                                        .background(Capsule().fill(itemColor))
+                                        .accessibilityHidden(true)
+                                }
 
                                 if isSelected {
                                     Image(systemName: "checkmark")
                                         .font(.caption.weight(.black))
-                                        .foregroundStyle(itemColor)
+                                        .foregroundStyle(CollectionColorPalette(hex: item.hex).ink(for: colorScheme))
                                         .frame(width: 16)
                                 } else {
                                     Color.clear.frame(width: 16, height: 16)
@@ -453,7 +496,7 @@ public struct CollectionSettingsView: View {
                     HStack(spacing: 12) {
                         Text(ArcaStrings.text("field.type." + selectedField.type.rawValue, language: viewModel.language).uppercased(with: viewModel.language.locale))
                             .font(.caption2.weight(.bold))
-                            .foregroundStyle(.white)
+                            .foregroundStyle(palette.onFill)
                             .padding(.horizontal, 8)
                             .padding(.vertical, 5)
                             .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(tint))
@@ -497,7 +540,7 @@ public struct CollectionSettingsView: View {
                                 HStack(spacing: 10) {
                                     Image(systemName: field.type.iconName)
                                         .font(.caption.weight(.semibold))
-                                        .foregroundStyle(tint)
+                                        .foregroundStyle(ink)
                                         .frame(width: 20)
 
                                     Text(field.label)
@@ -519,7 +562,7 @@ public struct CollectionSettingsView: View {
                                     if isSelected {
                                         Image(systemName: "checkmark")
                                             .font(.caption.weight(.black))
-                                            .foregroundStyle(tint)
+                                            .foregroundStyle(ink)
                                     }
                                 }
                                 .padding(.horizontal, 12)
@@ -584,7 +627,7 @@ public struct CollectionSettingsView: View {
                         Image(systemName: "arrow.forward")
                     }
                     .font(.caption.weight(.bold))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(palette.onFill)
                     .padding(.horizontal, 10)
                     .padding(.vertical, 6)
                     .frame(minHeight: 44)
@@ -601,7 +644,7 @@ public struct CollectionSettingsView: View {
                 HStack(spacing: 12) {
                     Image(systemName: currentMode.iconName)
                         .font(.footnote.weight(.bold))
-                        .foregroundStyle(.white)
+                        .foregroundStyle(palette.onFill)
                         .frame(width: 30, height: 30)
                         .background(RoundedRectangle(cornerRadius: 9, style: .continuous).fill(tint))
                         .accessibilityHidden(true)
@@ -645,7 +688,7 @@ public struct CollectionSettingsView: View {
                             HStack(spacing: 10) {
                                 Image(systemName: mode.iconName)
                                     .font(.caption.weight(.bold))
-                                    .foregroundStyle(.white)
+                                    .foregroundStyle(palette.onFill)
                                     .frame(width: 26, height: 26)
                                     .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(tint))
                                     .accessibilityHidden(true)
@@ -664,7 +707,7 @@ public struct CollectionSettingsView: View {
                                 if isSelected {
                                     Image(systemName: "checkmark")
                                         .font(.caption.weight(.black))
-                                        .foregroundStyle(tint)
+                                        .foregroundStyle(ink)
                                 }
                             }
                             .padding(.horizontal, 12)
@@ -711,7 +754,10 @@ public struct CollectionSettingsView: View {
                 .font(.footnote.weight(.bold))
                 .accessibilityAddTraits(.isHeader)
 
-            HStack(spacing: 4) {
+            LazyVGrid(columns: Array(
+                repeating: GridItem(.flexible(), spacing: 4),
+                count: dynamicTypeSize.isAccessibilitySize ? 2 : 4
+            ), spacing: 4) {
                 ForEach(CollectionIconTab.allCases) { tab in
                     let isSelected = iconTab == tab
                     Button {
@@ -719,8 +765,8 @@ public struct CollectionSettingsView: View {
                     } label: {
                         Text(viewModel.language.localized(tab.titleKey))
                             .font(.caption.weight(.semibold))
-                            .foregroundStyle(isSelected ? .white : .secondary)
-                            .frame(maxWidth: .infinity, minHeight: 38)
+                            .foregroundStyle(isSelected ? palette.onFill : .secondary)
+                            .frame(maxWidth: .infinity, minHeight: 44)
                             .background(
                                 RoundedRectangle(cornerRadius: 10, style: .continuous)
                                     .fill(isSelected ? tint : Color.clear)
@@ -728,7 +774,6 @@ public struct CollectionSettingsView: View {
                             .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
-                    .frame(minHeight: 44)
                     .accessibilityAddTraits(isSelected ? .isSelected : [])
                 }
             }
@@ -786,7 +831,7 @@ public struct CollectionSettingsView: View {
                         } label: {
                             Text(viewModel.language.localized(cat.titleKey))
                                 .font(.caption.weight(.semibold))
-                                .foregroundStyle(isSelected ? .white : .primary)
+                                .foregroundStyle(isSelected ? palette.onFill : .primary)
                                 .padding(.horizontal, 12)
                                 .padding(.vertical, 8)
                                 .frame(minHeight: 44)
@@ -811,13 +856,13 @@ public struct CollectionSettingsView: View {
                         } label: {
                             Text(viewModel.language.localized(sub.titleKey))
                                 .font(.caption.weight(.medium))
-                                .foregroundStyle(isSelected ? .white : .primary)
+                                .foregroundStyle(isSelected ? palette.onFill : .primary)
                                 .padding(.horizontal, 10)
                                 .padding(.vertical, 7)
                                 .frame(minHeight: 44)
                                 .background(
                                     RoundedRectangle(cornerRadius: 9, style: .continuous)
-                                        .fill(isSelected ? tint.opacity(0.84) : ArcaTheme.subtleFieldBackground(for: colorScheme))
+                                        .fill(isSelected ? tint : ArcaTheme.subtleFieldBackground(for: colorScheme))
                                 )
                         }
                         .buttonStyle(.plain)
@@ -835,7 +880,7 @@ public struct CollectionSettingsView: View {
                     } label: {
                         Image(systemName: item.symbol)
                             .font(.body.weight(.semibold))
-                            .foregroundStyle(isSelected ? .white : .primary)
+                            .foregroundStyle(isSelected ? palette.onFill : .primary)
                             .frame(minWidth: 44, minHeight: 44)
                             .background(
                                 RoundedRectangle(cornerRadius: 12, style: .continuous)
@@ -856,9 +901,8 @@ public struct CollectionSettingsView: View {
 
     private func selectLibraryIcon(_ symbol: String) {
         let collectionId = liveSchema.id
-        presentationStore.setIcon(.library(symbol: symbol), for: collectionId)
-        Task {
-            await viewModel.updateCollectionMetadata(collectionId: collectionId, iconName: symbol)
+        saveMetadata(icon: symbol) {
+            presentationStore.setIcon(.library(symbol: symbol), for: collectionId)
         }
     }
 
@@ -907,7 +951,7 @@ public struct CollectionSettingsView: View {
                 } label: {
                     Text(viewModel.language.localized("Use"))
                         .font(.caption.weight(.bold))
-                        .foregroundStyle(.white)
+                        .foregroundStyle(palette.onFill)
                         .padding(.horizontal, 14)
                         .frame(minHeight: 44)
                         .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(tint))
@@ -949,7 +993,7 @@ public struct CollectionSettingsView: View {
                         .font(.caption.weight(.semibold))
                         .frame(maxWidth: .infinity, minHeight: 44)
                 }
-                .buttonStyle(ArcaSecondaryButtonStyle(tint: tint, isFullWidth: true))
+                .buttonStyle(ArcaSecondaryButtonStyle(tint: ink, isFullWidth: true))
 
                 if hasCustomImage {
                     Button {
@@ -976,7 +1020,7 @@ public struct CollectionSettingsView: View {
         VStack(spacing: 6) {
             Image(systemName: "photo.badge.plus")
                 .font(.title3.weight(.semibold))
-                .foregroundStyle(tint)
+                .foregroundStyle(ink)
             Text(viewModel.language.localized("Upload Custom Photo / Icon"))
                 .font(.footnote.weight(.bold))
                 .foregroundStyle(.primary)
@@ -1015,7 +1059,7 @@ public struct CollectionSettingsView: View {
                 } label: {
                     Text(viewModel.language.format("Use “%@”", suggested))
                         .font(.caption.weight(.bold))
-                        .foregroundStyle(.white)
+                        .foregroundStyle(palette.onFill)
                         .padding(.horizontal, 12)
                         .padding(.vertical, 7)
                         .frame(minHeight: 44)
@@ -1146,7 +1190,7 @@ public struct CollectionSettingsView: View {
                         Text(viewModel.language.localized("Add Field"))
                     }
                     .font(.caption.weight(.bold))
-                    .foregroundStyle(tint)
+                    .foregroundStyle(ink)
                     .padding(.horizontal, 10)
                     .padding(.vertical, 6)
                     .frame(minHeight: 44)
@@ -1163,7 +1207,7 @@ public struct CollectionSettingsView: View {
                         HStack(spacing: 10) {
                             Image(systemName: field.type.iconName)
                                 .font(.caption.weight(.semibold))
-                                .foregroundStyle(tint)
+                                .foregroundStyle(ink)
                                 .frame(width: 22)
 
                             Text(field.label)
@@ -1173,7 +1217,7 @@ public struct CollectionSettingsView: View {
                             if field.isRequired {
                                 Text(viewModel.language.localized("Required"))
                                     .font(.caption2.weight(.semibold))
-                                    .foregroundStyle(tint)
+                                    .foregroundStyle(ink)
                                     .padding(.horizontal, 6)
                                     .padding(.vertical, 2)
                                     .background(Capsule().fill(tint.opacity(0.12)))
@@ -1215,7 +1259,7 @@ public struct CollectionSettingsView: View {
                 Label(viewModel.language.localized("Manage Fields"), systemImage: "slider.horizontal.3")
                     .frame(maxWidth: .infinity, minHeight: 44)
             }
-            .buttonStyle(ArcaSecondaryButtonStyle(tint: tint, isFullWidth: true))
+            .buttonStyle(ArcaSecondaryButtonStyle(tint: ink, isFullWidth: true))
         }
         .padding(16)
         .background(
@@ -1540,55 +1584,111 @@ public struct FieldEditorSheetView: View {
     }
 }
 
-// MARK: - Field Filter Builder Models (Backed by Real RecordFieldFilter Queries)
+// MARK: - Collection Field Filters
 
-public enum NumericComparisonOperator: String, CaseIterable, Sendable, Identifiable {
-    case between = "between"
-    case greaterOrEqual = "gt"
-    case lessOrEqual = "lt"
-    case equals = "eq"
+enum NumericComparisonOperator: String, CaseIterable, Sendable, Identifiable {
+    case between, greaterThan, lessThan, equals
 
-    public var id: String { rawValue }
+    var id: String { rawValue }
 
-    public var titleKey: String {
+    var titleKey: String {
         switch self {
         case .between: return "Between"
-        case .greaterOrEqual: return "Greater ≥"
-        case .lessOrEqual: return "Lesser ≤"
-        case .equals: return "Equals ="
+        case .greaterThan: return "Greater than"
+        case .lessThan: return "Less than"
+        case .equals: return "filter.text.equals"
+        }
+    }
+
+    func matches<Value: Comparable>(_ actual: Value, first: Value, second: Value?) -> Bool {
+        switch self {
+        case .between:
+            guard let second else { return false }
+            return (min(first, second)...max(first, second)).contains(actual)
+        case .greaterThan: return actual > first
+        case .lessThan: return actual < first
+        case .equals: return actual == first
         }
     }
 }
 
-public enum DateComparisonOperator: String, CaseIterable, Sendable, Identifiable {
-    case between = "between"
-    case onOrAfter = "after"
-    case onOrBefore = "before"
+enum DateComparisonOperator: String, CaseIterable, Sendable, Identifiable {
+    case between, after, before
 
-    public var id: String { rawValue }
+    var id: String { rawValue }
 
-    public var titleKey: String {
+    var titleKey: String {
         switch self {
         case .between: return "Between Dates"
-        case .onOrAfter: return "After Date"
-        case .onOrBefore: return "Before Date"
+        case .after: return "After Date"
+        case .before: return "Before Date"
+        }
+    }
+
+    func matches(_ actual: CalendarDate, first: CalendarDate, second: CalendarDate) -> Bool {
+        switch self {
+        case .between: return (min(first, second)...max(first, second)).contains(actual)
+        case .after: return actual > first
+        case .before: return actual < first
         }
     }
 }
 
-public struct AppliedCollectionFieldFilter: Identifiable, Equatable, Sendable {
-    public var id: String { filter.id }
-    public let fieldId: UUID
-    public let fieldLabel: String
-    public let summary: String
-    public let filter: RecordFieldFilter
+enum TextComparisonOperator: String, CaseIterable, Sendable, Identifiable {
+    case contains, equals, startsWith
 
-    public init(fieldId: UUID, fieldLabel: String, summary: String, filter: RecordFieldFilter) {
-        self.fieldId = fieldId
-        self.fieldLabel = fieldLabel
-        self.summary = summary
-        self.filter = filter
+    var id: String { rawValue }
+
+    var titleKey: String {
+        switch self {
+        case .contains: return "Contains"
+        case .equals: return "filter.text.equals"
+        case .startsWith: return "Starts with"
+        }
     }
+
+    func matches(_ actual: String, query: String, locale: Locale) -> Bool {
+        let options: String.CompareOptions = [.caseInsensitive, .diacriticInsensitive]
+        switch self {
+        case .contains: return actual.range(of: query, options: options, locale: locale) != nil
+        case .equals: return actual.compare(query, options: options, locale: locale) == .orderedSame
+        case .startsWith: return actual.range(of: query, options: options.union(.anchored), locale: locale) != nil
+        }
+    }
+}
+
+enum CollectionFieldPredicate: Equatable, Sendable {
+    case number(NumericComparisonOperator, Double, Double?)
+    case currency(NumericComparisonOperator, Decimal, Decimal?)
+    case date(DateComparisonOperator, CalendarDate, CalendarDate)
+    case text(TextComparisonOperator, String)
+    case query(RecordFieldFilter)
+
+    func matches(_ value: FieldValue?, locale: Locale) -> Bool {
+        switch (self, value) {
+        case let (.number(op, first, second), .number(actual)):
+            return actual.isFinite && op.matches(actual, first: first, second: second)
+        case let (.currency(op, first, second), .currency(actual)):
+            return op.matches(actual.decimalValue, first: first, second: second)
+        case let (.date(op, first, second), .date(actual)):
+            return op.matches(actual, first: first, second: second)
+        case let (.text(op, query), .shortText(actual)), let (.text(op, query), .longText(actual)):
+            return op.matches(actual, query: query, locale: locale)
+        case (.query, _):
+            // Query predicates have already been applied by the view model.
+            return true
+        default:
+            return false
+        }
+    }
+}
+
+private struct AppliedCollectionFieldFilter: Identifiable, Equatable, Sendable {
+    var id: UUID { fieldId }
+    let fieldId: UUID
+    let fieldType: FieldType
+    let summary: String
+    let predicate: CollectionFieldPredicate
 }
 
 // MARK: - Screen 10: Collection Record List with Normal/Compact/Box Modes, Search, Sort & Field Filters
@@ -1615,6 +1715,9 @@ public struct CollectionRecordListView: View {
     @ViewState private var draftNumericOp: NumericComparisonOperator = .between
     @ViewState private var draftNumberMinText: String = ""
     @ViewState private var draftNumberMaxText: String = ""
+    @ViewState private var draftTextOp: TextComparisonOperator = .contains
+    @ViewState private var draftText = ""
+    @ViewState private var filterInputError = false
     @ViewState private var draftDateOp: DateComparisonOperator = .between
     @ViewState private var draftFromDate: Date = Date()
     @ViewState private var draftToDate: Date = Calendar.current.date(byAdding: .year, value: 1, to: Date()) ?? Date()
@@ -1635,9 +1738,9 @@ public struct CollectionRecordListView: View {
         viewModel.schema(for: schema.id) ?? schema
     }
 
-    private var tint: Color {
-        ArcaTheme.color(fromHex: liveSchema.colorHex)
-    }
+    private var palette: CollectionColorPalette { CollectionColorPalette(hex: liveSchema.colorHex) }
+    private var tint: Color { palette.fill }
+    private var ink: Color { palette.ink(for: colorScheme) }
 
     private var currentListMode: CollectionListMode {
         presentationStore.listMode(for: liveSchema.id)
@@ -1646,9 +1749,9 @@ public struct CollectionRecordListView: View {
     private var filterableFields: [FieldDefinition] {
         liveSchema.activeFields.filter { field in
             switch field.type {
-            case .number, .currency, .date, .singleSelect, .multiSelect, .boolean, .rating:
+            case .shortText, .longText, .number, .currency, .date, .singleSelect, .multiSelect, .boolean, .rating:
                 return true
-            case .shortText, .longText, .dateTime, .attachment:
+            case .dateTime, .attachment:
                 return false
             }
         }
@@ -1663,39 +1766,55 @@ public struct CollectionRecordListView: View {
     }
 
     private var totalActiveFilterCount: Int {
-        var count = appliedFieldFilters.count
-        if favoritesOnly { count += 1 }
-        if hasAttachmentsOnly { count += 1 }
-        if selectedOptionFilter != nil { count += 1 }
-        return count
+        appliedFieldFilters.count + [favoritesOnly, hasAttachmentsOnly, selectedOptionFilter != nil].filter { $0 }.count
+    }
+
+    private func dropStaleFilters() {
+        let fields = filterableFields
+        appliedFieldFilters.removeAll { filter in
+            guard let field = fields.first(where: { $0.id == filter.fieldId && $0.type == filter.fieldType }) else { return true }
+            if case .query(.selectContains(_, let optionId)) = filter.predicate {
+                return !field.options.contains { $0.id == optionId }
+            }
+            return false
+        }
+        if let selected = selectedOptionFilter,
+           !fields.contains(where: { $0.id == selected.fieldId && $0.options.contains { $0.id == selected.optionId } }) {
+            selectedOptionFilter = nil
+        }
+        if let selected = selectedDraftFilterFieldId, !fields.contains(where: { $0.id == selected }) {
+            selectedDraftFilterFieldId = nil
+            filterInputError = false
+        }
     }
 
     private var filteredRecords: [RecordItem] {
         var filters: [RecordFieldFilter] = []
         if favoritesOnly { filters.append(.favoritesOnly) }
         if hasAttachmentsOnly { filters.append(.hasAttachments) }
-        if let sel = selectedOptionFilter {
-            filters.append(.selectContains(fieldId: sel.fieldId, optionId: sel.optionId))
+        if let selected = selectedOptionFilter {
+            filters.append(.selectContains(fieldId: selected.fieldId, optionId: selected.optionId))
         }
         for item in appliedFieldFilters {
-            if !filters.contains(item.filter) {
-                filters.append(item.filter)
+            if case .query(let filter) = item.predicate, !filters.contains(filter) {
+                filters.append(filter)
             }
         }
         let query = RecordQuery(
-            searchText: searchText,
-            collectionId: liveSchema.id,
-            filters: filters,
-            sort: sortCriterion
+            searchText: searchText, collectionId: liveSchema.id, filters: filters, sort: sortCriterion
         )
-        return viewModel.queryRecords(query)
+        let locale = viewModel.language.locale
+        return viewModel.queryRecords(query).filter { record in
+            appliedFieldFilters.allSatisfy { $0.predicate.matches(record.values[$0.fieldId], locale: locale) }
+        }
     }
 
     public var body: some View {
+        let records = filteredRecords
         ScrollView(showsIndicators: false) {
             VStack(alignment: .leading, spacing: 14) {
                 topNavigationBar
-                collectionHeroBanner
+                collectionHeroBanner(recordCount: records.count)
                 ArcaSearchBar(
                     text: $searchText,
                     placeholder: viewModel.language.format("Filter %@…", liveSchema.name)
@@ -1711,24 +1830,29 @@ public struct CollectionRecordListView: View {
                     activeAppliedFilterPillsStrip
                 }
 
-                recordsContentSection
+                recordsContentSection(records: records)
             }
             .padding(18)
         }
         .background(ArcaTheme.canvasBackground(for: colorScheme))
+        .onChange(of: liveSchema.fields) { _, _ in dropStaleFilters() }
         #if os(iOS)
         .toolbar(.hidden, for: .navigationBar)
         #endif
         .modifier(CollectionAddRecordPresenter(viewModel: viewModel, schema: $activeRecordSheetCollection))
         .sheet(isPresented: $showingCollectionSettings) {
             CollectionSettingsView(viewModel: viewModel, schema: liveSchema)
+            #if os(macOS)
                 .frame(minWidth: 370, idealWidth: 410, minHeight: 600, idealHeight: 720)
+            #endif
         }
         .sheet(isPresented: $showingExportSheet) {
             NavigationStack {
                 BackupExportRestoreScreenView(viewModel: viewModel)
             }
+            #if os(macOS)
             .frame(minWidth: 370, idealWidth: 400, minHeight: 540, idealHeight: 640)
+            #endif
         }
     }
 
@@ -1749,7 +1873,7 @@ public struct CollectionRecordListView: View {
                         .font(.subheadline.weight(.bold))
                         .lineLimit(1)
                 }
-                .foregroundStyle(tint)
+                .foregroundStyle(ink)
                 .padding(.horizontal, 12)
                 .padding(.vertical, 8)
                 .frame(minHeight: 44)
@@ -1799,135 +1923,117 @@ public struct CollectionRecordListView: View {
 
     // MARK: - Collection Hero Banner
 
-    private var collectionHeroBanner: some View {
-        HStack(spacing: 12) {
-            CollectionBadgeView(schema: liveSchema, size: 46, presentationStore: presentationStore)
-
-            VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: 6) {
-                    Text(liveSchema.name)
-                        .font(.headline.weight(.heavy))
-                        .foregroundStyle(.white)
-                        .lineLimit(1)
-                        .accessibilityAddTraits(.isHeader)
-                    if liveSchema.privacy != nil {
-                        Image(systemName: "hand.raised.fill")
-                            .font(.caption)
-                            .foregroundStyle(.white.opacity(0.9))
+    private func collectionHeroBanner(recordCount: Int) -> some View {
+        let layout = dynamicTypeSize.isAccessibilitySize
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 10))
+            : AnyLayout(HStackLayout(spacing: 12))
+        return layout {
+            HStack(alignment: .top, spacing: 12) {
+                CollectionBadgeView(schema: liveSchema, size: 46, presentationStore: presentationStore)
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(alignment: .firstTextBaseline, spacing: 6) {
+                        Text(liveSchema.name)
+                            .font(.headline.weight(.heavy))
+                            .fixedSize(horizontal: false, vertical: true)
+                            .accessibilityAddTraits(.isHeader)
+                        if liveSchema.privacy != nil {
+                            Image(systemName: "hand.raised.fill")
+                                .font(.caption)
+                                .accessibilityLabel(viewModel.language.localized("Collection privacy"))
+                        }
                     }
+                    Text(viewModel.language.format("count.records", recordCount))
+                        .font(.caption.weight(.medium))
                 }
-                Text(viewModel.language.format("count.records", filteredRecords.count))
-                    .font(.caption.weight(.medium))
-                    .foregroundStyle(.white.opacity(0.85))
+                .foregroundStyle(palette.onFill)
             }
-
-            Spacer(minLength: 8)
+            .frame(maxWidth: .infinity, alignment: .leading)
 
             Button {
                 activeRecordSheetCollection = liveSchema
             } label: {
-                HStack(spacing: 4) {
-                    Image(systemName: "plus")
-                        .font(.caption.weight(.black))
-                    Text(viewModel.language.localized("Add"))
-                        .font(.footnote.weight(.heavy))
-                }
-                .foregroundStyle( Color(red: 0.067, green: 0.110, blue: 0.086) )
-                .padding(.horizontal, 14)
-                .padding(.vertical, 9)
-                .frame(minHeight: 44)
-                .background(
-                    RoundedRectangle(cornerRadius: 13, style: .continuous)
-                        .fill(Color.white)
-                )
-                .shadow(color: Color.black.opacity(0.12), radius: 4, x: 0, y: 2)
+                Label(viewModel.language.localized("Add"), systemImage: "plus")
+                    .font(.footnote.weight(.heavy))
+                    .foregroundStyle(.black)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 9)
+                    .frame(minWidth: 44, minHeight: 44)
+                    .background(RoundedRectangle(cornerRadius: 13).fill(.white))
             }
             .buttonStyle(.plain)
             .accessibilityLabel(viewModel.language.format("Add Record to %@", liveSchema.name))
         }
         .padding(14)
-        .background(
-            RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .fill(
-                    LinearGradient(
-                        colors: [tint, tint.opacity(0.82)],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                )
-        )
+        .background(RoundedRectangle(cornerRadius: 20).fill(tint))
         .shadow(color: tint.opacity(0.24), radius: 8, x: 0, y: 4)
     }
 
-    // MARK: - 3-View Switcher (Normal | Compact | Box) + Filter Trigger
+    // MARK: - View Modes and Filter Trigger
 
     private var viewModeAndFilterTriggerBar: some View {
-        let mode = currentListMode
-        return HStack(spacing: 10) {
-            HStack(spacing: 3) {
-                ForEach(CollectionListMode.allCases) { itemMode in
-                    let isSelected = mode == itemMode
-                    Button {
-                        presentationStore.setListMode(itemMode, for: liveSchema.id)
-                    } label: {
-                        Text(viewModel.language.localized(itemMode.titleKey))
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(isSelected ? .white : .secondary)
-                            .padding(.horizontal, 11)
-                            .padding(.vertical, 7)
-                            .frame(minHeight: 38)
-                            .background(
-                                RoundedRectangle(cornerRadius: 9, style: .continuous)
-                                    .fill(isSelected ? tint : Color.clear)
-                            )
-                            .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .frame(minHeight: 44)
-                    .accessibilityAddTraits(isSelected ? .isSelected : [])
-                }
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 10) {
+                viewModeButtons.fixedSize(horizontal: true, vertical: false)
+                Spacer(minLength: 0)
+                filterTriggerButton.fixedSize(horizontal: true, vertical: false)
             }
-            .padding(3)
-            .background(
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(ArcaTheme.subtleFieldBackground(for: colorScheme))
-            )
-
-            Spacer()
-
-            Button {
-                filterPanelOpen.toggle()
-            } label: {
-                HStack(spacing: 6) {
-                    Image(systemName: "line.3.horizontal.decrease.circle")
-                        .font(.caption.weight(.bold))
-                    Text(viewModel.language.localized("Filter"))
-                        .font(.caption.weight(.bold))
-                    if totalActiveFilterCount > 0 {
-                        Text("\(totalActiveFilterCount)")
-                            .font(.caption2.weight(.bold))
-                            .foregroundStyle(.white)
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 2)
-                            .background(Capsule().fill(tint))
-                    }
+            VStack(alignment: .leading, spacing: 8) {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    viewModeButtons
                 }
-                .foregroundStyle(tint)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
-                .frame(minHeight: 44)
-                .background(
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .fill(filterPanelOpen ? tint.opacity(0.14) : Color.clear)
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .strokeBorder(tint.opacity(0.42), lineWidth: 1)
-                )
+                filterTriggerButton
             }
-            .buttonStyle(.plain)
-            .accessibilityAddTraits(filterPanelOpen ? .isSelected : [])
         }
+    }
+
+    private var viewModeButtons: some View {
+        HStack(spacing: 3) {
+            ForEach(CollectionListMode.allCases) { mode in
+                let isSelected = currentListMode == mode
+                Button {
+                    presentationStore.setListMode(mode, for: liveSchema.id)
+                } label: {
+                    Text(viewModel.language.localized(mode.titleKey))
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(isSelected ? palette.onFill : .secondary)
+                        .padding(.horizontal, 11)
+                        .frame(minWidth: 44, minHeight: 44)
+                        .background(RoundedRectangle(cornerRadius: 9).fill(isSelected ? tint : .clear))
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityAddTraits(isSelected ? .isSelected : [])
+            }
+        }
+        .padding(3)
+        .background(RoundedRectangle(cornerRadius: 12).fill(ArcaTheme.subtleFieldBackground(for: colorScheme)))
+    }
+
+    private var filterTriggerButton: some View {
+        Button {
+            filterPanelOpen.toggle()
+        } label: {
+            HStack(spacing: 6) {
+                Label(viewModel.language.localized("Filter"), systemImage: "line.3.horizontal.decrease.circle")
+                    .font(.caption.weight(.bold))
+                if totalActiveFilterCount > 0 {
+                    Text(totalActiveFilterCount, format: .number.locale(viewModel.language.locale))
+                        .font(.caption2.weight(.bold))
+                        .foregroundStyle(palette.onFill)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(Capsule().fill(tint))
+                }
+            }
+            .foregroundStyle(ink)
+            .padding(.horizontal, 12)
+            .frame(minWidth: 44, minHeight: 44)
+            .background(RoundedRectangle(cornerRadius: 12).fill(filterPanelOpen ? tint.opacity(0.14) : .clear))
+            .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(tint.opacity(0.42), lineWidth: 1))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(filterPanelOpen ? .isSelected : [])
     }
 
     // MARK: - Preserved Quick Sort & Filter Chips Strip
@@ -2003,18 +2109,13 @@ public struct CollectionRecordListView: View {
 
     private var fieldFilterDrawerCard: some View {
         VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Text(viewModel.language.localized("Filter by Field"))
-                    .font(.footnote.weight(.bold))
-                    .foregroundStyle(tint)
-                Spacer()
-                Text(viewModel.language.localized("Number · Date · Select"))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
+            Text(viewModel.language.localized("Filter by Field"))
+                .font(.footnote.weight(.bold))
+                .foregroundStyle(ink)
+                .accessibilityAddTraits(.isHeader)
 
             if filterableFields.isEmpty {
-                Text(viewModel.language.localized("Use the search bar above to filter text fields, or use Pinned and Files filters."))
+                Text(viewModel.language.localized("This collection has no fields to filter."))
                     .font(.caption)
                     .foregroundStyle(.secondary)
             } else {
@@ -2027,7 +2128,7 @@ public struct CollectionRecordListView: View {
                             } label: {
                                 Text(field.label)
                                     .font(.caption.weight(.semibold))
-                                    .foregroundStyle(isSelected ? .white : .primary)
+                                    .foregroundStyle(isSelected ? palette.onFill : .primary)
                                     .padding(.horizontal, 11)
                                     .padding(.vertical, 7)
                                     .frame(minHeight: 44)
@@ -2044,15 +2145,24 @@ public struct CollectionRecordListView: View {
 
                 if let draftField = activeDraftFilterField {
                     draftFilterInputControls(for: draftField)
+                    if filterInputError {
+                        Text(viewModel.language.localized("Enter a valid filter value."))
+                            .font(.caption)
+                            .foregroundStyle(.primary)
+                    }
 
-                    HStack(spacing: 8) {
-                        Spacer()
+                    let layout = dynamicTypeSize.isAccessibilitySize
+                        ? AnyLayout(VStackLayout(alignment: .trailing, spacing: 8))
+                        : AnyLayout(HStackLayout(spacing: 8))
+                    layout {
+                        if !dynamicTypeSize.isAccessibilitySize { Spacer() }
                         if totalActiveFilterCount > 0 {
                             Button {
                                 appliedFieldFilters.removeAll()
                                 favoritesOnly = false
                                 hasAttachmentsOnly = false
                                 selectedOptionFilter = nil
+                                filterInputError = false
                             } label: {
                                 Text(viewModel.language.localized("Reset"))
                                     .font(.caption.weight(.semibold))
@@ -2073,7 +2183,7 @@ public struct CollectionRecordListView: View {
                         } label: {
                             Text(viewModel.language.localized("Apply Filter"))
                                 .font(.caption.weight(.bold))
-                                .foregroundStyle(.white)
+                                .foregroundStyle(palette.onFill)
                                 .padding(.horizontal, 14)
                                 .padding(.vertical, 8)
                                 .frame(minHeight: 44)
@@ -2099,68 +2209,107 @@ public struct CollectionRecordListView: View {
     }
 
     private func selectDraftFilterField(_ field: FieldDefinition) {
+        guard activeDraftFilterField?.id != field.id else { return }
         selectedDraftFilterFieldId = field.id
-        if field.type == .singleSelect || field.type == .multiSelect {
-            draftSelectOptionId = field.options.first?.id ?? ""
+        draftNumberMinText = ""
+        draftNumberMaxText = ""
+        draftText = ""
+        draftSelectOptionId = field.options.first?.id ?? ""
+        draftMinimumRating = min(3, ratingLimit(for: field))
+        filterInputError = false
+    }
+
+    private func ratingLimit(for field: FieldDefinition) -> Int {
+        max(1, min(10, field.validation.maxRating))
+    }
+
+    private func comparisonMenu<Option: Identifiable & Hashable>(
+        _ label: String,
+        options: [Option],
+        selection: Binding<Option>,
+        titleKey: (Option) -> String
+    ) -> some View {
+        let currentTitle = viewModel.language.localized(titleKey(selection.wrappedValue))
+        return Menu {
+            Picker(label, selection: selection) {
+                ForEach(options) { option in
+                    Text(viewModel.language.localized(titleKey(option))).tag(option)
+                }
+            }
+        } label: {
+            HStack {
+                Text(currentTitle)
+                Spacer()
+                Image(systemName: "chevron.up.chevron.down").accessibilityHidden(true)
+            }
+            .foregroundStyle(ink)
+            .padding(.horizontal, 12)
+            .frame(minHeight: 44)
+            .background(RoundedRectangle(cornerRadius: 10).fill(ArcaTheme.subtleFieldBackground(for: colorScheme)))
+            .contentShape(Rectangle())
         }
+        .buttonStyle(.plain)
+        .accessibilityLabel(label)
+        .accessibilityValue(currentTitle)
     }
 
     @ViewBuilder
     private func draftFilterInputControls(for field: FieldDefinition) -> some View {
         switch field.type {
+        case .shortText, .longText:
+            VStack(alignment: .leading, spacing: 8) {
+                comparisonMenu(
+                    viewModel.language.localized("Comparison"),
+                    options: TextComparisonOperator.allCases,
+                    selection: $draftTextOp, titleKey: { $0.titleKey }
+                )
+                ArcaStyledTextField(viewModel.language.localized("Value"), text: $draftText, icon: "textformat")
+            }
+
         case .number, .currency:
             VStack(alignment: .leading, spacing: 8) {
-                Picker(viewModel.language.localized("Comparison"), selection: $draftNumericOp) {
-                    ForEach(NumericComparisonOperator.allCases) { op in
-                        Text(viewModel.language.localized(op.titleKey)).tag(op)
-                    }
-                }
-                .pickerStyle(.segmented)
+                comparisonMenu(
+                    viewModel.language.localized("Comparison"),
+                    options: NumericComparisonOperator.allCases,
+                    selection: $draftNumericOp, titleKey: { $0.titleKey }
+                )
 
-                HStack(spacing: 8) {
+                let layout = dynamicTypeSize.isAccessibilitySize
+                    ? AnyLayout(VStackLayout(alignment: .leading, spacing: 8))
+                    : AnyLayout(HStackLayout(spacing: 8))
+                layout {
                     ArcaStyledTextField(
-                        draftNumericOp == .between
-                            ? viewModel.language.localized("Min")
-                            : viewModel.language.localized("Value"),
+                        viewModel.language.localized(draftNumericOp == .between ? "Min" : "Value"),
                         text: $draftNumberMinText,
                         icon: "number"
                     )
                     if draftNumericOp == .between {
-                        ArcaStyledTextField(
-                            viewModel.language.localized("Max"),
-                            text: $draftNumberMaxText,
-                            icon: "number"
-                        )
+                        ArcaStyledTextField(viewModel.language.localized("Max"), text: $draftNumberMaxText, icon: "number")
                     }
                 }
             }
 
         case .date:
             VStack(alignment: .leading, spacing: 8) {
-                Picker(viewModel.language.localized("Date Range"), selection: $draftDateOp) {
-                    ForEach(DateComparisonOperator.allCases) { op in
-                        Text(viewModel.language.localized(op.titleKey)).tag(op)
-                    }
-                }
-                .pickerStyle(.segmented)
+                comparisonMenu(
+                    viewModel.language.localized("Date Range"),
+                    options: DateComparisonOperator.allCases,
+                    selection: $draftDateOp, titleKey: { $0.titleKey }
+                )
+                DatePicker(
+                    viewModel.language.localized("From"),
+                    selection: $draftFromDate,
+                    displayedComponents: [.date]
+                )
+                .frame(minHeight: 44)
 
-                HStack(spacing: 12) {
+                if draftDateOp == .between {
                     DatePicker(
-                        viewModel.language.localized("From"),
-                        selection: $draftFromDate,
+                        viewModel.language.localized("To"),
+                        selection: $draftToDate,
                         displayedComponents: [.date]
                     )
-                    .labelsHidden()
-
-                    if draftDateOp == .between {
-                        Text("–").foregroundStyle(.secondary)
-                        DatePicker(
-                            viewModel.language.localized("To"),
-                            selection: $draftToDate,
-                            displayedComponents: [.date]
-                        )
-                        .labelsHidden()
-                    }
+                    .frame(minHeight: 44)
                 }
             }
 
@@ -2168,14 +2317,14 @@ public struct CollectionRecordListView: View {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 6) {
                     ForEach(field.options) { opt in
-                        let currentId = draftSelectOptionId.isEmpty ? (field.options.first?.id ?? "") : draftSelectOptionId
+                        let currentId = field.options.first(where: { $0.id == draftSelectOptionId })?.id ?? field.options.first?.id
                         let isSelected = currentId == opt.id
                         Button {
                             draftSelectOptionId = opt.id
                         } label: {
                             Text(opt.label)
                                 .font(.caption.weight(.semibold))
-                                .foregroundStyle(isSelected ? .white : .primary)
+                                .foregroundStyle(isSelected ? palette.onFill : .primary)
                                 .padding(.horizontal, 11)
                                 .padding(.vertical, 7)
                                 .frame(minHeight: 44)
@@ -2198,7 +2347,7 @@ public struct CollectionRecordListView: View {
                     } label: {
                         Text(viewModel.language.localized(val ? "Yes" : "No"))
                             .font(.caption.weight(.bold))
-                            .foregroundStyle(isSelected ? .white : .primary)
+                            .foregroundStyle(isSelected ? palette.onFill : .primary)
                             .frame(maxWidth: .infinity, minHeight: 44)
                             .background(
                                 RoundedRectangle(cornerRadius: 10, style: .continuous)
@@ -2211,21 +2360,25 @@ public struct CollectionRecordListView: View {
             }
 
         case .rating:
-            HStack(spacing: 8) {
-                Text(viewModel.language.localized("At least"))
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                ForEach(1...field.validation.maxRating, id: \.self) { star in
-                    Button {
-                        draftMinimumRating = star
-                    } label: {
-                        Image(systemName: star <= draftMinimumRating ? "star.fill" : "star")
-                            .foregroundStyle(star <= draftMinimumRating ? ArcaTheme.warmAmber : .secondary)
-                            .frame(minWidth: 44, minHeight: 44)
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 4) {
+                    Text(viewModel.language.localized("At least"))
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                    let selected = min(draftMinimumRating, ratingLimit(for: field))
+                    ForEach(1...ratingLimit(for: field), id: \.self) { star in
+                        Button {
+                            draftMinimumRating = star
+                        } label: {
+                            Image(systemName: star <= selected ? "star.fill" : "star")
+                                .foregroundStyle(star <= selected ? ArcaTheme.warmAmber : .secondary)
+                                .frame(minWidth: 44, minHeight: 44)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel(star.formatted(.number.locale(viewModel.language.locale)))
+                        .accessibilityAddTraits(star == selected ? .isSelected : [])
                     }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("\(star)")
-                    .accessibilityAddTraits(star == draftMinimumRating ? .isSelected : [])
                 }
             }
 
@@ -2235,97 +2388,79 @@ public struct CollectionRecordListView: View {
     }
 
     private func applyCurrentDraftFilter(for field: FieldDefinition) {
+        guard let (predicate, detail) = draftPredicate(for: field) else {
+            filterInputError = true
+            return
+        }
+        filterInputError = false
+        upsertAppliedFilter(AppliedCollectionFieldFilter(
+            fieldId: field.id, fieldType: field.type, summary: "\(field.label): \(detail)", predicate: predicate
+        ))
+    }
+
+    private func draftPredicate(for field: FieldDefinition) -> (CollectionFieldPredicate, String)? {
         let locale = viewModel.language.locale
         switch field.type {
-        case .number, .currency:
-            let v1 = LocalizedNumericInput.number(draftNumberMinText, locale: locale)
-            let v2 = LocalizedNumericInput.number(draftNumberMaxText, locale: locale)
-            let recordFilter: RecordFieldFilter
-            let summary: String
-            switch draftNumericOp {
-            case .between:
-                guard v1 != nil || v2 != nil else { return }
-                let low = min(v1 ?? (v2 ?? 0), v2 ?? (v1 ?? 0))
-                let high = max(v1 ?? (v2 ?? 0), v2 ?? (v1 ?? 0))
-                recordFilter = .numberRange(fieldId: field.id, min: v1 != nil && v2 != nil ? low : v1, max: v1 != nil && v2 != nil ? high : v2)
-                summary = "\(field.label): \(draftNumberMinText)–\(draftNumberMaxText)"
-            case .greaterOrEqual:
-                guard let v1 else { return }
-                recordFilter = .numberRange(fieldId: field.id, min: v1, max: nil)
-                summary = "\(field.label) ≥ \(draftNumberMinText)"
-            case .lessOrEqual:
-                guard let v1 else { return }
-                recordFilter = .numberRange(fieldId: field.id, min: nil, max: v1)
-                summary = "\(field.label) ≤ \(draftNumberMinText)"
-            case .equals:
-                guard let v1 else { return }
-                recordFilter = .numberRange(fieldId: field.id, min: v1, max: v1)
-                summary = "\(field.label) = \(draftNumberMinText)"
-            }
-            upsertAppliedFilter(AppliedCollectionFieldFilter(
-                fieldId: field.id,
-                fieldLabel: field.label,
-                summary: summary,
-                filter: recordFilter
-            ))
+        case .shortText, .longText:
+            let text = draftText.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !text.isEmpty else { return nil }
+            let title = viewModel.language.localized(draftTextOp.titleKey)
+            return (.text(draftTextOp, text), "\(title) \(text)")
+
+        case .number:
+            let first = LocalizedNumericInput.number(draftNumberMinText, locale: locale)
+            let second = LocalizedNumericInput.number(draftNumberMaxText, locale: locale)
+            guard let first, draftNumericOp != .between || second != nil else { return nil }
+            return (.number(draftNumericOp, first, second), numericFilterSummary)
+
+        case .currency:
+            let first = LocalizedNumericInput.decimal(draftNumberMinText, locale: locale)
+            let second = LocalizedNumericInput.decimal(draftNumberMaxText, locale: locale)
+            guard let first, draftNumericOp != .between || second != nil else { return nil }
+            return (.currency(draftNumericOp, first, second), numericFilterSummary)
 
         case .date:
-            let d1 = CalendarDate(date: draftFromDate)
-            let d2 = CalendarDate(date: draftToDate)
-            let recordFilter: RecordFieldFilter
+            let first = CalendarDate(date: draftFromDate)
+            let second = CalendarDate(date: draftToDate)
             let summary: String
             switch draftDateOp {
             case .between:
-                let start = min(d1, d2)
-                let end = max(d1, d2)
-                recordFilter = .dateRange(fieldId: field.id, from: start, to: end)
-                summary = "\(field.label): \(start.formatted(locale: locale, style: .short))–\(end.formatted(locale: locale, style: .short))"
-            case .onOrAfter:
-                recordFilter = .dateRange(fieldId: field.id, from: d1, to: nil)
-                summary = "\(field.label) ≥ \(d1.formatted(locale: locale, style: .short))"
-            case .onOrBefore:
-                recordFilter = .dateRange(fieldId: field.id, from: nil, to: d1)
-                summary = "\(field.label) ≤ \(d1.formatted(locale: locale, style: .short))"
+                let start = min(first, second).formatted(locale: locale, style: .short)
+                let end = max(first, second).formatted(locale: locale, style: .short)
+                summary = "\(start) – \(end)"
+            case .after, .before:
+                let title = viewModel.language.localized(draftDateOp.titleKey)
+                summary = "\(title) \(first.formatted(locale: locale, style: .short))"
             }
-            upsertAppliedFilter(AppliedCollectionFieldFilter(
-                fieldId: field.id,
-                fieldLabel: field.label,
-                summary: summary,
-                filter: recordFilter
-            ))
+            return (.date(draftDateOp, first, second), summary)
 
         case .singleSelect, .multiSelect:
-            let optId = draftSelectOptionId.isEmpty ? (field.options.first?.id ?? "") : draftSelectOptionId
-            guard let opt = field.options.first(where: { $0.id == optId }) else { return }
-            let recordFilter = RecordFieldFilter.selectContains(fieldId: field.id, optionId: opt.id)
-            upsertAppliedFilter(AppliedCollectionFieldFilter(
-                fieldId: field.id,
-                fieldLabel: field.label,
-                summary: "\(field.label): \(opt.label)",
-                filter: recordFilter
-            ))
+            guard let option = field.options.first(where: { $0.id == draftSelectOptionId }) ?? field.options.first else {
+                return nil
+            }
+            return (.query(.selectContains(fieldId: field.id, optionId: option.id)), option.label)
 
         case .boolean:
-            let recordFilter = RecordFieldFilter.booleanEquals(fieldId: field.id, draftBooleanValue)
-            let yesNo = viewModel.language.localized(draftBooleanValue ? "Yes" : "No")
-            upsertAppliedFilter(AppliedCollectionFieldFilter(
-                fieldId: field.id,
-                fieldLabel: field.label,
-                summary: "\(field.label): \(yesNo)",
-                filter: recordFilter
-            ))
+            return (
+                .query(.booleanEquals(fieldId: field.id, draftBooleanValue)),
+                viewModel.language.localized(draftBooleanValue ? "Yes" : "No")
+            )
 
         case .rating:
-            let recordFilter = RecordFieldFilter.minimumRating(fieldId: field.id, draftMinimumRating)
-            upsertAppliedFilter(AppliedCollectionFieldFilter(
-                fieldId: field.id,
-                fieldLabel: field.label,
-                summary: "\(field.label): ≥ \(draftMinimumRating)★",
-                filter: recordFilter
-            ))
+            let minimum = min(draftMinimumRating, ratingLimit(for: field))
+            return (.query(.minimumRating(fieldId: field.id, minimum)), "≥ \(minimum.formatted(.number.locale(locale)))★")
 
-        default:
-            break
+        case .dateTime, .attachment:
+            return nil
+        }
+    }
+
+    private var numericFilterSummary: String {
+        switch draftNumericOp {
+        case .between: return "\(draftNumberMinText) – \(draftNumberMaxText)"
+        case .greaterThan: return "> \(draftNumberMinText)"
+        case .lessThan: return "< \(draftNumberMinText)"
+        case .equals: return "= \(draftNumberMinText)"
         }
     }
 
@@ -2347,10 +2482,10 @@ public struct CollectionRecordListView: View {
                             Image(systemName: "xmark")
                                 .font(.caption2.weight(.bold))
                         }
-                        .foregroundStyle(.white)
+                        .foregroundStyle(palette.onFill)
                         .padding(.horizontal, 11)
                         .padding(.vertical, 6)
-                        .frame(minHeight: 36)
+                        .frame(minWidth: 44, minHeight: 44)
                         .background(Capsule().fill(tint))
                     }
                     .buttonStyle(.plain)
@@ -2363,8 +2498,8 @@ public struct CollectionRecordListView: View {
     // MARK: - Records List Content (Normal | Compact | Box)
 
     @ViewBuilder
-    private var recordsContentSection: some View {
-        if filteredRecords.isEmpty {
+    private func recordsContentSection(records: [RecordItem]) -> some View {
+        if records.isEmpty {
             VStack(spacing: 14) {
                 CollectionBadgeView(schema: liveSchema, size: 52, presentationStore: presentationStore)
                 Text(viewModel.language.localized("No Records Match Your View"))
@@ -2372,7 +2507,7 @@ public struct CollectionRecordListView: View {
                 Button(viewModel.language.format("Add Record to %@", liveSchema.name)) {
                     activeRecordSheetCollection = liveSchema
                 }
-                .buttonStyle(ArcaPrimaryButtonStyle(tint: tint, isFullWidth: false))
+                .buttonStyle(ArcaPrimaryButtonStyle(tint: tint, foreground: palette.onFill, isFullWidth: false))
             }
             .frame(maxWidth: .infinity)
             .padding(28)
@@ -2383,19 +2518,19 @@ public struct CollectionRecordListView: View {
         } else {
             switch currentListMode {
             case .compact:
-                compactRecordsList
+                compactRecordsList(records: records)
             case .box:
-                boxRecordsGrid
+                boxRecordsGrid(records: records)
             case .normal:
-                normalRecordsList
+                normalRecordsList(records: records)
             }
         }
     }
 
-    private var compactRecordsList: some View {
+    private func compactRecordsList(records: [RecordItem]) -> some View {
         let secondaryField = presentationStore.resolvedSecondaryField(for: liveSchema)
         return VStack(spacing: 0) {
-            ForEach(Array(filteredRecords.enumerated()), id: \.element.id) { index, record in
+            ForEach(Array(records.enumerated()), id: \.element.id) { index, record in
                 NavigationLink {
                     RecordDetailView(viewModel: viewModel, recordId: record.id, schema: liveSchema)
                 } label: {
@@ -2413,7 +2548,7 @@ public struct CollectionRecordListView: View {
                             if !record.allAttachments.isEmpty {
                                 Image(systemName: "paperclip")
                                     .font(.caption2.weight(.semibold))
-                                    .foregroundStyle(tint)
+                                    .foregroundStyle(ink)
                             }
                         }
 
@@ -2426,7 +2561,7 @@ public struct CollectionRecordListView: View {
                             if !text.isEmpty {
                                 Text(text)
                                     .font(.caption.weight(.semibold))
-                                    .foregroundStyle(tint)
+                                    .foregroundStyle(ink)
                                     .lineLimit(1)
                                     .padding(.horizontal, 8)
                                     .padding(.vertical, 4)
@@ -2448,7 +2583,7 @@ public struct CollectionRecordListView: View {
                 }
                 .buttonStyle(.plain)
 
-                if index < filteredRecords.count - 1 {
+                if index < records.count - 1 {
                     Divider().opacity(0.45)
                 }
             }
@@ -2464,10 +2599,10 @@ public struct CollectionRecordListView: View {
         .shadow(color: Color.black.opacity(colorScheme == .dark ? 0.16 : 0.025), radius: 6, x: 0, y: 2)
     }
 
-    private var boxRecordsGrid: some View {
+    private func boxRecordsGrid(records: [RecordItem]) -> some View {
         let cols = Array(repeating: GridItem(.flexible(), spacing: 10), count: dynamicTypeSize.isAccessibilitySize ? 1 : 2)
         return LazyVGrid(columns: cols, spacing: 10) {
-            ForEach(filteredRecords) { record in
+            ForEach(records) { record in
                 NavigationLink {
                     RecordDetailView(viewModel: viewModel, recordId: record.id, schema: liveSchema)
                 } label: {
@@ -2549,7 +2684,7 @@ public struct CollectionRecordListView: View {
             HStack {
                 Text(badgeValueText ?? "v\(record.revision)")
                     .font(.caption.weight(.bold))
-                    .foregroundStyle(tint)
+                    .foregroundStyle(ink)
                     .lineLimit(1)
 
                 Spacer()
@@ -2573,9 +2708,9 @@ public struct CollectionRecordListView: View {
         .shadow(color: Color.black.opacity(colorScheme == .dark ? 0.16 : 0.025), radius: 6, x: 0, y: 2)
     }
 
-    private var normalRecordsList: some View {
+    private func normalRecordsList(records: [RecordItem]) -> some View {
         VStack(spacing: 10) {
-            ForEach(filteredRecords) { record in
+            ForEach(records) { record in
                 NavigationLink {
                     RecordDetailView(viewModel: viewModel, recordId: record.id, schema: liveSchema)
                 } label: {
@@ -2617,7 +2752,7 @@ public struct CollectionRecordListView: View {
                         if !record.allAttachments.isEmpty {
                             Image(systemName: "paperclip")
                                 .font(.caption.weight(.semibold))
-                                .foregroundStyle(tint)
+                                .foregroundStyle(ink)
                         }
                     }
 
@@ -2634,7 +2769,7 @@ public struct CollectionRecordListView: View {
                 if let secondaryText {
                     Text(secondaryText)
                         .font(.caption.weight(.bold))
-                        .foregroundStyle(tint)
+                        .foregroundStyle(ink)
                         .padding(.horizontal, 9)
                         .padding(.vertical, 4)
                         .background(Capsule().fill(tint.opacity(0.14)))
@@ -2729,9 +2864,9 @@ public struct AddEditRecordSheetView: View {
         viewModel.schema(for: schema.id) ?? schema
     }
 
-    private var tint: Color {
-        ArcaTheme.color(fromHex: liveSchema.colorHex)
-    }
+    private var palette: CollectionColorPalette { CollectionColorPalette(hex: liveSchema.colorHex) }
+    private var tint: Color { palette.fill }
+    private var ink: Color { palette.ink(for: colorScheme) }
 
     private var activeAddMode: CollectionAddFormMode {
         presentationStore.addFormMode(for: liveSchema.id)
@@ -2790,7 +2925,7 @@ public struct AddEditRecordSheetView: View {
                     }
 
                     // Dynamic Schema Fields Card
-                    ArcaSectionCard(title: viewModel.language.format("%@ Fields", liveSchema.name), icon: liveSchema.iconName, iconTint: tint) {
+                    ArcaSectionCard(title: viewModel.language.format("%@ Fields", liveSchema.name), icon: liveSchema.iconName, iconTint: ink) {
                         VStack(alignment: .leading, spacing: 16) {
                             ForEach(liveSchema.activeFields) { field in
                                 fieldEditorRow(for: field)
@@ -2806,7 +2941,7 @@ public struct AddEditRecordSheetView: View {
                     } label: {
                         Label(viewModel.language.localized(existingRecord == nil ? "Save Record" : "Save Changes"), systemImage: "checkmark.circle.fill")
                     }
-                    .buttonStyle(ArcaPrimaryButtonStyle(tint: tint))
+                    .buttonStyle(ArcaPrimaryButtonStyle(tint: tint, foreground: palette.onFill))
                 }
                 .padding(18)
             }
@@ -2844,10 +2979,10 @@ public struct AddEditRecordSheetView: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(existingRecord == nil ? viewModel.language.format("New %@", liveSchema.name) : viewModel.language.localized("Edit Record"))
                     .font(.subheadline.weight(.heavy))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(palette.onFill)
                 Text(viewModel.language.localized(activeAddMode == .fullScreen ? "Full-Screen Form Mode" : "Popup Card Mode"))
                     .font(.caption)
-                    .foregroundStyle(.white.opacity(0.85))
+                    .foregroundStyle(palette.onFill)
             }
             Spacer()
         }
@@ -2897,7 +3032,7 @@ public struct AddEditRecordSheetView: View {
                         .padding(.horizontal, 6)
                         .padding(.vertical, 2)
                         .background(Capsule().fill(tint.opacity(0.14)))
-                        .foregroundStyle(tint)
+                        .foregroundStyle(ink)
                 }
                 Spacer()
             }
@@ -2953,7 +3088,7 @@ public struct AddEditRecordSheetView: View {
                 HStack(spacing: 8) {
                     Text(field.validation.defaultCurrencyCode)
                         .font(.footnote.weight(.bold))
-                        .foregroundStyle(tint)
+                        .foregroundStyle(ink)
                         .padding(.horizontal, 10)
                         .padding(.vertical, 10)
                         .background(RoundedRectangle(cornerRadius: 10).fill(tint.opacity(0.12)))
@@ -3032,7 +3167,7 @@ public struct AddEditRecordSheetView: View {
                                     .padding(.vertical, 7)
                                     .frame(minHeight: 44)
                                     .background(Capsule().fill(selected ? tint : ArcaTheme.subtleFieldBackground(for: colorScheme)))
-                                    .foregroundStyle(selected ? .white : .primary)
+                                    .foregroundStyle(selected ? palette.onFill : .primary)
                             }
                             .buttonStyle(.plain)
                             .accessibilityAddTraits(selected ? .isSelected : [])
@@ -3060,7 +3195,7 @@ public struct AddEditRecordSheetView: View {
                                     .padding(.vertical, 7)
                                     .frame(minHeight: 44)
                                     .background(Capsule().fill(selected ? tint : ArcaTheme.subtleFieldBackground(for: colorScheme)))
-                                    .foregroundStyle(selected ? .white : .primary)
+                                    .foregroundStyle(selected ? palette.onFill : .primary)
                             }
                             .buttonStyle(.plain)
                             .accessibilityAddTraits(selected ? .isSelected : [])
@@ -3074,7 +3209,7 @@ public struct AddEditRecordSheetView: View {
                     return 0
                 }()
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 44))], spacing: 8) {
-                    ForEach(1...field.validation.maxRating, id: \.self) { star in
+                    ForEach(1...max(1, min(10, field.validation.maxRating)), id: \.self) { star in
                         Button {
                             draftValues[field.id] = .rating(star)
                         } label: {
@@ -3099,7 +3234,7 @@ public struct AddEditRecordSheetView: View {
                     ForEach(currentAttachments) { att in
                         HStack {
                             Image(systemName: "doc.fill")
-                                .foregroundStyle(tint)
+                                .foregroundStyle(ink)
                             Text(att.filename)
                                 .font(.footnote.weight(.medium))
                             Spacer()
@@ -3116,7 +3251,7 @@ public struct AddEditRecordSheetView: View {
                     } label: {
                         Label(viewModel.language.localized("Attach File from Files"), systemImage: "paperclip.badge.plus")
                     }
-                    .buttonStyle(ArcaSecondaryButtonStyle(tint: tint))
+                    .buttonStyle(ArcaSecondaryButtonStyle(tint: ink))
                     .disabled(viewModel.spaces.first(where: { $0.id == liveSchema.spaceId })?.storageMode != .localOnly)
                     if viewModel.spaces.first(where: { $0.id == liveSchema.spaceId })?.storageMode != .localOnly {
                         Text(viewModel.language.localized("File attachments are available in Local-Only Spaces. Cloud attachment upload is not available yet."))
@@ -3197,8 +3332,11 @@ public struct RecordDetailView: View {
         self.schema = schema
     }
 
+    private var palette: CollectionColorPalette { CollectionColorPalette(hex: liveSchema.colorHex) }
+    private var ink: Color { palette.ink(for: colorScheme) }
+
     public var body: some View {
-        let tint = ArcaTheme.color(fromHex: liveSchema.colorHex)
+        let tint = palette.fill
         Group {
             if let rec = record {
                 ScrollView(showsIndicators: false) {
@@ -3214,7 +3352,7 @@ public struct RecordDetailView: View {
                                     Text(liveSchema.name)
                                         .font(.subheadline.weight(.bold))
                                 }
-                                .foregroundStyle(tint)
+                                .foregroundStyle(ink)
                                 .padding(.horizontal, 12)
                                 .padding(.vertical, 8)
                                 .frame(minHeight: 44)
@@ -3242,7 +3380,7 @@ public struct RecordDetailView: View {
                             } label: {
                                 Text(viewModel.language.localized("Edit"))
                                     .font(.subheadline.weight(.bold))
-                                    .foregroundStyle(.white)
+                                    .foregroundStyle(palette.onFill)
                                     .padding(.horizontal, 16)
                                     .padding(.vertical, 8)
                                     .frame(minHeight: 44)
@@ -3337,7 +3475,9 @@ public struct RecordDetailView: View {
                 #endif
                 .sheet(isPresented: $showingEditSheet) {
                     AddEditRecordSheetView(viewModel: viewModel, schema: liveSchema, existingRecord: rec)
+                        #if os(macOS)
                         .frame(minWidth: 370, idealWidth: 400, minHeight: 580, idealHeight: 680)
+                        #endif
                 }
                 .sheet(isPresented: $showingLocalQRSheet) {
                     localQRSheet(for: rec)
@@ -3387,7 +3527,7 @@ public struct RecordDetailView: View {
                     Text(liveSchema.name.uppercased(with: viewModel.language.locale))
                         .font(.caption.weight(.bold))
                         .tracking(0.6)
-                        .foregroundStyle(tint)
+                        .foregroundStyle(ink)
                     Text(viewModel.language.format("%@ • Revision %d • Updated %@", liveSchema.name, rec.revision, rec.updatedAt.formatted(.dateTime.day().month().hour().minute().locale(viewModel.language.locale))))
                         .font(.caption2)
                         .foregroundStyle(.secondary)
@@ -3397,7 +3537,7 @@ public struct RecordDetailView: View {
 
                 Text("#\(String(rec.id.uuidString.prefix(6)).uppercased())")
                     .font(.system(.caption2, design: .monospaced).weight(.bold))
-                    .foregroundStyle(tint)
+                    .foregroundStyle(ink)
                     .padding(.horizontal, 8)
                     .padding(.vertical, 4)
                     .background(Capsule().fill(tint.opacity(0.14)))
@@ -3422,7 +3562,7 @@ public struct RecordDetailView: View {
                                 .foregroundStyle(.secondary)
                             Text(summary)
                                 .font(.subheadline.weight(.heavy))
-                                .foregroundStyle(field.type == .currency || field.type == .number ? tint : .primary)
+                                .foregroundStyle(field.type == .currency || field.type == .number ? ink : .primary)
                                 .lineLimit(2)
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -3475,7 +3615,7 @@ public struct RecordDetailView: View {
                         HStack(spacing: 5) {
                             Image(systemName: field.type.iconName)
                                 .font(.caption.weight(.semibold))
-                                .foregroundStyle(tint)
+                                .foregroundStyle(ink)
                             Text(field.label.uppercased(with: viewModel.language.locale))
                                 .font(.caption2.weight(.bold))
                                 .tracking(0.5)

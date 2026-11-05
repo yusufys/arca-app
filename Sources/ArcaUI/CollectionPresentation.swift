@@ -443,6 +443,52 @@ public enum CollectionDesignCatalog {
     }
 }
 
+struct CollectionColorPalette {
+    private let rgb: SIMD3<Double>
+
+    init(hex: String) {
+        let cleaned = hex.trimmingCharacters(in: CharacterSet.alphanumerics.inverted)
+        let value = (cleaned.count == 6 ? UInt64(cleaned, radix: 16) : nil) ?? 0x1F5D3F
+        rgb = SIMD3(Double((value >> 16) & 0xFF), Double((value >> 8) & 0xFF), Double(value & 0xFF)) / 255
+    }
+
+    var fill: Color { Self.color(rgb) }
+
+    var onFill: Color {
+        Self.luminance(rgb) < 0.179 ? .white : .black
+    }
+
+    func ink(for scheme: ColorScheme) -> Color {
+        // Check both the neutral surface and the tinted surface used for outlined controls.
+        let isDark = scheme == .dark
+        let surface = isDark ? SIMD3<Double>(0.10, 0.14, 0.13) : SIMD3<Double>(0.95, 0.93, 0.89)
+        let tintedSurface = surface * 0.86 + rgb * 0.14
+        let luminance = Self.luminance(tintedSurface)
+        let target = SIMD3<Double>(repeating: isDark ? 1 : 0)
+        for step in 0...20 {
+            let amount = Double(step) / 20
+            let mixed = rgb * (1 - amount) + target * amount
+            let inkLuminance = Self.luminance(mixed)
+            let contrast = (max(inkLuminance, luminance) + 0.05) / (min(inkLuminance, luminance) + 0.05)
+            if contrast >= 4.5, isDark ? inkLuminance > luminance : inkLuminance < luminance {
+                return Self.color(mixed)
+            }
+        }
+        return isDark ? .white : .black
+    }
+
+    private static func color(_ rgb: SIMD3<Double>) -> Color {
+        Color(red: rgb.x, green: rgb.y, blue: rgb.z)
+    }
+
+    private static func luminance(_ rgb: SIMD3<Double>) -> Double {
+        func linear(_ channel: Double) -> Double {
+            channel <= 0.04045 ? channel / 12.92 : pow((channel + 0.055) / 1.055, 2.4)
+        }
+        return 0.2126 * linear(rgb.x) + 0.7152 * linear(rgb.y) + 0.0722 * linear(rgb.z)
+    }
+}
+
 // MARK: - Persistent Presentation Store
 
 @available(macOS 14.0, iOS 17.0, *)
@@ -472,11 +518,7 @@ public final class CollectionPresentationStore {
         let dir = imageDirectoryURL ?? CatalogStore.defaultBaseDirectoryURL().appendingPathComponent("CollectionIcons", isDirectory: true)
         self.imageDirectoryURL = dir
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        DataProtectionConfigurator.applyProtection(
-            at: dir,
-            isSensitiveLocalOnly: false,
-            excludeFromUnencryptedBackup: false
-        )
+        try? Self.excludeIconDirectoryFromBackup(dir)
     }
 
     private func storageKey(for collectionId: UUID) -> String {
@@ -598,7 +640,7 @@ public final class CollectionPresentationStore {
         guard !trimmed.isEmpty else {
             return computeInitials(for: fallbackName)
         }
-        return String(trimmed.prefix(3)).uppercased()
+        return String(trimmed.uppercased().prefix(3))
     }
 
     // MARK: - Safe App-Private Bounded Custom Image Storage
@@ -629,6 +671,13 @@ public final class CollectionPresentationStore {
         let sourceOptions: [CFString: Any] = [kCGImageSourceShouldCache: false]
         guard let source = CGImageSourceCreateWithData(rawData as CFData, sourceOptions as CFDictionary) else {
             throw CollectionIconImageError.invalidImageData
+        }
+        guard let dimensions = Self.pixelDimensions(of: source) else {
+            throw CollectionIconImageError.invalidImageData
+        }
+        guard dimensions.width <= 16_384, dimensions.height <= 16_384,
+              dimensions.width * dimensions.height <= 64_000_000 else {
+            throw CollectionIconImageError.fileTooLarge
         }
         let thumbOptions: [CFString: Any] = [
             kCGImageSourceCreateThumbnailFromImageAlways: true,
@@ -664,19 +713,19 @@ public final class CollectionPresentationStore {
     @discardableResult
     public func saveCustomIconImageData(_ rawData: Data, for collectionId: UUID) throws -> String {
         let boundedData = try Self.prepareBoundedIconPNGData(from: rawData)
-        try? FileManager.default.createDirectory(at: imageDirectoryURL, withIntermediateDirectories: true)
         let filename = "\(collectionId.uuidString.lowercased()).png"
         let fileURL = imageDirectoryURL.appendingPathComponent(filename, isDirectory: false)
         do {
+            try FileManager.default.createDirectory(at: imageDirectoryURL, withIntermediateDirectories: true)
+            try Self.excludeIconDirectoryFromBackup(imageDirectoryURL)
+            #if os(iOS)
+            try boundedData.write(to: fileURL, options: [.atomic, .completeFileProtection])
+            #else
             try boundedData.write(to: fileURL, options: [.atomic])
+            #endif
         } catch {
             throw CollectionIconImageError.writeFailed
         }
-        DataProtectionConfigurator.applyProtection(
-            at: fileURL,
-            isSensitiveLocalOnly: false,
-            excludeFromUnencryptedBackup: false
-        )
         imageDataCache[collectionId] = boundedData
         updatePreferences(for: collectionId) {
             $0.iconPreference = .customImage(filename: filename)
@@ -687,35 +736,59 @@ public final class CollectionPresentationStore {
     public func saveCustomIconImage(fromFileURL url: URL, for collectionId: UUID) throws {
         let access = url.startAccessingSecurityScopedResource()
         defer { if access { url.stopAccessingSecurityScopedResource() } }
-        let values = try url.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey])
-        guard values.isRegularFile == true else {
-            throw CollectionIconImageError.invalidImageData
-        }
-        if let fileSize = values.fileSize, fileSize > Self.maxInputImageBytes {
-            throw CollectionIconImageError.fileTooLarge
-        }
-        let data = try Data(contentsOf: url)
+        let data = try Self.readImageFile(at: url, maxBytes: Self.maxInputImageBytes)
         _ = try saveCustomIconImageData(data, for: collectionId)
     }
 
     public func customImageData(for collectionId: UUID) -> Data? {
         _ = revisionCounter
         guard case .customImage(let filename) = preferences(for: collectionId).iconPreference,
-              Self.isSafeIconFilename(filename) else {
+              filename == "\(collectionId.uuidString.lowercased()).png" else {
             return nil
         }
         if let cached = imageDataCache[collectionId] {
             return cached
         }
         let fileURL = imageDirectoryURL.appendingPathComponent(filename, isDirectory: false)
-        guard FileManager.default.fileExists(atPath: fileURL.path),
-              let data = try? Data(contentsOf: fileURL),
-              !data.isEmpty,
-              data.count <= Self.maxStoredIconBytes else {
+        guard let data = try? Self.readImageFile(at: fileURL, maxBytes: Self.maxStoredIconBytes),
+              let source = CGImageSourceCreateWithData(data as CFData, [kCGImageSourceShouldCache: false] as CFDictionary),
+              let dimensions = Self.pixelDimensions(of: source),
+              dimensions.width <= Self.maxIconPixelDimension,
+              dimensions.height <= Self.maxIconPixelDimension else {
             return nil
         }
         imageDataCache[collectionId] = data
         return data
+    }
+
+    private nonisolated static func pixelDimensions(of source: CGImageSource) -> (width: Int, height: Int)? {
+        guard let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
+              let width = properties[kCGImagePropertyPixelWidth] as? Int,
+              let height = properties[kCGImagePropertyPixelHeight] as? Int,
+              width > 0, height > 0 else { return nil }
+        return (width, height)
+    }
+
+    private static func readImageFile(at url: URL, maxBytes: Int) throws -> Data {
+        let values = try url.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey, .fileSizeKey])
+        guard values.isRegularFile == true, values.isSymbolicLink != true else {
+            throw CollectionIconImageError.invalidImageData
+        }
+        guard (values.fileSize ?? 0) <= maxBytes else { throw CollectionIconImageError.fileTooLarge }
+        let file = try FileHandle(forReadingFrom: url)
+        defer { try? file.close() }
+        guard let data = try file.read(upToCount: maxBytes + 1), !data.isEmpty else {
+            throw CollectionIconImageError.emptyData
+        }
+        guard data.count <= maxBytes else { throw CollectionIconImageError.fileTooLarge }
+        return data
+    }
+
+    private static func excludeIconDirectoryFromBackup(_ url: URL) throws {
+        var directory = url
+        var values = URLResourceValues()
+        values.isExcludedFromBackup = true
+        try directory.setResourceValues(values)
     }
 
     private func removeStoredCustomImageFile(for collectionId: UUID) {
@@ -746,7 +819,7 @@ public struct CollectionBadgeView: View {
     }
 
     public var body: some View {
-        let tint = ArcaTheme.color(fromHex: schema.colorHex)
+        let tint = CollectionColorPalette(hex: schema.colorHex).fill
         let cornerRadius = max(10, size * 0.30)
         let pref = presentationStore.preferences(for: schema.id).iconPreference
 
@@ -785,7 +858,7 @@ public struct CollectionBadgeView: View {
             let clean = CollectionPresentationStore.sanitizeMonogram(letters, fallbackName: schema.name)
             Text(verbatim: clean)
                 .font(.system(size: size * 0.38, weight: .black, design: .rounded))
-                .foregroundStyle(.white)
+                .foregroundStyle(CollectionColorPalette(hex: schema.colorHex).onFill)
                 .lineLimit(1)
                 .minimumScaleFactor(0.5)
                 .padding(.horizontal, 4)
@@ -805,9 +878,20 @@ public struct CollectionBadgeView: View {
     }
 
     private func fallbackSymbolImage(symbol: String) -> some View {
-        Image(systemName: symbol.isEmpty ? "list.clipboard" : symbol)
+        Image(systemName: Self.validSymbol(symbol) ?? Self.validSymbol(schema.iconName) ?? "list.clipboard")
             .font(.system(size: size * 0.42, weight: .semibold))
-            .foregroundStyle(.white)
+            .foregroundStyle(CollectionColorPalette(hex: schema.colorHex).onFill)
+    }
+
+    private static func validSymbol(_ symbol: String) -> String? {
+        guard !symbol.isEmpty else { return nil }
+        #if canImport(UIKit)
+        return UIImage(systemName: symbol) == nil ? nil : symbol
+        #elseif canImport(AppKit)
+        return NSImage(systemSymbolName: symbol, accessibilityDescription: nil) == nil ? nil : symbol
+        #else
+        return symbol
+        #endif
     }
 
     private static func makeSwiftUIImage(from data: Data) -> Image? {
