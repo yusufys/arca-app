@@ -24,6 +24,7 @@ public struct ArcaApplication: App {
     public var body: some Scene {
         WindowGroup {
             ArcaRootContainerView(viewModel: viewModel)
+                .task { await viewModel.refreshSuggestedTemplates() }
                 #if os(macOS)
                 .frame(minWidth: 450, idealWidth: 480, maxWidth: .infinity, minHeight: 890, idealHeight: 920, maxHeight: .infinity)
                 #endif

@@ -12,6 +12,12 @@ App Store Connect record: **Arca - Personal Records**, Apple ID **6830898859**, 
 - Review access: Provide a disposable working review account and its recovery phrase in App Store Connect’s private review notes when cloud testing is required. Confirm the backend is reachable throughout review. Keep sign-in details out of Git.
 - Before submission: use the [English iPhone and iPad screenshots](artifacts/app-store-screenshots/en-US/); finish the age-rating and content-rights questionnaires, regional business details, privacy disclosures, and the encryption assessment for the final binary. Compare connected account identifiers, email, purchase history, cloud operations and RevenueCat diagnostic data with the actual configuration. Document the intended storefronts, pricing and renewal terms. Apple and RevenueCat credentials belong in their own consoles.
 
+## Suggested collections and AI design (build 5)
+
+Manage suggestions in the [Forge catalog editor](https://arca-api.on-forge.com/admin/collection-templates) with an Arca administrator account. Publish a collection to make it available at the next launch or gallery refresh. Unpublishing removes it from refreshed suggestions. Existing copies belong to the user.
+
+In **Home → New Collection → Create with AI**, describe the fields you need, prepare the prompt, then copy and paste it into ChatGPT, Claude or Gemini. Paste the response back in Arca, review the fields and create the collection. **I already have an AI reply** supports offline import. Only the description is sent to Arca for prompt preparation. Test a fenced JSON reply, an unknown field type, a required attachment in a synced Space, and an offline launch with and without a previously loaded catalog.
+
 ## What to test in TestFlight
 
 1. Install fresh. Create a Local-Only Space and a fictional warranty. Search, favorite, edit, force-quit and reopen it. Then update over a previous installation and verify the same record and attachment bytes.

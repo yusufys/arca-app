@@ -574,12 +574,12 @@ enum ArcaVerificationSuite {
         await vm.finishOnboarding(
             defaultMode: .arcaSync,
             acceptedCloudTerms: true,
-            selectedTemplates: [.vehicleMaintenance, .homeInventory, .warranties]
+            selectedTemplates: [StarterTemplateCatalog.warranties]
         )
         try check(vm.hasCompletedOnboarding, "Onboarding should complete")
-        try checkEqual(vm.spaces.count, 2, "Onboarding should seed Personal and Vehicles demo spaces")
+        try checkEqual(vm.spaces.count, 1, "Onboarding should create one personal Space")
         try check(!vm.spaces.contains { $0.containsSensitiveHealthTemplate }, "Onboarding must not seed a medical demo")
-        try check(!StarterTemplateCatalog.visibleDemos.contains { $0.id == .medicalVisits }, "Medical demos must stay out of both template pickers")
+        try check(!StarterTemplateCatalog.visibleDemos.contains { $0.id == StarterTemplateID.medicalVisits.rawValue }, "Medical demos must stay out of both template pickers")
 
         // Verify SpaceMetadata constructor defaults
         let regularDefaultSpace = SpaceMetadata(name: "Regular Project")
@@ -589,7 +589,7 @@ enum ArcaVerificationSuite {
 
         // Verify Insights report
         let insights = vm.currentSpaceInsights
-        try check(insights.totalRecords >= 2, "Default space should have seeded sample records")
+        try check(insights.totalRecords == 0 && vm.collectionsInCurrentSpace.map(\.name) == ["Warranties"], "Copy only selected collections, without fictional user records")
 
         // Verify Localization & RTL layout direction for Arabic
         try checkEqual(AppLanguage.arabic.layoutDirection, .rightToLeft)

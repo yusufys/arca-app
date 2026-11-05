@@ -23,6 +23,10 @@ func verifyWorkspaceRestart(mode: String, path: String) async throws {
     try check(vm.storageStartupError == nil, "Workspace failed to open: \(vm.storageStartupError ?? "")")
     if mode.hasPrefix("write") {
         await vm.finishOnboarding(defaultMode: .localOnly, acceptedCloudTerms: false, selectedTemplates: [])
+        let title = FieldDefinition(label: "Title", type: .shortText, isPrimaryTitle: true)
+        await vm.createCustomCollection(name: "Restart fixture", iconName: "folder", fields: [title])
+        guard let fixtureSchema = vm.collectionsInCurrentSpace.first else { throw VerificationFailure("Missing fixture") }
+        try await vm.saveRecord(existingRecord: nil, schema: fixtureSchema, values: [title.id: .shortText("Saved before restart")], isFavorite: false)
     }
     let identity = try WorkspaceIdentityStore(directory: directory, namespace: namespace)
     let fixtureURL = directory.appendingPathComponent("restart-fixture.json")

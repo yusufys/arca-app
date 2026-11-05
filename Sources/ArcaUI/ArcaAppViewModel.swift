@@ -56,6 +56,12 @@ public final class ArcaAppViewModel {
     public var currentSpaceId: UUID?
     public var collectionsBySpace: [UUID: [CollectionSchema]] = [:]
     public var recordsBySpace: [UUID: [RecordItem]] = [:]
+    public private(set) var suggestedTemplates: [StarterTemplate] = []
+    public private(set) var catalogStatus: String?
+    private var refreshingCatalog = false
+    private var loadedCatalogCache = false
+    public private(set) var completingOnboarding = false
+    public private(set) var onboardingError: String?
     public var publicSnapshots: [PublicRecordSnapshot] = []
     public var exportedArchiveURLs: [URL] = []
 
@@ -245,7 +251,7 @@ public final class ArcaAppViewModel {
             await finishOnboarding(
                 defaultMode: .arcaSync,
                 acceptedCloudTerms: true,
-                selectedTemplates: [.vehicleMaintenance, .homeInventory, .warranties]
+                selectedTemplates: []
             )
         }
     }
@@ -318,46 +324,95 @@ public final class ArcaAppViewModel {
     public func finishOnboarding(
         defaultMode: SpaceStorageMode,
         acceptedCloudTerms: Bool,
-        selectedTemplates: [StarterTemplateID]
+        selectedTemplates: [StarterTemplate]
     ) async {
-        let effectiveMode: SpaceStorageMode = (defaultMode == .arcaSync && acceptedCloudTerms) ? .arcaSync : .localOnly
-
-        // 1. Seed Primary Personal & Home Space
-        let personalBundle = SampleDataFactory.createDefaultPersonalSpace(storageMode: effectiveMode)
-        await persistSeededBundle(personalBundle)
-
-        // 2. Seed Vehicles Space if requested
-        if selectedTemplates.contains(.vehicleMaintenance) {
-            let vehicleBundle = SampleDataFactory.createVehiclesSpace(storageMode: effectiveMode)
-            await persistSeededBundle(vehicleBundle)
-        }
-
-        self.currentSpaceId = spaces.first?.id
-        self.hasCompletedOnboarding = true
-        await refreshOutboxCount()
-        if effectiveMode == .arcaSync && cloudAccountConnected { await synchronizeCurrentSpaceNow() }
-    }
-
-    private func persistSeededBundle(_ bundle: SampleDataFactory.SeededSpaceBundle) async {
-        do { _ = try persistedSpaceKeyRing(for: bundle.space.id) }
-        catch {
-            storageStartupError = error.localizedDescription
-            bannerState = .restoreValidationFailed(reason: error.localizedDescription)
+        guard !completingOnboarding, storageStartupError == nil else { return }
+        completingOnboarding = true
+        defer { completingOnboarding = false }
+        let mode: SpaceStorageMode = defaultMode == .arcaSync && acceptedCloudTerms ? .arcaSync : .localOnly
+        let space = SpaceMetadata(name: "Personal & Home", iconName: "house.fill", storageMode: mode,
+                                  cloudSyncAcceptedAt: mode == .arcaSync ? Date() : nil)
+        onboardingError = nil
+        do {
+            _ = try persistedSpaceKeyRing(for: space.id)
+            let store = SpaceStore(space: space, baseDirectoryURL: rootDirectoryURL)
+            for template in selectedTemplates {
+                let schema = template.instantiateSchema(for: space.id)
+                try Self.checkSupportedStorage(schema, in: space)
+                try await store.saveCollectionStrict(schema, enqueueSync: mode == .arcaSync)
+            }
+            // Publish the workspace only after every selected collection has a durable copy.
+            await catalogStore.saveSpace(space)
+            guard await catalogStore.fetchSpace(id: space.id) != nil else {
+                throw CollectionDesignError("Your Space could not be saved. Check available storage and retry.")
+            }
+            spaceStores[space.id] = store
+        } catch {
+            await catalogStore.deleteSpace(id: space.id)
+            onboardingError = error.localizedDescription
             return
         }
-        await catalogStore.saveSpace(bundle.space)
-        let store = await spaceStore(for: bundle.space.id)
-        let enqueue = bundle.space.storageMode == .arcaSync
-        for col in bundle.collections {
-            await store.saveCollection(col, enqueueSync: enqueue)
-        }
-        for rec in bundle.records {
-            if let col = bundle.collections.first(where: { $0.id == rec.collectionId }) {
-                try? await store.saveRecord(rec, schema: col, enqueueSync: enqueue)
+        spaces = await catalogStore.listSpaces()
+        await selectSpace(space.id)
+        hasCompletedOnboarding = true
+        if mode == .arcaSync && cloudAccountConnected { await synchronizeCurrentSpaceNow() }
+    }
+
+    public func refreshSuggestedTemplates() async {
+        guard !refreshingCatalog else { return }
+        refreshingCatalog = true
+        defer { refreshingCatalog = false }
+        let cache = rootDirectoryURL.appendingPathComponent("suggested-collections-v1.json")
+        if !loadedCatalogCache {
+            loadedCatalogCache = true
+            if let data = try? Data(contentsOf: cache), let templates = try? CollectionCatalogClient.templates(in: data) {
+                suggestedTemplates = templates
             }
         }
-        self.spaces = await catalogStore.listSpaces()
-        await reloadSpaceFromDisk(bundle.space.id)
+        do {
+            let data = try await CollectionCatalogClient(baseURL: syncBackend.baseURL).catalog()
+            let templates = try CollectionCatalogClient.templates(in: data)
+            try Task.checkCancellation()
+            suggestedTemplates = templates
+            catalogStatus = nil
+            try? data.write(to: cache, options: .atomic)
+        } catch {
+            guard !Task.isCancelled else { return }
+            catalogStatus = suggestedTemplates.isEmpty
+                ? "Suggestions are unavailable. Retry or create a collection manually."
+                : "Showing the last downloaded suggestions."
+        }
+    }
+
+    public func prepareAIAssistantPrompt(intent: String) async throws -> String {
+        try await CollectionCatalogClient(baseURL: syncBackend.baseURL).prompt(for: intent)
+    }
+
+    public func previewAICollectionReply(_ reply: String) throws -> CollectionSchema {
+        guard let space = currentSpace else { throw CollectionDesignError("Select a Space first.") }
+        let schema = try CollectionBlueprint.schema(fromReply: reply, spaceID: space.id)
+        try Self.checkSupportedStorage(schema, in: space)
+        return schema
+    }
+
+    public func createAICollection(from schema: CollectionSchema) async throws {
+        try await persistDesignedCollection(schema)
+    }
+
+    private func persistDesignedCollection(_ schema: CollectionSchema) async throws {
+        guard let space = currentSpace, space.id == schema.spaceId, storageStartupError == nil else {
+            throw CollectionDesignError("The destination Space changed. Preview the collection again.")
+        }
+        try Self.checkSupportedStorage(schema, in: space)
+        let store = await spaceStore(for: space.id)
+        try await store.saveCollectionStrict(schema, enqueueSync: space.storageMode == .arcaSync)
+        await reloadSpaceFromDisk(space.id)
+    }
+
+    private static func checkSupportedStorage(_ schema: CollectionSchema, in space: SpaceMetadata) throws {
+        if space.storageMode != .localOnly && schema.fields.contains(where: { $0.type == .attachment && $0.isRequired }) {
+            throw CollectionDesignError("Required attachments need a Local-Only Space. Choose one or make the attachment field optional.")
+        }
     }
 
     private func spaceStore(for spaceId: UUID) async -> SpaceStore {
@@ -438,27 +493,15 @@ public final class ArcaAppViewModel {
 
     // MARK: - Collection & Dynamic Schema Operations
 
-    public func createCollectionFromTemplate(_ template: StarterTemplate, createDedicatedLocalSpaceIfSensitive: Bool) async {
-        var targetSpaceId = currentSpace?.id ?? UUID()
+    public func createCollectionFromTemplate(_ template: StarterTemplate, createDedicatedLocalSpaceIfSensitive: Bool) async throws {
         if createDedicatedLocalSpaceIfSensitive {
-            let localSpace = SpaceMetadata(
-                name: "\(template.name) (Local)",
-                iconName: template.iconName,
-                accentHex: template.colorHex,
-                storageMode: .localOnly,
-                containsSensitiveHealthTemplate: template.id == .medicalVisits
-            )
-            await catalogStore.saveSpace(localSpace)
-            spaces = await catalogStore.listSpaces()
-            targetSpaceId = localSpace.id
-            currentSpaceId = localSpace.id
+            await createSpace(name: "\(template.name) (Local)", iconName: template.iconName, storageMode: .localOnly)
         }
-
-        let schema = template.instantiateSchema(for: targetSpaceId)
-        let store = await spaceStore(for: targetSpaceId)
-        let enqueue = spaces.first(where: { $0.id == targetSpaceId })?.storageMode == .arcaSync
-        await store.saveCollection(schema, enqueueSync: enqueue)
-        await reloadSpaceFromDisk(targetSpaceId)
+        guard let space = currentSpace, storageStartupError == nil,
+              !createDedicatedLocalSpaceIfSensitive || space.storageMode == .localOnly else {
+            throw CollectionDesignError("Select a Space before copying a collection.")
+        }
+        try await persistDesignedCollection(template.instantiateSchema(for: space.id))
     }
 
     public func createCustomCollection(name: String, iconName: String, fields: [FieldDefinition]) async {
@@ -473,16 +516,6 @@ public final class ArcaAppViewModel {
         let enqueue = currentSpace?.storageMode == .arcaSync
         await store.saveCollection(schema, enqueueSync: enqueue)
         await reloadSpaceFromDisk(spaceId)
-    }
-
-    public func importCollectionSchemaFromJSON(_ jsonString: String) throws {
-        guard let spaceId = currentSpace?.id else { return }
-        let schema = CloudPrivacyPolicy.resettingConsent(try OptionalCapabilityEngine.parseAndValidateImportedSchemaJSON(jsonString, for: spaceId))
-        Task {
-            let store = await spaceStore(for: spaceId)
-            await store.saveCollection(schema, enqueueSync: currentSpace?.storageMode == .arcaSync)
-            await reloadSpaceFromDisk(spaceId)
-        }
     }
 
     public func renameField(in collectionId: UUID, fieldId: UUID, newLabel: String) async {

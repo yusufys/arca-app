@@ -11,6 +11,7 @@ struct ArcaiOSApp: App {
     var body: some Scene {
         WindowGroup {
             ArcaRootContainerView(viewModel: viewModel)
+                .task { await viewModel.refreshSuggestedTemplates() }
                 .environment(\.arcaSubscriptionScreen, AnyView(ArcaPlanView(purchases: purchases, model: viewModel)))
                 .task(id: "\(viewModel.purchaseAccountID ?? "")/\(purchases.refreshID)") { await purchases.observe(viewModel) }
                 .task(id: scenePhase) {

@@ -10,7 +10,7 @@ public struct OnboardingContainerView: View {
     @ViewState private var currentStep: Int = 1
     @ViewState private var selectedMode: SpaceStorageMode = .arcaSync
     @ViewState private var acceptedCloudTerms: Bool = false
-    @ViewState private var selectedTemplates: Set<StarterTemplateID> = [.vehicleMaintenance, .homeInventory, .warranties]
+    @ViewState private var selectedTemplates: Set<String> = []
     @Environment(\.colorScheme) private var colorScheme
 
     public init(viewModel: ArcaAppViewModel) {
@@ -147,7 +147,7 @@ public struct OnboardingContainerView: View {
                             icon: "slider.horizontal.3",
                             tint: ArcaTheme.secondaryEmerald,
                             title: "Friendly Forms, No Database Jargon",
-                            subtitle: "Start with ready-made templates for vehicles, warranties, or home inventory. You can customize their fields."
+                            subtitle: "Choose a suggested collection or describe the collection you want to create."
                         )
                         Divider().opacity(0.5)
                         featureRow(
@@ -242,12 +242,16 @@ public struct OnboardingContainerView: View {
                     Text("Choose Starter Collections")
                         .font(.system(size: 22, weight: .bold, design: .rounded))
 
-                    Text("These demo collections contain fictional records so you can try Arca.")
+                    Text("Choose the collections to copy into your Space, or start with an empty Space.")
                         .font(.system(size: 13))
                         .foregroundStyle(.secondary)
                 }
 
-                ForEach(StarterTemplateCatalog.visibleDemos) { template in
+                if let message = viewModel.catalogStatus {
+                    Text(message).foregroundStyle(.secondary)
+                    Button("Retry") { Task { await viewModel.refreshSuggestedTemplates() } }
+                }
+                ForEach(viewModel.suggestedTemplates) { template in
                     let isSelected = selectedTemplates.contains(template.id)
                     let tintColor = ArcaTheme.color(fromHex: template.colorHex)
 
@@ -311,6 +315,10 @@ public struct OnboardingContainerView: View {
                     .buttonStyle(.plain)
                 }
 
+                if let message = viewModel.onboardingError {
+                    Text(message).foregroundStyle(ArcaTheme.dangerRed)
+                }
+
                 HStack(spacing: 10) {
                     Button("Back") {
                         withAnimation { currentStep = 2 }
@@ -322,13 +330,14 @@ public struct OnboardingContainerView: View {
                             await viewModel.finishOnboarding(
                                 defaultMode: selectedMode == .personalCloudBackup ? .localOnly : selectedMode,
                                 acceptedCloudTerms: acceptedCloudTerms,
-                                selectedTemplates: Array(selectedTemplates)
+                                selectedTemplates: viewModel.suggestedTemplates.filter { selectedTemplates.contains($0.id) }
                             )
                         }
                     } label: {
                         Label("Open My Spaces", systemImage: "sparkles")
                     }
                     .buttonStyle(ArcaPrimaryButtonStyle())
+                    .disabled(viewModel.completingOnboarding)
                 }
                 .padding(.top, 4)
             }

@@ -309,29 +309,6 @@ public enum OptionalCapabilityEngine {
         return (sId, cId, rId)
     }
 
-    /// Prompt users can copy into ChatGPT or another assistant to generate a validated Arca collection schema JSON.
-    public static func chatGPTSchemaPrompt(forTopic topic: String) -> String {
-        """
-        Generate a JSON collection schema for the Arca personal records app for the topic: "\(topic)".
-        Respond ONLY with valid JSON matching this structure:
-        {
-          "name": "Collection Name",
-          "iconName": "folder.fill",
-          "colorHex": "#2B5B84",
-          "fields": [
-            {
-              "label": "Primary Title",
-              "type": "short_text",
-              "isRequired": true,
-              "isPrimaryTitle": true,
-              "options": []
-            }
-          ]
-        }
-        Allowed field types: short_text, long_text, number, currency, date, date_time, boolean, single_select, multi_select, rating, attachment.
-        """
-    }
-
     public struct ImportedSchemaDTO: Codable, Sendable {
         public struct FieldDTO: Codable, Sendable {
             public var label: String

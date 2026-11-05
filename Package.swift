@@ -19,7 +19,8 @@ let package = Package(
     targets: [
         .target(
             name: "ArcaCore",
-            dependencies: []
+            dependencies: [],
+            resources: [.process("Resources")]
         ),
         .target(
             name: "ArcaCrypto",

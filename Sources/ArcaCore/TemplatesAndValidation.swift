@@ -12,7 +12,7 @@ public enum StarterTemplateID: String, CaseIterable, Codable, Sendable, Identifi
 }
 
 public struct StarterTemplate: Identifiable, Sendable, Equatable {
-    public let id: StarterTemplateID
+    public let id: String
     public let name: String
     public let subtitle: String
     public let iconName: String
@@ -21,6 +21,20 @@ public struct StarterTemplate: Identifiable, Sendable, Equatable {
     public let sensitivityDisclosure: String?
     public let recommendedStorageMode: SpaceStorageMode
     public let fields: [FieldDefinition]
+
+    public init(id: String, name: String, subtitle: String, iconName: String, colorHex: String,
+                sensitivityPosture: SensitivityPosture = .standard, sensitivityDisclosure: String? = nil,
+                recommendedStorageMode: SpaceStorageMode = .arcaSync, fields: [FieldDefinition]) {
+        self.id = id
+        self.name = name
+        self.subtitle = subtitle
+        self.iconName = iconName
+        self.colorHex = colorHex
+        self.sensitivityPosture = sensitivityPosture
+        self.sensitivityDisclosure = sensitivityDisclosure
+        self.recommendedStorageMode = recommendedStorageMode
+        self.fields = fields
+    }
 
     public func instantiateSchema(for spaceId: UUID) -> CollectionSchema {
         let clonedFields = fields.enumerated().map { index, field in
@@ -59,8 +73,8 @@ public enum StarterTemplateCatalog {
         medicalVisits
     ]
 
-    /// Starter collections offered by the iOS app. Older archives may contain other templates.
-    public static let visibleDemos = all.filter { $0.id != .medicalVisits }
+    /// Legacy demo fixtures for verification. The live iOS gallery reads its catalog from the backend.
+    public static let visibleDemos = all.filter { $0.id != StarterTemplateID.medicalVisits.rawValue }
 
     public static func template(for id: StarterTemplateID) -> StarterTemplate {
         switch id {
@@ -72,7 +86,7 @@ public enum StarterTemplateCatalog {
     }
 
     public static let vehicleMaintenance = StarterTemplate(
-        id: .vehicleMaintenance,
+        id: StarterTemplateID.vehicleMaintenance.rawValue,
         name: "Vehicle Maintenance",
         subtitle: "Service history, mileage, parts replaced, and shop receipts.",
         iconName: "car.fill",
@@ -100,7 +114,7 @@ public enum StarterTemplateCatalog {
     )
 
     public static let homeInventory = StarterTemplate(
-        id: .homeInventory,
+        id: StarterTemplateID.homeInventory.rawValue,
         name: "Home Inventory",
         subtitle: "Valuables, serial numbers, rooms, and replacement values for peace of mind.",
         iconName: "house.fill",
@@ -132,7 +146,7 @@ public enum StarterTemplateCatalog {
     )
 
     public static let warranties = StarterTemplate(
-        id: .warranties,
+        id: StarterTemplateID.warranties.rawValue,
         name: "Warranties",
         subtitle: "Track coverage expiration dates, proof of purchase, and support contacts.",
         iconName: "checkmark.shield.fill",
@@ -159,7 +173,7 @@ public enum StarterTemplateCatalog {
     )
 
     public static let medicalVisits = StarterTemplate(
-        id: .medicalVisits,
+        id: StarterTemplateID.medicalVisits.rawValue,
         name: "Medical Visits",
         subtitle: "Clinician notes, questions asked, follow-ups, and out-of-pocket costs.",
         iconName: "cross.case.fill",

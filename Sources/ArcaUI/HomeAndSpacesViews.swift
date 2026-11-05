@@ -9,6 +9,7 @@ public struct HomeScreenView: View {
 
     @ViewState private var showingSpaceManager = false
     @ViewState private var showingTemplateGallery = false
+    @ViewState private var showingAIAssistant = false
     @ViewState private var showingManualBuilder = false
     @ViewState private var activeRecordSheetCollection: CollectionSchema?
     @Environment(\.colorScheme) private var colorScheme
@@ -66,6 +67,10 @@ public struct HomeScreenView: View {
                 ManageSpacesSheetView(viewModel: viewModel)
                     .frame(minWidth: 370, idealWidth: 400, minHeight: 580, idealHeight: 680)
             }
+            .sheet(isPresented: $showingAIAssistant) {
+                AICollectionAssistantSheetView(viewModel: viewModel)
+                    .frame(minWidth: 370, idealWidth: 400, minHeight: 580, idealHeight: 680)
+            }
             .sheet(isPresented: $showingTemplateGallery) {
                 TemplateGallerySheetView(viewModel: viewModel)
                     .frame(minWidth: 370, idealWidth: 400, minHeight: 580, idealHeight: 680)
@@ -79,6 +84,10 @@ public struct HomeScreenView: View {
                     .frame(minWidth: 370, idealWidth: 400, minHeight: 580, idealHeight: 680)
             }
         }
+    }
+
+    private func creationText(_ key: String) -> String {
+        ArcaStrings.text(key, language: viewModel.language)
     }
 
     private var homeHeaderBar: some View {
@@ -116,14 +125,19 @@ public struct HomeScreenView: View {
 
                 Menu {
                     Button {
+                        showingAIAssistant = true
+                    } label: {
+                        Label(creationText("creation.aiMenu"), systemImage: "sparkles")
+                    }
+                    Button {
                         showingTemplateGallery = true
                     } label: {
-                        Label("New Collection from Template…", systemImage: "sparkles.rectangle.stack")
+                        Label(creationText("creation.templatesMenu"), systemImage: "sparkles.rectangle.stack")
                     }
                     Button {
                         showingManualBuilder = true
                     } label: {
-                        Label("Build Custom Collection…", systemImage: "slider.horizontal.3")
+                        Label(creationText("creation.manualMenu"), systemImage: "slider.horizontal.3")
                     }
                     Divider()
                     Button {
@@ -227,31 +241,22 @@ public struct HomeScreenView: View {
 
                 Spacer()
 
-                HStack(spacing: 10) {
-                    Button {
-                        showingTemplateGallery = true
-                    } label: {
-                        HStack(spacing: 4) {
-                            Image(systemName: "sparkles")
-                            Text("Templates")
-                        }
+                Menu {
+                    Button { showingAIAssistant = true } label: {
+                        Label(creationText("creation.aiMenu"), systemImage: "sparkles")
+                    }
+                    Button { showingTemplateGallery = true } label: {
+                        Label(creationText("creation.templatesMenu"), systemImage: "rectangle.stack")
+                    }
+                    Button { showingManualBuilder = true } label: {
+                        Label(creationText("creation.manualMenu"), systemImage: "slider.horizontal.3")
+                    }
+                } label: {
+                    Label(ArcaStrings.text("home.newCollection", language: viewModel.language), systemImage: "plus.circle.fill")
                         .font(.system(size: 12, weight: .semibold, design: .rounded))
                         .foregroundStyle(ArcaTheme.accent)
-                    }
-                    .buttonStyle(.plain)
-
-                    Button {
-                        showingManualBuilder = true
-                    } label: {
-                        HStack(spacing: 4) {
-                            Image(systemName: "plus.circle.fill")
-                            Text("Custom")
-                        }
-                        .font(.system(size: 12, weight: .semibold, design: .rounded))
-                        .foregroundStyle(ArcaTheme.accent)
-                    }
-                    .buttonStyle(.plain)
                 }
+                .buttonStyle(.plain)
             }
 
             if viewModel.collectionsInCurrentSpace.isEmpty {
@@ -260,22 +265,27 @@ public struct HomeScreenView: View {
                         Circle()
                             .fill(ArcaTheme.accent.opacity(0.10))
                             .frame(width: 56, height: 56)
-                        Image(systemName: "tray.fill")
+                        Image(systemName: "sparkles")
                             .font(.system(size: 24))
                             .foregroundStyle(ArcaTheme.accent)
                     }
-                    Text("No Collections in This Space Yet")
+                    Text(creationText("creation.emptyTitle"))
                         .font(.system(size: 16, weight: .bold, design: .rounded))
-                    Text("Start with a ready-made template for Vehicle Maintenance, Warranties, or Home Inventory. You can also build custom fields.")
+                    Text(creationText("creation.emptyBody"))
                         .font(.system(size: 12))
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
-                    HStack(spacing: 10) {
-                        Button("Use a Template") { showingTemplateGallery = true }
-                            .buttonStyle(ArcaPrimaryButtonStyle(isFullWidth: false))
-                        Button("Build Custom") { showingManualBuilder = true }
-                            .buttonStyle(ArcaSecondaryButtonStyle())
+                    Button { showingAIAssistant = true } label: {
+                        Label(creationText("creation.ai"), systemImage: "sparkles")
                     }
+                    .buttonStyle(ArcaPrimaryButtonStyle())
+                    HStack(spacing: 18) {
+                        Button(creationText("creation.templates")) { showingTemplateGallery = true }
+                        Button(creationText("creation.manual")) { showingManualBuilder = true }
+                    }
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(ArcaTheme.accent)
+                    .buttonStyle(.plain)
                 }
                 .padding(24)
                 .frame(maxWidth: .infinity)
@@ -746,22 +756,56 @@ public struct TemplateGallerySheetView: View {
 
     @ViewState private var showingMedicalDisclosureAlert = false
     @ViewState private var pendingTemplate: StarterTemplate?
-    @ViewState private var showingChatGPTImport = false
-    @ViewState private var pastedJSON = ""
-    @ViewState private var importError: String?
+    @ViewState private var isSaving = false
+    @ViewState private var saveError: String?
+
+    private func creationText(_ key: String) -> String {
+        ArcaStrings.text(key, language: viewModel.language)
+    }
 
     public var body: some View {
         VStack(spacing: 0) {
             ArcaSheetHeaderBar(
-                title: "Starter Templates",
-                subtitle: "Demo collections you can customize",
-                leadingLabel: "Close",
+                title: creationText("creation.templates"),
+                subtitle: creationText("creation.templateSubtitle"),
+                leadingLabel: isSaving ? nil : creationText("creation.close"),
                 leadingAction: { dismiss() }
             )
 
+            if let saveError {
+                Label(saveError, systemImage: "exclamationmark.circle")
+                    .font(.subheadline)
+                    .foregroundStyle(ArcaTheme.dangerRed)
+                    .padding(.horizontal, 18)
+                    .padding(.vertical, 10)
+                    .accessibilityIdentifier("templateGallery.error")
+            }
+
             ScrollView(showsIndicators: false) {
                 VStack(alignment: .leading, spacing: 16) {
-                    ForEach(StarterTemplateCatalog.visibleDemos) { template in
+                    if let status = viewModel.catalogStatus {
+                        ArcaSectionCard(title: creationText("creation.templateLibrary"), icon: "rectangle.stack") {
+                            Text(status)
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                            Button(creationText("creation.retry")) {
+                                Task { await viewModel.refreshSuggestedTemplates() }
+                            }
+                            .buttonStyle(ArcaSecondaryButtonStyle())
+                        }
+                    }
+                    if viewModel.suggestedTemplates.isEmpty {
+                        Text(creationText("creation.noTemplates"))
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                        if viewModel.catalogStatus == nil {
+                            Button(creationText("creation.retry")) {
+                                Task { await viewModel.refreshSuggestedTemplates() }
+                            }
+                            .buttonStyle(ArcaSecondaryButtonStyle())
+                        }
+                    }
+                    ForEach(viewModel.suggestedTemplates) { template in
                         let tint = ArcaTheme.color(fromHex: template.colorHex)
                         VStack(alignment: .leading, spacing: 12) {
                             HStack(spacing: 12) {
@@ -807,15 +851,18 @@ public struct TemplateGallerySheetView: View {
                                     pendingTemplate = template
                                     showingMedicalDisclosureAlert = true
                                 } else {
-                                    Task {
-                                        await viewModel.createCollectionFromTemplate(template, createDedicatedLocalSpaceIfSensitive: false)
-                                        dismiss()
-                                    }
+                                    saveTemplate(template, inDedicatedLocalSpace: false)
                                 }
                             } label: {
-                                Text("Add \(template.name)")
+                                if isSaving {
+                                    ProgressView().tint(.white)
+                                } else {
+                                    Text("Add \(template.name)")
+                                }
                             }
                             .buttonStyle(ArcaPrimaryButtonStyle(tint: tint))
+                            .disabled(isSaving)
+                            .accessibilityIdentifier("templateGallery.add.\(template.id)")
                         }
                         .padding(16)
                         .background(
@@ -827,77 +874,41 @@ public struct TemplateGallerySheetView: View {
                                 .strokeBorder(ArcaTheme.cardBorder(for: colorScheme), lineWidth: 1)
                         )
                     }
-
-                    // Optional capability: ChatGPT-assisted schema prompt + validated JSON import
-                    ArcaSectionCard(
-                        title: "AI-Assisted Schema Import",
-                        subtitle: "Copy a structured prompt for ChatGPT/Claude, then paste the returned JSON below. Arca validates every field before creating the collection.",
-                        icon: "sparkles"
-                    ) {
-                        Button {
-                            withAnimation { showingChatGPTImport.toggle() }
-                        } label: {
-                            HStack {
-                                Text(showingChatGPTImport ? "Hide JSON Schema Importer" : "Open Prompt & JSON Importer")
-                                Spacer()
-                                Image(systemName: showingChatGPTImport ? "chevron.up" : "chevron.down")
-                            }
-                        }
-                        .buttonStyle(ArcaSecondaryButtonStyle(isFullWidth: true))
-
-                        if showingChatGPTImport {
-                            Text(OptionalCapabilityEngine.chatGPTSchemaPrompt(forTopic: "Home Wine Cellar"))
-                                .font(.system(size: 11, design: .monospaced))
-                                .padding(10)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .background(RoundedRectangle(cornerRadius: 10).fill(ArcaTheme.subtleFieldBackground(for: colorScheme)))
-
-                            TextEditor(text: $pastedJSON)
-                                .font(.system(size: 12, design: .monospaced))
-                                .frame(height: 90)
-                                .padding(6)
-                                .background(RoundedRectangle(cornerRadius: 10).fill(ArcaTheme.subtleFieldBackground(for: colorScheme)))
-
-                            if let importError {
-                                Text(importError)
-                                    .font(.caption)
-                                    .foregroundStyle(ArcaTheme.dangerRed)
-                            }
-
-                            Button("Validate & Import Schema") {
-                                do {
-                                    try viewModel.importCollectionSchemaFromJSON(pastedJSON)
-                                    dismiss()
-                                } catch {
-                                    importError = error.localizedDescription
-                                }
-                            }
-                            .buttonStyle(ArcaPrimaryButtonStyle())
-                        }
-                    }
                 }
                 .padding(18)
             }
             .background(ArcaTheme.canvasBackground(for: colorScheme))
         }
+        .interactiveDismissDisabled(isSaving)
+        .task { await viewModel.refreshSuggestedTemplates() }
         .alert("Sensitive Collection Storage Choice", isPresented: $showingMedicalDisclosureAlert, presenting: pendingTemplate) { template in
             Button("Create in New Local-Only Space (Recommended)") {
-                Task {
-                    await viewModel.createCollectionFromTemplate(template, createDedicatedLocalSpaceIfSensitive: true)
-                    dismiss()
-                }
+                saveTemplate(template, inDedicatedLocalSpace: true)
             }
             Button("Add to Current Space Anyway") {
-                Task {
-                    await viewModel.createCollectionFromTemplate(template, createDedicatedLocalSpaceIfSensitive: false)
-                    dismiss()
-                }
+                saveTemplate(template, inDedicatedLocalSpace: false)
             }
             Button("Cancel", role: .cancel) {}
         } message: { template in
             Text(template.sensitivityDisclosure ?? "This template is marked sensitive and defaults to Local-Only storage.")
         }
     }
+
+    private func saveTemplate(_ template: StarterTemplate, inDedicatedLocalSpace: Bool) {
+        guard !isSaving else { return }
+        isSaving = true
+        saveError = nil
+        Task { @MainActor in
+            defer { isSaving = false }
+            do {
+                try await viewModel.createCollectionFromTemplate(template, createDedicatedLocalSpaceIfSensitive: inDedicatedLocalSpace)
+                dismiss()
+            } catch {
+                saveError = error.localizedDescription
+            }
+        }
+    }
+
 }
 
 // MARK: - Screen 8: Manual Collection Builder
