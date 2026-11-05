@@ -15334,9 +15334,8 @@
         }
       }
     },
-    "Equals": {
+    "filter.text.equals": {
       "extractionState": "manual",
-      "shouldGenerateSymbol": false,
       "localizations": {
         "en": {
           "stringUnit": {
