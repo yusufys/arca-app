@@ -2,6 +2,17 @@
 
 App Store Connect record: **Arca - Personal Records**, Apple ID **6830898859**, bundle **app.arca.personalrecords**. Internal beta first. Use fictional data and the supplied build number in all feedback.
 
+## Native redesign and Arabic typography — build 7
+
+- Home collection cards expose Add/View/Edit. Collection records support Normal, Compact and Box layouts, search/sort and text/number/date filters. Collection settings save name, color, icon, compact secondary field and popup/full-screen entry preferences. App accent and light/dark/system appearance remain independent of collection colors.
+- Arabic app text uses bundled IBM Plex Sans Arabic with semantic Dynamic Type and Bold Text. English and Turkish retain native system fonts. At accessibility text sizes the bottom bar uses compact icons with spoken labels and the iOS large-content viewer.
+- Follow-up review fixed metadata write failures and concurrent schema edits, appearance restoration, filter boundaries, icon handling and large-text layout. Existing encryption, sensitive consent, AI creation, billing and sync paths remain connected.
+- Validation: 61 Swift tests, zero failures, two existing opt-in HTTP skips; eight distinct iOS UI scenarios passed across acceptance and focused reruns. These cover Arabic onboarding/keyboard, language switching, EN/AR/TR key screens, dark/large text, Home actions/AI input, and records/layout/name/appearance after process termination. Screenshot inspection complemented selected accessibility-label audits. See [acceptance evidence](docs/design/REDESIGN_ACCEPTANCE.md).
+- [PR #3](https://github.com/yusufys/arca-app/pull/3) integrates implementation PRs #1 and #2 and the two follow-up reviews. Merged to main as `24e600e`; final app source is `3e7934e` (later commits record evidence).
+- Signed Release 1.0 (7) uploaded successfully on November 6, 2026. Archive verification confirmed the production bundle, live Forge endpoint, Apple RevenueCat key, all four Arabic font files/license and EN/AR/TR resources. Apple processed build ID `1d06ecfe-250c-42b4-b4c3-460567e5dc01` as VALID. Internal and external states are both IN_BETA_TESTING, with Arca Internal and Testers assigned and automatic tester notification enabled. The public link is https://testflight.apple.com/join/mUFpH7YX. Build 6 remains available.
+- Designer update: [50 native screen captures and an offline gallery](artifacts/ux-handoff-build7/index.html), plus [the ZIP](artifacts/Arca-UX-Handoff-Build7.zip). This covers updated flows and Arabic onboarding; the earlier complete flow pack remains separate. All pictured records are fictional fixtures.
+- Physical-device VoiceOver/Switch Control, actual StoreKit purchases/RevenueCat paywall variants and live two-device sync were not newly certified by this UI pass. Continue those release checks using the new TestFlight build.
+
 ## Localization and accessibility — build 6
 
 - Native Apple String Catalogs now supply English, Arabic and Turkish UI copy, plural forms, core validation and the Face ID permission explanation. Arabic uses RTL layout; saved personal records are never translated by language changes.
