@@ -14,6 +14,10 @@ App Store Connect record: **Arca - Personal Records**, Apple ID **6830898859**, 
 
 ## Suggested collections and AI design (build 5)
 
+Apple processed build 5 as valid on November 5. App Store Connect requests the owner’s export compliance answer before it can be distributed. Build 4 is separately queued for external beta review.
+
+Simulator acceptance covered the published gallery, editing a copied template, prompt preparation against Forge, opening the three assistant sites, native cross-app paste of a fenced reply, invalid schema rejection, and saving then reopening a four-field collection offline. A separate clipboard-writer app supplied the reply for the native paste test; no test prompt was submitted to a provider.
+
 Manage suggestions in the [Forge catalog editor](https://arca-api.on-forge.com/admin/collection-templates) with an Arca administrator account. Publish a collection to make it available at the next launch or gallery refresh. Unpublishing removes it from refreshed suggestions. Existing copies belong to the user.
 
 In **Home → New Collection → Create with AI**, describe the fields you need, prepare the prompt, then copy and paste it into ChatGPT, Claude or Gemini. Paste the response back in Arca, review the fields and create the collection. **I already have an AI reply** supports offline import. Only the description is sent to Arca for prompt preparation. Test a fenced JSON reply, an unknown field type, a required attachment in a synced Space, and an offline launch with and without a previously loaded catalog.
