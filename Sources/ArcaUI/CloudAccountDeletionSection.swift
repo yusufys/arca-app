@@ -9,25 +9,25 @@ struct CloudAccountDeletionSection: View {
 
     var body: some View {
         if viewModel.cloudAccountConnected || viewModel.hasPendingAccountDeletionCleanup || resultMessage != nil {
-            ArcaSectionCard(title: "Cloud Account", icon: "person.crop.circle.badge.xmark", iconTint: ArcaTheme.dangerRed) {
-                Text("Delete your cloud account, encrypted remote records, recovery material and device registrations. Local records stay on this device in Local-Only Spaces. Any App Store subscription must be managed separately.")
+            ArcaSectionCard(title: viewModel.language.localized("Cloud Account"), icon: "person.crop.circle.badge.xmark", iconTint: ArcaTheme.dangerRed) {
+                Text(viewModel.language.localized("Delete your cloud account, encrypted remote records, recovery material and device registrations. Local records stay on this device in Local-Only Spaces. Any App Store subscription must be managed separately."))
                     .font(.footnote).foregroundStyle(.secondary)
-                if let resultMessage { Text(resultMessage).font(.footnote) }
+                if let resultMessage { Text(viewModel.language.localized(resultMessage)).font(.footnote) }
                 if let errorMessage { Text(errorMessage).font(.footnote).foregroundStyle(ArcaTheme.dangerRed) }
                 if viewModel.hasPendingAccountDeletionCleanup {
-                    Button("Finish Local Cleanup") { performDeletion() }
+                    Button(viewModel.language.localized("Finish Local Cleanup")) { performDeletion() }
                         .disabled(viewModel.isDeletingCloudAccount || viewModel.isSyncing)
                 } else if viewModel.cloudAccountConnected {
-                    Button("Delete Cloud Account", role: .destructive) { confirmDeletion = true }
+                    Button(viewModel.language.localized("Delete Cloud Account"), role: .destructive) { confirmDeletion = true }
                         .disabled(viewModel.isDeletingCloudAccount || viewModel.isSyncing)
                 }
-                if viewModel.isDeletingCloudAccount { ProgressView("Completing account deletion…") }
+                if viewModel.isDeletingCloudAccount { ProgressView(viewModel.language.localized("Completing account deletion…")) }
             }
-            .confirmationDialog("Permanently delete your cloud account?", isPresented: $confirmDeletion, titleVisibility: .visible) {
-                Button("Delete Account and Remote Data", role: .destructive) { performDeletion() }
-                Button("Cancel", role: .cancel) {}
+            .confirmationDialog(viewModel.language.localized("Permanently delete your cloud account?"), isPresented: $confirmDeletion, titleVisibility: .visible) {
+                Button(viewModel.language.localized("Delete Account and Remote Data"), role: .destructive) { performDeletion() }
+                Button(viewModel.language.localized("Cancel"), role: .cancel) {}
             } message: {
-                Text("This cannot be undone. Your local records will be kept, and all Spaces will become Local-Only.")
+                Text(viewModel.language.localized("This cannot be undone. Your local records will be kept, and all Spaces will become Local-Only."))
             }
         }
     }

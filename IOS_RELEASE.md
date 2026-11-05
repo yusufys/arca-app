@@ -2,6 +2,15 @@
 
 App Store Connect record: **Arca - Personal Records**, Apple ID **6830898859**, bundle **app.arca.personalrecords**. Internal beta first. Use fictional data and the supplied build number in all feedback.
 
+## Localization and accessibility candidate (after build 5)
+
+- Native Apple String Catalogs now supply English, Arabic and Turkish UI copy, plural forms, core validation and the Face ID permission explanation. Arabic uses RTL layout; saved personal records are never translated by language changes.
+- The backend catalog supports validated translated schemas and subtitles, cached offline on iOS. AI prompts request labels and options in the selected language while keeping the shared JSON contract unchanged. Forge deployment 82202588 completed; the live catalog returned all three starters with Arabic/Turkish schemas, and the Arabic prompt request passed.
+- Account inputs support email/password semantics, Next/Done and tap-outside keyboard dismissal. Dynamic Type reflows grids and sheet headers; icon choices have spoken labels and selection traits. Reduce Motion is respected.
+- Validation: 44 Swift tests, 48 backend tests, iOS simulator host build, three-language native screen/keyboard/AI/account walkthroughs, and automated accessibility-label audits on selected screens at normal and largest text sizes.
+- Designer handoff: **147 distinct PNG screenshots** (45 English, 45 Arabic, 45 Turkish, 12 enlarged-text views), an offline HTML gallery and flow map. Regenerate with `ci/UXFlowCapture`; implementation guidance is in [I18N_ACCESSIBILITY.html](I18N_ACCESSIBILITY.html). The generated pack is excluded from Git.
+- Remaining: make and install a new signed internal TestFlight build; verify on-device VoiceOver and Switch Control, complete contrast and translation review, and test actual App Store products and RevenueCat-authored paywalls in each language. Build 5 does not contain this pass.
+
 ## App Store Connect listing draft
 
 - Primary category: Productivity. Suggested subtitle: **Warranties, inventory & more**.

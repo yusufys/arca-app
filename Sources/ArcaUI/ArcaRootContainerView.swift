@@ -13,6 +13,7 @@ public struct ArcaRootContainerView: View {
     @ViewState private var selectedTab: Int = 0
     @ViewState private var useiPhoneBezelOnMac: Bool = true
     @ViewState private var sceneIdentifier = UUID()
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.colorScheme) private var systemColorScheme
 
@@ -30,14 +31,18 @@ public struct ArcaRootContainerView: View {
             .onChange(of: scenePhase, initial: true) { _, phase in viewModel.handleScenePhase(phase, sceneId: sceneIdentifier) }
             .onDisappear { viewModel.forgetScene(sceneIdentifier) }
             .preferredColorScheme(viewModel.appearanceMode.colorScheme)
+            .transaction { if reduceMotion { $0.animation = nil; $0.disablesAnimations = true } }
             .environment(\.layoutDirection, viewModel.language.layoutDirection)
             .environment(\.locale, viewModel.language.locale)
         #else
         mobileScreenContent
             .preferredColorScheme(viewModel.appearanceMode.colorScheme)
+            .transaction { if reduceMotion { $0.animation = nil; $0.disablesAnimations = true } }
             .environment(\.layoutDirection, viewModel.language.layoutDirection)
             .environment(\.locale, viewModel.language.locale)
             .background(ScenePrivacyShield())
+            .background(KeyboardDismissal())
+            .scrollDismissesKeyboard(.interactively)
             .onChange(of: scenePhase, initial: true) { _, phase in viewModel.handleScenePhase(phase, sceneId: sceneIdentifier) }
             .onDisappear { viewModel.forgetScene(sceneIdentifier) }
             .privacySensitive()
@@ -53,14 +58,14 @@ public struct ArcaRootContainerView: View {
 
             if let error = viewModel.storageStartupError {
                 VStack(spacing: 12) {
-                    Text("Your workspace could not be opened").font(.headline)
+                    Text(viewModel.language.localized("Your workspace could not be opened")).font(.headline)
                     Text(error)
-                    Text("Unlock the device and reopen Arca to try again.")
+                    Text(viewModel.language.localized("Unlock the device and reopen Arca to try again."))
                 }.padding()
             } else if viewModel.biometricLockEnabled && viewModel.isAppLocked {
                 biometricLockScreen
             } else if !viewModel.hasCompletedOnboarding {
-                OnboardingContainerView(viewModel: viewModel)
+                NavigationStack { OnboardingContainerView(viewModel: viewModel) }
             } else {
                 VStack(spacing: 0) {
                     ZStack {
@@ -138,7 +143,7 @@ public struct ArcaRootContainerView: View {
 
                     if badgeCount > 0 {
                         Text("\(badgeCount)")
-                            .font(.system(size: 10, weight: .bold))
+                            .font(.caption2.weight(.bold))
                             .foregroundStyle(.white)
                             .padding(.horizontal, 5)
                             .padding(.vertical, 1)
@@ -182,7 +187,7 @@ public struct ArcaRootContainerView: View {
                         Image(systemName: "iphone.gen3")
                             .foregroundStyle(.white.opacity(0.85))
                         Text("Arca iOS Simulator Viewport")
-                            .font(.system(size: 12, weight: .semibold, design: .rounded))
+                            .font(.footnote.weight(.semibold))
                             .foregroundStyle(.white.opacity(0.85))
                     }
 
@@ -190,8 +195,8 @@ public struct ArcaRootContainerView: View {
 
                     // Quick Space pill switcher in studio bar
                     if viewModel.hasCompletedOnboarding, let space = viewModel.currentSpace {
-                        Text("\(space.name) • \(space.storageMode == .arcaSync ? "Arca Sync" : "Local Only")")
-                            .font(.system(size: 11, weight: .medium, design: .rounded))
+                        Text("\(space.name) • \(space.storageMode == .arcaSync ? viewModel.language.localized("Arca Sync") : viewModel.language.localized("Local Only"))")
+                            .font(.caption.weight(.medium))
                             .foregroundStyle(.white.opacity(0.7))
                             .padding(.horizontal, 10)
                             .padding(.vertical, 4)
@@ -205,9 +210,9 @@ public struct ArcaRootContainerView: View {
                     } label: {
                         HStack(spacing: 5) {
                             Image(systemName: useiPhoneBezelOnMac ? "arrow.up.left.and.arrow.down.right" : "iphone")
-                                .font(.system(size: 11, weight: .semibold))
+                                .font(.caption.weight(.semibold))
                             Text(useiPhoneBezelOnMac ? "Expand Window" : "iPhone Frame")
-                                .font(.system(size: 11, weight: .semibold, design: .rounded))
+                                .font(.caption.weight(.semibold))
                         }
                         .foregroundStyle(.white)
                         .padding(.horizontal, 10)
@@ -272,7 +277,7 @@ public struct ArcaRootContainerView: View {
     private var iOSStatusBar: some View {
         HStack {
             Text("9:41")
-                .font(.system(size: 14, weight: .semibold, design: .rounded))
+                .font(.subheadline.weight(.semibold))
                 .foregroundStyle(effectiveColorScheme == .dark ? .white : .black)
                 .frame(width: 68, alignment: .leading)
 
@@ -291,9 +296,9 @@ public struct ArcaRootContainerView: View {
 
             HStack(spacing: 5) {
                 Image(systemName: viewModel.isOfflineSimulated ? "wifi.slash" : "wifi")
-                    .font(.system(size: 12, weight: .semibold))
+                    .font(.footnote.weight(.semibold))
                 Image(systemName: "battery.100percent")
-                    .font(.system(size: 13, weight: .semibold))
+                    .font(.footnote.weight(.semibold))
             }
             .foregroundStyle(effectiveColorScheme == .dark ? .white : .black)
             .frame(width: 68, alignment: .trailing)
@@ -321,10 +326,10 @@ public struct ArcaRootContainerView: View {
             }
 
             VStack(spacing: 8) {
-                Text("Arca is Locked")
+                Text(viewModel.language.localized("Arca is Locked"))
                     .font(.title2.bold())
 
-                Text("Authenticate to open your records.")
+                Text(viewModel.language.localized("Authenticate to open your records."))
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
@@ -334,7 +339,7 @@ public struct ArcaRootContainerView: View {
             Button {
                 Task { await viewModel.unlockAppWithBiometrics() }
             } label: {
-                Label("Unlock Arca", systemImage: "lock.open.fill")
+                Label(viewModel.language.localized("Unlock Arca"), systemImage: "lock.open.fill")
             }
             .buttonStyle(ArcaPrimaryButtonStyle(tint: ArcaTheme.accent, isFullWidth: true))
             .padding(.horizontal, 36)

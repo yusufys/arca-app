@@ -15,6 +15,7 @@
 		B40000000000000000000015 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = B4000000000000000000000B; };
 		B40000000000000000000016 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = B4000000000000000000000C; };
 		B40000000000000000000017 /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = B4000000000000000000000D; };
+		B40000000000000000000018 /* InfoPlist.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = B4000000000000000000000E; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -26,6 +27,7 @@
 		B4000000000000000000000B /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		B4000000000000000000000C /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		B4000000000000000000000D /* Localizable.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = Localizable.xcstrings; sourceTree = "<group>"; };
+		B4000000000000000000000E /* InfoPlist.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = InfoPlist.xcstrings; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -59,6 +61,7 @@
 				B4000000000000000000000B /* Assets.xcassets */,
 				B4000000000000000000000C /* PrivacyInfo.xcprivacy */,
 				B4000000000000000000000D /* Localizable.xcstrings */,
+				B4000000000000000000000E /* InfoPlist.xcstrings */,
 				B4000000000000000000000A /* ArcaPurchases.swift */,
 			);
 			path = iOSApp;
@@ -144,6 +147,7 @@
 				B40000000000000000000015,
 				B40000000000000000000016,
 				B40000000000000000000017,
+				B40000000000000000000018,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

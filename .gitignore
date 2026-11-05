@@ -32,3 +32,7 @@ backend/storage/*.key
 # Apple signing, upload and purchase credentials
 *.p8
 *.p12
+
+# Generated designer screenshot exports (reproducible from ci/UXFlowCapture)
+/artifacts/ux-handoff-*/
+/artifacts/Arca-UX-Handoff-*.zip

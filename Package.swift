@@ -3,6 +3,7 @@ import PackageDescription
 
 let package = Package(
     name: "Arca",
+    defaultLocalization: "en",
     platforms: [.iOS(.v17), .macOS(.v14)],
     products: [
         .library(name: "ArcaCore", targets: ["ArcaCore"]),
@@ -56,7 +57,8 @@ let package = Package(
                 "ArcaSync",
                 "ArcaBilling",
                 "ArcaCloudAdapters"
-            ]
+            ],
+            resources: [.process("Resources")]
         ),
         .executableTarget(
             name: "ArcaApp",

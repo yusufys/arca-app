@@ -44,6 +44,7 @@ class AdminCollectionTemplateController extends Controller
             'slug' => ['required', 'string', 'max:100', 'regex:/^[a-z0-9]+(?:[_-][a-z0-9]+)*$/', Rule::unique('collection_templates', 'slug')->ignore($template), Rule::when($template !== null, [Rule::in([$template?->slug])])],
             'subtitle' => ['required', 'string', 'max:500'],
             'schema_json' => ['required', 'string', 'max:262144'],
+            'localizations_json' => ['nullable', 'string', 'max:786432'],
             'is_active' => ['required', 'boolean'],
             'sort_order' => ['required', 'integer', 'between:-100000,100000'],
         ]);
@@ -53,7 +54,16 @@ class AdminCollectionTemplateController extends Controller
             throw ValidationException::withMessages(['schema_json' => 'Enter one valid JSON object.']);
         }
 
+        try {
+            $localizations = isset($data['localizations_json'])
+                ? json_decode($data['localizations_json'], true, 512, JSON_THROW_ON_ERROR)
+                : ($template?->localizations ?? []);
+        } catch (JsonException) {
+            throw ValidationException::withMessages(['localizations_json' => 'Enter valid translations JSON.']);
+        }
+
         return [
+            'localizations' => CollectionTemplate::validateLocalizations($localizations),
             'slug' => $data['slug'],
             'subtitle' => $data['subtitle'],
             'schema_definition' => $contract->validate($document),

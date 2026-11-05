@@ -41,7 +41,12 @@ public final class ArcaAppViewModel {
     // MARK: - App Preferences & Navigation State
     public var hasCompletedOnboarding: Bool = false
     public var language: AppLanguage = .preferred {
-        didSet { UserDefaults.standard.set(language.rawValue, forKey: "arca.language") }
+        didSet {
+            UserDefaults.standard.set(language.rawValue, forKey: "arca.language")
+            if let catalogData, let templates = try? CollectionCatalogClient.templates(in: catalogData, language: language) {
+                suggestedTemplates = templates
+            }
+        }
     }
     public var appearanceMode: AppAppearanceMode = .light
     public let appLock: LocalAppLock
@@ -60,6 +65,7 @@ public final class ArcaAppViewModel {
     public private(set) var catalogStatus: String?
     private var refreshingCatalog = false
     private var loadedCatalogCache = false
+    private var catalogData: Data?
     public private(set) var completingOnboarding = false
     public private(set) var onboardingError: String?
     public var publicSnapshots: [PublicRecordSnapshot] = []
@@ -229,7 +235,7 @@ public final class ArcaAppViewModel {
         guard !isBootstrapped, storageStartupError == nil else { return }
         if hasPendingAccountDeletionCleanup {
             do { try await deleteCloudAccountAndKeepLocalRecords() }
-            catch { syncStatus = "Account deleted remotely; local cleanup needs retry. " + error.localizedDescription }
+            catch { syncSummary = nil; syncStatusMessage = "Account deleted remotely; finish local cleanup in Settings." }
         }
         isBootstrapped = true
 
@@ -256,7 +262,16 @@ public final class ArcaAppViewModel {
         }
     }
 
-    public private(set) var syncStatus = "No sync has run yet."
+    private var syncStatusMessage = "No sync has run yet."
+    private var syncSummary: (date: Date, sent: Int, received: Int)?
+    public var syncStatus: String {
+        if let summary = syncSummary {
+            return language.format("Synced at %@ · Sent %d, received %d",
+                summary.date.formatted(.dateTime.hour().minute().second().locale(language.locale)),
+                summary.sent, summary.received) + (pendingPrivacyDeletionCollectionIds.isEmpty ? "" : " · " + language.localized("Remote privacy deletion pending; affected collection uploads remain paused."))
+        }
+        return language.localized(syncStatusMessage)
+    }
     public private(set) var isSyncing = false
     public private(set) var needsCloudSignIn = false
     public private(set) var isDeletingCloudAccount = false
@@ -330,7 +345,7 @@ public final class ArcaAppViewModel {
         completingOnboarding = true
         defer { completingOnboarding = false }
         let mode: SpaceStorageMode = defaultMode == .arcaSync && acceptedCloudTerms ? .arcaSync : .localOnly
-        let space = SpaceMetadata(name: "Personal & Home", iconName: "house.fill", storageMode: mode,
+        let space = SpaceMetadata(name: language.localized("Personal & Home"), iconName: "house.fill", storageMode: mode,
                                   cloudSyncAcceptedAt: mode == .arcaSync ? Date() : nil)
         onboardingError = nil
         do {
@@ -349,7 +364,7 @@ public final class ArcaAppViewModel {
             spaceStores[space.id] = store
         } catch {
             await catalogStore.deleteSpace(id: space.id)
-            onboardingError = error.localizedDescription
+            onboardingError = "Could not finish setup. Please try again."
             return
         }
         spaces = await catalogStore.listSpaces()
@@ -365,14 +380,16 @@ public final class ArcaAppViewModel {
         let cache = rootDirectoryURL.appendingPathComponent("suggested-collections-v1.json")
         if !loadedCatalogCache {
             loadedCatalogCache = true
-            if let data = try? Data(contentsOf: cache), let templates = try? CollectionCatalogClient.templates(in: data) {
+            if let data = try? Data(contentsOf: cache), let templates = try? CollectionCatalogClient.templates(in: data, language: language) {
+                catalogData = data
                 suggestedTemplates = templates
             }
         }
         do {
             let data = try await CollectionCatalogClient(baseURL: syncBackend.baseURL).catalog()
-            let templates = try CollectionCatalogClient.templates(in: data)
+            let templates = try CollectionCatalogClient.templates(in: data, language: language)
             try Task.checkCancellation()
+            catalogData = data
             suggestedTemplates = templates
             catalogStatus = nil
             try? data.write(to: cache, options: .atomic)
@@ -385,7 +402,7 @@ public final class ArcaAppViewModel {
     }
 
     public func prepareAIAssistantPrompt(intent: String) async throws -> String {
-        try await CollectionCatalogClient(baseURL: syncBackend.baseURL).prompt(for: intent)
+        try await CollectionCatalogClient(baseURL: syncBackend.baseURL).prompt(for: intent, language: language)
     }
 
     public func previewAICollectionReply(_ reply: String) throws -> CollectionSchema {
@@ -812,7 +829,7 @@ public final class ArcaAppViewModel {
         do { try await syncCloudSpaces() }
         catch {
             if (error as NSError).code == 401 { needsCloudSignIn = true }
-            syncStatus = "Sync paused. " + error.localizedDescription
+            syncSummary = nil; syncStatusMessage = "Sync paused. Check your connection and retry."
         }
     }
 
@@ -849,7 +866,7 @@ public final class ArcaAppViewModel {
         syncConflicts.removeAll()
         enrolledDevices = []
         pendingOutboxCount = 0
-        syncStatus = "Cloud account and remote data deleted. Your records remain on this device in Local-Only Spaces."
+        syncSummary = nil; syncStatusMessage = "Cloud account and remote data deleted. Your records remain on this device in Local-Only Spaces."
     }
 
     /// Discover remote Spaces, decrypt their keys locally, then exchange the SQLite outboxes.
@@ -863,7 +880,7 @@ public final class ArcaAppViewModel {
         guard !isSyncing else { throw PersistenceError.ioError("Sync is already running.") }
         isSyncing = true
         defer { isSyncing = false }
-        syncStatus = "Syncing…"
+        syncSummary = nil; syncStatusMessage = "Syncing…"
         let device = identityStore.deviceIdentity
         let remote = try await syncBackend.listRemoteSpaces(deviceId: device.deviceId)
         for space in remote {
@@ -914,8 +931,7 @@ public final class ArcaAppViewModel {
         if currentSpaceId == nil { currentSpaceId = spaces.first?.id }
         setDevices(try await syncBackend.listEnrolledDevices(accountId: session.accountId), currentId: device.deviceId)
         if !syncConflicts.isEmpty { bannerState = .syncConflictsDetected(count: syncConflicts.count) }
-        syncStatus = "Synced at " + Date().formatted(date: .omitted, time: .standard) + " · Sent " + String(pushed) + ", received " + String(pulled)
-        if !pendingPrivacyDeletionCollectionIds.isEmpty { syncStatus += " · Remote privacy deletion pending; affected collection uploads remain paused." }
+        syncSummary = (Date(), pushed, pulled)
     }
 
     public func simulateConcurrentConflict() {
@@ -955,7 +971,7 @@ public final class ArcaAppViewModel {
             syncConflicts.removeAll { $0.id == conflictId }
             await reloadSpaceFromDisk(chosen.spaceId)
         } catch {
-            syncStatus = "Conflict resolution failed. " + error.localizedDescription
+            syncSummary = nil; syncStatusMessage = "Conflict resolution failed. Your versions are preserved. Try again."
             return
         }
         bannerState = syncConflicts.isEmpty ? .normal : .syncConflictsDetected(count: syncConflicts.count)
@@ -993,7 +1009,7 @@ public final class ArcaAppViewModel {
             let receipt = try await syncBackend.revokeDevice(accountId: session.accountId, revokingDeviceId: deviceId,
                 requestedByDeviceId: identityStore.deviceIdentity.deviceId, rotatedSpaceKeys: rotations)
             setDevices(receipt.remainingActiveDevices, currentId: identityStore.deviceIdentity.deviceId)
-        } catch { syncStatus = "Could not complete revocation. " + error.localizedDescription }
+        } catch { syncSummary = nil; syncStatusMessage = "Could not revoke the device. Check your connection and retry." }
     }
 
     public func computeStorageMigrationPreview(

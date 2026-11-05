@@ -12,6 +12,7 @@ public struct HomeScreenView: View {
     @ViewState private var showingAIAssistant = false
     @ViewState private var showingManualBuilder = false
     @ViewState private var activeRecordSheetCollection: CollectionSchema?
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.colorScheme) private var colorScheme
 
     public init(viewModel: ArcaAppViewModel) {
@@ -97,7 +98,7 @@ public struct HomeScreenView: View {
                     storageModePill(for: current.storageMode)
                 }
                 Text(viewModel.currentSpace?.name ?? ArcaStrings.text("app.name", language: viewModel.language))
-                    .font(.system(size: 28, weight: .bold, design: .rounded))
+                    .font(.largeTitle.weight(.bold))
                     .foregroundStyle(.primary)
             }
 
@@ -110,9 +111,9 @@ public struct HomeScreenView: View {
                     } label: {
                         HStack(spacing: 5) {
                             Image(systemName: "plus")
-                                .font(.system(size: 12, weight: .bold))
+                                .font(.footnote.weight(.bold))
                             Text(ArcaStrings.text("home.quickAddRecord", language: viewModel.language))
-                                .font(.system(size: 13, weight: .semibold, design: .rounded))
+                                .font(.footnote.weight(.semibold))
                         }
                         .foregroundStyle(.white)
                         .padding(.horizontal, 13)
@@ -143,11 +144,11 @@ public struct HomeScreenView: View {
                     Button {
                         showingSpaceManager = true
                     } label: {
-                        Label("Manage Spaces…", systemImage: "rectangle.stack.fill")
+                        Label(viewModel.language.localized("Manage Spaces…"), systemImage: "rectangle.stack.fill")
                     }
                 } label: {
                     Image(systemName: "ellipsis.circle.fill")
-                        .font(.system(size: 24))
+                        .font(.title)
                         .foregroundStyle(ArcaTheme.accent)
                         .frame(width: 34, height: 34)
                 }
@@ -167,12 +168,12 @@ public struct HomeScreenView: View {
                     } label: {
                         HStack(spacing: 7) {
                             Image(systemName: space.iconName)
-                                .font(.system(size: 12, weight: .semibold))
+                                .font(.footnote.weight(.semibold))
                             Text(space.name)
-                                .font(.system(size: 13, weight: .semibold, design: .rounded))
+                                .font(.footnote.weight(.semibold))
                             if space.storageMode == .localOnly {
                                 Image(systemName: "lock.fill")
-                                    .font(.system(size: 10))
+                                    .font(.caption2)
                                     .opacity(0.75)
                             }
                         }
@@ -202,9 +203,9 @@ public struct HomeScreenView: View {
                 } label: {
                     HStack(spacing: 5) {
                         Image(systemName: "plus.rectangle.on.folder")
-                            .font(.system(size: 11, weight: .semibold))
-                        Text("Spaces")
-                            .font(.system(size: 12, weight: .semibold, design: .rounded))
+                            .font(.caption.weight(.semibold))
+                        Text(viewModel.language.localized("Spaces"))
+                            .font(.footnote.weight(.semibold))
                     }
                     .foregroundStyle(.secondary)
                     .padding(.horizontal, 12)
@@ -223,9 +224,9 @@ public struct HomeScreenView: View {
         let tint = isLocal ? ArcaTheme.secondaryEmerald : ArcaTheme.accent
         return HStack(spacing: 5) {
             Image(systemName: mode == .arcaSync ? "checkmark.icloud.fill" : (isLocal ? "internaldrive.fill" : "externaldrive.fill.badge.icloud"))
-                .font(.system(size: 10, weight: .bold))
-            Text(mode == .arcaSync ? "ARCA SYNC • E2EE" : (isLocal ? "ON THIS DEVICE ONLY" : "PERSONAL CLOUD BACKUP"))
-                .font(.system(size: 10, weight: .bold, design: .rounded))
+                .font(.caption2.weight(.bold))
+            Text(viewModel.language.localized(mode == .arcaSync ? "Arca Sync (E2EE)" : (isLocal ? "On This Device Only" : "Personal Cloud Backup")))
+                .font(.caption2.weight(.bold))
                 .tracking(0.4)
         }
         .foregroundStyle(tint)
@@ -235,7 +236,7 @@ public struct HomeScreenView: View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
                 Text(ArcaStrings.text("home.collections", language: viewModel.language).uppercased())
-                    .font(.system(size: 11, weight: .bold, design: .rounded))
+                    .font(.caption.weight(.bold))
                     .tracking(0.6)
                     .foregroundStyle(.secondary)
 
@@ -253,7 +254,7 @@ public struct HomeScreenView: View {
                     }
                 } label: {
                     Label(ArcaStrings.text("home.newCollection", language: viewModel.language), systemImage: "plus.circle.fill")
-                        .font(.system(size: 12, weight: .semibold, design: .rounded))
+                        .font(.footnote.weight(.semibold))
                         .foregroundStyle(ArcaTheme.accent)
                 }
                 .buttonStyle(.plain)
@@ -266,13 +267,13 @@ public struct HomeScreenView: View {
                             .fill(ArcaTheme.accent.opacity(0.10))
                             .frame(width: 56, height: 56)
                         Image(systemName: "sparkles")
-                            .font(.system(size: 24))
+                            .font(.title)
                             .foregroundStyle(ArcaTheme.accent)
                     }
                     Text(creationText("creation.emptyTitle"))
-                        .font(.system(size: 16, weight: .bold, design: .rounded))
+                        .font(.body.weight(.bold))
                     Text(creationText("creation.emptyBody"))
-                        .font(.system(size: 12))
+                        .font(.footnote)
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
                     Button { showingAIAssistant = true } label: {
@@ -283,7 +284,7 @@ public struct HomeScreenView: View {
                         Button(creationText("creation.templates")) { showingTemplateGallery = true }
                         Button(creationText("creation.manual")) { showingManualBuilder = true }
                     }
-                    .font(.system(size: 12, weight: .semibold))
+                    .font(.footnote.weight(.semibold))
                     .foregroundStyle(ArcaTheme.accent)
                     .buttonStyle(.plain)
                 }
@@ -298,7 +299,7 @@ public struct HomeScreenView: View {
                         .strokeBorder(ArcaTheme.cardBorder(for: colorScheme), lineWidth: 1)
                 )
             } else {
-                LazyVGrid(columns: [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)], spacing: 12) {
+                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 12), count: dynamicTypeSize.isAccessibilitySize ? 1 : 2), spacing: 12) {
                     ForEach(viewModel.collectionsInCurrentSpace) { col in
                         NavigationLink {
                             CollectionRecordListView(viewModel: viewModel, schema: col)
@@ -323,14 +324,14 @@ public struct HomeScreenView: View {
                         .frame(width: 38, height: 38)
                         .shadow(color: tint.opacity(0.28), radius: 6, x: 0, y: 3)
                     Image(systemName: col.iconName)
-                        .font(.system(size: 16, weight: .semibold))
+                        .font(.body.weight(.semibold))
                         .foregroundStyle(.white)
                 }
 
                 Spacer()
 
                 Text("\(count)")
-                    .font(.system(size: 16, weight: .bold, design: .rounded))
+                    .font(.body.weight(.bold))
                     .foregroundStyle(tint)
                     .padding(.horizontal, 9)
                     .padding(.vertical, 4)
@@ -339,12 +340,12 @@ public struct HomeScreenView: View {
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(col.name)
-                    .font(.system(size: 15, weight: .bold, design: .rounded))
+                    .font(.body.weight(.bold))
                     .foregroundStyle(.primary)
                     .lineLimit(1)
 
-                Text("\(col.activeFields.count) fields • v\(col.schemaVersion)")
-                    .font(.system(size: 11, weight: .medium))
+                Text(viewModel.language.format("count.fields", col.activeFields.count))
+                    .font(.caption.weight(.medium))
                     .foregroundStyle(.secondary)
             }
         }
@@ -364,10 +365,10 @@ public struct HomeScreenView: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 6) {
                 Image(systemName: "pin.fill")
-                    .font(.system(size: 11, weight: .bold))
+                    .font(.caption.weight(.bold))
                     .foregroundStyle(ArcaTheme.warmAmber)
                 Text(ArcaStrings.text("home.favorites", language: viewModel.language).uppercased())
-                    .font(.system(size: 11, weight: .bold, design: .rounded))
+                    .font(.caption.weight(.bold))
                     .tracking(0.6)
                     .foregroundStyle(.secondary)
             }
@@ -388,13 +389,13 @@ public struct HomeScreenView: View {
     private var recentRecordsSection: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text(ArcaStrings.text("home.recentRecords", language: viewModel.language).uppercased())
-                .font(.system(size: 11, weight: .bold, design: .rounded))
+                .font(.caption.weight(.bold))
                 .tracking(0.6)
                 .foregroundStyle(.secondary)
 
             if viewModel.recentRecordsInCurrentSpace.isEmpty {
-                Text("Saved records will appear here for instant retrieval.")
-                    .font(.system(size: 13))
+                Text(viewModel.language.localized("Saved records will appear here for instant retrieval."))
+                    .font(.footnote)
                     .foregroundStyle(.secondary)
                     .padding(.vertical, 8)
             } else {
@@ -415,18 +416,18 @@ public struct HomeScreenView: View {
     private var globalSearchResultsSection: some View {
         let matches = viewModel.searchRecordsInCurrentSpace(queryText: viewModel.globalSearchText)
         return VStack(alignment: .leading, spacing: 12) {
-            Text("SEARCH RESULTS (\(matches.count))")
-                .font(.system(size: 11, weight: .bold, design: .rounded))
+            Text(viewModel.language.format("SEARCH RESULTS (%d)", matches.count))
+                .font(.caption.weight(.bold))
                 .tracking(0.6)
                 .foregroundStyle(.secondary)
 
             if matches.isEmpty {
                 VStack(spacing: 10) {
                     Image(systemName: "magnifyingglass")
-                        .font(.system(size: 28))
+                        .font(.largeTitle)
                         .foregroundStyle(.secondary)
-                    Text("No matching records found for “\(viewModel.globalSearchText)”")
-                        .font(.system(size: 14, weight: .medium))
+                    Text(viewModel.language.format("No matching records found for “%@”", viewModel.globalSearchText))
+                        .font(.subheadline.weight(.medium))
                         .foregroundStyle(.secondary)
                 }
                 .frame(maxWidth: .infinity)
@@ -472,24 +473,24 @@ public struct RecordRowCardView: View {
                     .fill(tint.opacity(0.14))
                     .frame(width: 40, height: 40)
                 Image(systemName: schema.iconName)
-                    .font(.system(size: 16, weight: .semibold))
+                    .font(.body.weight(.semibold))
                     .foregroundStyle(tint)
             }
 
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 6) {
                     Text(record.title(using: schema))
-                        .font(.system(size: 15, weight: .semibold, design: .rounded))
+                        .font(.body.weight(.semibold))
                         .foregroundStyle(.primary)
                         .lineLimit(1)
                     if record.isFavorite {
                         Image(systemName: "pin.fill")
-                            .font(.system(size: 11))
+                            .font(.caption)
                             .foregroundStyle(ArcaTheme.warmAmber)
                     }
                     if !record.allAttachments.isEmpty {
                         Image(systemName: "paperclip")
-                            .font(.system(size: 11, weight: .semibold))
+                            .font(.caption.weight(.semibold))
                             .foregroundStyle(ArcaTheme.accent)
                     }
                 }
@@ -497,7 +498,7 @@ public struct RecordRowCardView: View {
                 let sub = record.subtitle(using: schema, locale: locale)
                 HStack(spacing: 6) {
                     Text(schema.name)
-                        .font(.system(size: 10, weight: .bold, design: .rounded))
+                        .font(.caption2.weight(.bold))
                         .foregroundStyle(tint)
                         .padding(.horizontal, 6)
                         .padding(.vertical, 2)
@@ -505,7 +506,7 @@ public struct RecordRowCardView: View {
 
                     if !sub.isEmpty {
                         Text(sub)
-                            .font(.system(size: 12))
+                            .font(.footnote)
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
                     }
@@ -515,7 +516,7 @@ public struct RecordRowCardView: View {
             Spacer()
 
             Image(systemName: "chevron.forward")
-                .font(.system(size: 12, weight: .bold))
+                .font(.footnote.weight(.bold))
                 .foregroundStyle(.tertiary)
         }
         .padding(13)
@@ -556,15 +557,15 @@ public struct ManageSpacesSheetView: View {
     public var body: some View {
         VStack(spacing: 0) {
             ArcaSheetHeaderBar(
-                title: "Spaces",
-                subtitle: "Independent Local SQLite Databases",
-                leadingLabel: "Done",
+                title: viewModel.language.localized("Spaces"),
+                subtitle: viewModel.language.localized("Independent Local SQLite Databases"),
+                leadingLabel: viewModel.language.localized("Done"),
                 leadingAction: { dismiss() }
             )
 
             ScrollView(showsIndicators: false) {
                 VStack(alignment: .leading, spacing: 18) {
-                    ArcaSectionCard(title: "Your Spaces (\(viewModel.spaces.count))", icon: "rectangle.stack.fill") {
+                    ArcaSectionCard(title: viewModel.language.localized("Your Spaces"), icon: "rectangle.stack.fill") {
                         VStack(spacing: 10) {
                             ForEach(viewModel.spaces) { space in
                                 let isActive = space.id == viewModel.currentSpaceId
@@ -576,32 +577,32 @@ public struct ManageSpacesSheetView: View {
                                             .fill(tint.opacity(0.15))
                                             .frame(width: 38, height: 38)
                                         Image(systemName: space.iconName)
-                                            .font(.system(size: 16, weight: .semibold))
+                                            .font(.body.weight(.semibold))
                                             .foregroundStyle(tint)
                                     }
 
                                     VStack(alignment: .leading, spacing: 2) {
                                         HStack(spacing: 6) {
                                             Text(space.name)
-                                                .font(.system(size: 15, weight: .bold, design: .rounded))
+                                                .font(.body.weight(.bold))
                                             if isActive {
-                                                Text("ACTIVE")
-                                                    .font(.system(size: 9, weight: .bold, design: .rounded))
+                                                Text(viewModel.language.localized("ACTIVE"))
+                                                    .font(.caption2.weight(.bold))
                                                     .foregroundStyle(.white)
                                                     .padding(.horizontal, 6)
                                                     .padding(.vertical, 2)
                                                     .background(Capsule().fill(ArcaTheme.accent))
                                             }
                                         }
-                                        Text(space.storageMode == .arcaSync ? "Arca Sync (E2EE)" : (space.storageMode == .localOnly ? "On This Device Only" : "Personal Cloud Backup"))
-                                            .font(.system(size: 11))
+                                        Text(space.storageMode == .arcaSync ? viewModel.language.localized("Arca Sync (E2EE)") : (space.storageMode == .localOnly ? viewModel.language.localized("On This Device Only") : viewModel.language.localized("Personal Cloud Backup")))
+                                            .font(.caption)
                                             .foregroundStyle(.secondary)
                                     }
 
                                     Spacer()
 
                                     if !isActive {
-                                        ArcaPillActionButton("Switch", tint: ArcaTheme.accent) {
+                                        ArcaPillActionButton(viewModel.language.localized("Switch"), tint: ArcaTheme.accent) {
                                             Task {
                                                 await viewModel.selectSpace(space.id)
                                                 dismiss()
@@ -610,18 +611,18 @@ public struct ManageSpacesSheetView: View {
                                     }
 
                                     Menu {
-                                        Button("Rename Space…") {
+                                        Button(viewModel.language.localized("Rename Space…")) {
                                             renamingSpace = space
                                             renameText = space.name
                                         }
                                         if viewModel.spaces.count > 1 {
-                                            Button("Delete Space", role: .destructive) {
+                                            Button(viewModel.language.localized("Delete Space"), role: .destructive) {
                                                 pendingSpaceDeletion = space
                                             }
                                         }
                                     } label: {
                                         Image(systemName: "ellipsis.circle.fill")
-                                            .font(.system(size: 20))
+                                            .font(.title3)
                                             .foregroundStyle(.secondary)
                                     }
                                     .buttonStyle(.plain)
@@ -636,12 +637,12 @@ public struct ManageSpacesSheetView: View {
                     }
 
                     if let spaceToRename = renamingSpace {
-                        ArcaSectionCard(title: "Rename “\(spaceToRename.name)”", icon: "pencil") {
-                            ArcaStyledTextField("New Space Name", text: $renameText, icon: "character.cursor.ibeam")
+                        ArcaSectionCard(title: viewModel.language.format("Rename “%@”", spaceToRename.name), icon: "pencil") {
+                            ArcaStyledTextField(viewModel.language.localized("New Space Name"), text: $renameText, icon: "character.cursor.ibeam")
                             HStack(spacing: 10) {
-                                Button("Cancel") { renamingSpace = nil }
+                                Button(viewModel.language.localized("Cancel")) { renamingSpace = nil }
                                     .buttonStyle(ArcaSecondaryButtonStyle(tint: .secondary))
-                                Button("Save Name") {
+                                Button(viewModel.language.localized("Save Name")) {
                                     Task {
                                         await viewModel.renameSpace(id: spaceToRename.id, newName: renameText)
                                         renamingSpace = nil
@@ -653,26 +654,26 @@ public struct ManageSpacesSheetView: View {
                     }
 
                     ArcaSectionCard(
-                        title: "Create New Independent Space",
-                        subtitle: "Each Space is stored in its own isolated SQLite database with independent storage and backup settings.",
+                        title: viewModel.language.localized("Create New Independent Space"),
+                        subtitle: viewModel.language.localized("Each Space is stored in its own isolated SQLite database with independent storage and backup settings."),
                         icon: "plus.rectangle.on.folder.fill"
                     ) {
-                        ArcaStyledTextField("Space Name (e.g., Vacation Cabin, Classic Car)", text: $newSpaceName, icon: "folder.badge.plus")
+                        ArcaStyledTextField(viewModel.language.localized("Space Name (e.g., Vacation Cabin, Classic Car)"), text: $newSpaceName, icon: "folder.badge.plus")
 
                         VStack(alignment: .leading, spacing: 6) {
-                            Text("Storage Mode")
-                                .font(.system(size: 12, weight: .semibold, design: .rounded))
+                            Text(viewModel.language.localized("Storage Mode"))
+                                .font(.footnote.weight(.semibold))
                                 .foregroundStyle(.secondary)
 
                             HStack(spacing: 8) {
-                                modeChoicePill(.localOnly, label: "Local Only", icon: "iphone")
-                                modeChoicePill(.arcaSync, label: "Arca Sync (E2EE)", icon: "icloud.fill")
+                                modeChoicePill(.localOnly, label: viewModel.language.localized("Local Only"), icon: "iphone")
+                                modeChoicePill(.arcaSync, label: viewModel.language.localized("Arca Sync (E2EE)"), icon: "icloud.fill")
                             }
                         }
 
                         VStack(alignment: .leading, spacing: 6) {
-                            Text("Space Icon")
-                                .font(.system(size: 12, weight: .semibold, design: .rounded))
+                            Text(viewModel.language.localized("Space Icon"))
+                                .font(.footnote.weight(.semibold))
                                 .foregroundStyle(.secondary)
 
                             HStack(spacing: 8) {
@@ -682,20 +683,22 @@ public struct ManageSpacesSheetView: View {
                                         newSpaceIcon = item.icon
                                     } label: {
                                         Image(systemName: item.icon)
-                                            .font(.system(size: 15, weight: .semibold))
+                                            .font(.body.weight(.semibold))
                                             .foregroundStyle(selected ? .white : .primary)
-                                            .frame(width: 40, height: 38)
+                                            .frame(width: 44, height: 44)
                                             .background(
                                                 RoundedRectangle(cornerRadius: 10, style: .continuous)
                                                     .fill(selected ? ArcaTheme.accent : ArcaTheme.subtleFieldBackground(for: colorScheme))
                                             )
                                     }
                                     .buttonStyle(.plain)
+                                    .accessibilityLabel(viewModel.language.localized(item.label))
+                                    .accessibilityAddTraits(selected ? .isSelected : [])
                                 }
                             }
                         }
 
-                        Button("Create Space") {
+                        Button(viewModel.language.localized("Create Space")) {
                             let name = newSpaceName.trimmingCharacters(in: .whitespacesAndNewlines)
                             guard !name.isEmpty else { return }
                             Task {
@@ -730,9 +733,9 @@ public struct ManageSpacesSheetView: View {
         } label: {
             HStack(spacing: 6) {
                 Image(systemName: icon)
-                    .font(.system(size: 12, weight: .semibold))
+                    .font(.footnote.weight(.semibold))
                 Text(label)
-                    .font(.system(size: 12, weight: .semibold, design: .rounded))
+                    .font(.footnote.weight(.semibold))
             }
             .foregroundStyle(selected ? .white : .primary)
             .frame(maxWidth: .infinity)
@@ -785,7 +788,7 @@ public struct TemplateGallerySheetView: View {
                 VStack(alignment: .leading, spacing: 16) {
                     if let status = viewModel.catalogStatus {
                         ArcaSectionCard(title: creationText("creation.templateLibrary"), icon: "rectangle.stack") {
-                            Text(status)
+                            Text(viewModel.language.localized(status))
                                 .font(.subheadline)
                                 .foregroundStyle(.secondary)
                             Button(creationText("creation.retry")) {
@@ -814,17 +817,17 @@ public struct TemplateGallerySheetView: View {
                                         .fill(tint)
                                         .frame(width: 42, height: 42)
                                     Image(systemName: template.iconName)
-                                        .font(.system(size: 18, weight: .semibold))
+                                        .font(.headline.weight(.semibold))
                                         .foregroundStyle(.white)
                                 }
 
                                 VStack(alignment: .leading, spacing: 3) {
                                     HStack(spacing: 6) {
                                         Text(template.name)
-                                            .font(.system(size: 16, weight: .bold, design: .rounded))
+                                            .font(.body.weight(.bold))
                                         if template.sensitivityPosture == .elevatedLocalDefault {
-                                            Text("Sensitive • Local Default")
-                                                .font(.system(size: 10, weight: .bold, design: .rounded))
+                                            Text(viewModel.language.localized("Sensitive • Local Default"))
+                                                .font(.caption2.weight(.bold))
                                                 .padding(.horizontal, 7)
                                                 .padding(.vertical, 3)
                                                 .background(Capsule().fill(ArcaTheme.plumSensitive.opacity(0.15)))
@@ -832,7 +835,7 @@ public struct TemplateGallerySheetView: View {
                                         }
                                     }
                                     Text(template.subtitle)
-                                        .font(.system(size: 12))
+                                        .font(.footnote)
                                         .foregroundStyle(.secondary)
                                 }
                                 Spacer()
@@ -840,7 +843,7 @@ public struct TemplateGallerySheetView: View {
 
                             if let disclosure = template.sensitivityDisclosure {
                                 Text(disclosure)
-                                    .font(.system(size: 11))
+                                    .font(.caption)
                                     .foregroundStyle(.secondary)
                                     .padding(10)
                                     .background(RoundedRectangle(cornerRadius: 10).fill(ArcaTheme.plumSensitive.opacity(0.08)))
@@ -857,7 +860,7 @@ public struct TemplateGallerySheetView: View {
                                 if isSaving {
                                     ProgressView().tint(.white)
                                 } else {
-                                    Text("Add \(template.name)")
+                                    Text(viewModel.language.format("Add %@", template.name))
                                 }
                             }
                             .buttonStyle(ArcaPrimaryButtonStyle(tint: tint))
@@ -884,13 +887,13 @@ public struct TemplateGallerySheetView: View {
         .interactiveDismissDisabled(isSaving)
         .task { await viewModel.refreshSuggestedTemplates() }
         .alert("Sensitive Collection Storage Choice", isPresented: $showingMedicalDisclosureAlert, presenting: pendingTemplate) { template in
-            Button("Create in New Local-Only Space (Recommended)") {
+            Button(viewModel.language.localized("Create in New Local-Only Space (Recommended)")) {
                 saveTemplate(template, inDedicatedLocalSpace: true)
             }
-            Button("Add to Current Space Anyway") {
+            Button(viewModel.language.localized("Add to Current Space Anyway")) {
                 saveTemplate(template, inDedicatedLocalSpace: false)
             }
-            Button("Cancel", role: .cancel) {}
+            Button(viewModel.language.localized("Cancel"), role: .cancel) {}
         } message: { template in
             Text(template.sensitivityDisclosure ?? "This template is marked sensitive and defaults to Local-Only storage.")
         }
@@ -923,24 +926,29 @@ public struct ManualCollectionBuilderSheetView: View {
 
     @ViewState private var name = ""
     @ViewState private var iconName = "list.clipboard"
-    @ViewState private var draftFields: [FieldDefinition] = [
-        FieldDefinition(label: "Title", type: .shortText, isRequired: true, sortOrder: 0, isPrimaryTitle: true),
-        FieldDefinition(label: "Date", type: .date, isRequired: false, sortOrder: 1),
-        FieldDefinition(label: "Notes", type: .longText, isRequired: false, sortOrder: 2)
-    ]
+    @ViewState private var draftFields: [FieldDefinition]
+
+    public init(viewModel: ArcaAppViewModel) {
+        self.viewModel = viewModel
+        self._draftFields = ViewState(initialValue: [
+            FieldDefinition(label: viewModel.language.localized("Title"), type: .shortText, isRequired: true, sortOrder: 0, isPrimaryTitle: true),
+            FieldDefinition(label: viewModel.language.localized("Date"), type: .date, sortOrder: 1),
+            FieldDefinition(label: viewModel.language.localized("Notes"), type: .longText, sortOrder: 2)
+        ])
+    }
     @ViewState private var newFieldLabel = ""
     @ViewState private var newFieldType: FieldType = .shortText
     @ViewState private var newFieldRequired = false
     @ViewState private var newSelectOptionsComma = ""
 
-    private let icons = ["list.clipboard", "tag.fill", "heart.fill", "wrench.and.screwdriver.fill", "book.fill"]
+    private let icons = [(symbol: "list.clipboard", label: "Clipboard"), (symbol: "tag.fill", label: "Tag"), (symbol: "heart.fill", label: "Heart"), (symbol: "wrench.and.screwdriver.fill", label: "Tools"), (symbol: "book.fill", label: "Book")]
 
     public var body: some View {
         VStack(spacing: 0) {
             ArcaSheetHeaderBar(
-                title: "Custom Collection",
-                subtitle: "Define Your Own Fields",
-                leadingLabel: "Cancel",
+                title: viewModel.language.localized("Custom Collection"),
+                subtitle: viewModel.language.localized("Define Your Own Fields"),
+                leadingLabel: viewModel.language.localized("Cancel"),
                 leadingAction: { dismiss() },
                 trailingLabel: "Create",
                 trailingDisabled: name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || draftFields.isEmpty,
@@ -954,44 +962,47 @@ public struct ManualCollectionBuilderSheetView: View {
 
             ScrollView(showsIndicators: false) {
                 VStack(alignment: .leading, spacing: 18) {
-                    ArcaSectionCard(title: "Collection Identity", icon: "sparkles") {
-                        ArcaStyledTextField("Collection Name (e.g., Pet Vet Records, Appliances)", text: $name, icon: "folder.fill")
+                    ArcaSectionCard(title: viewModel.language.localized("Collection Identity"), icon: "sparkles") {
+                        ArcaStyledTextField(viewModel.language.localized("Collection Name (e.g., Appliances, Hobbies)"), text: $name, icon: "folder.fill")
 
                         HStack(spacing: 8) {
-                            ForEach(icons, id: \.self) { ic in
+                            ForEach(icons, id: \.symbol) { item in
+                                let ic = item.symbol
                                 let selected = iconName == ic
                                 Button {
                                     iconName = ic
                                 } label: {
                                     Image(systemName: ic)
-                                        .font(.system(size: 15, weight: .semibold))
+                                        .font(.body.weight(.semibold))
                                         .foregroundStyle(selected ? .white : .primary)
-                                        .frame(width: 40, height: 38)
+                                        .frame(width: 44, height: 44)
                                         .background(
                                             RoundedRectangle(cornerRadius: 10, style: .continuous)
                                                 .fill(selected ? ArcaTheme.accent : ArcaTheme.subtleFieldBackground(for: colorScheme))
                                         )
                                 }
                                 .buttonStyle(.plain)
+                                .accessibilityLabel(viewModel.language.localized(item.label))
+                                .accessibilityAddTraits(selected ? .isSelected : [])
                             }
                         }
                     }
 
-                    ArcaSectionCard(title: "Defined Fields (\(draftFields.count))", icon: "list.bullet.rectangle") {
+                    ArcaSectionCard(title: viewModel.language.localized("Defined Fields"), icon: "list.bullet.rectangle") {
                         VStack(spacing: 8) {
                             ForEach(draftFields) { field in
                                 HStack(spacing: 10) {
                                     Image(systemName: field.type.iconName)
-                                        .font(.system(size: 14, weight: .semibold))
+                                        .font(.subheadline.weight(.semibold))
                                         .foregroundStyle(ArcaTheme.accent)
                                         .frame(width: 28, height: 28)
                                         .background(Circle().fill(ArcaTheme.accent.opacity(0.12)))
 
                                     VStack(alignment: .leading, spacing: 2) {
                                         Text(field.label)
-                                            .font(.system(size: 14, weight: .semibold, design: .rounded))
-                                        Text("\(field.type.rawValue.replacingOccurrences(of: "_", with: " ").capitalized)\(field.isRequired ? " • Required" : "")")
-                                            .font(.system(size: 11))
+                                            .font(.subheadline.weight(.semibold))
+                                        Text(ArcaStrings.text("field.type." + field.type.rawValue, language: viewModel.language) + (field.isRequired ? " • " + viewModel.language.localized("Required") : ""))
+                                            .font(.caption)
                                             .foregroundStyle(.secondary)
                                     }
 
@@ -1002,11 +1013,12 @@ public struct ManualCollectionBuilderSheetView: View {
                                             draftFields.removeAll { $0.id == field.id }
                                         } label: {
                                             Image(systemName: "trash")
-                                                .font(.system(size: 13, weight: .semibold))
+                                                .font(.footnote.weight(.semibold))
                                                 .foregroundStyle(ArcaTheme.dangerRed)
-                                                .padding(6)
+                                                .frame(minWidth: 44, minHeight: 44)
                                         }
                                         .buttonStyle(.plain)
+                                        .accessibilityLabel(viewModel.language.format("Remove %@", field.label))
                                     }
                                 }
                                 .padding(10)
@@ -1018,29 +1030,29 @@ public struct ManualCollectionBuilderSheetView: View {
                         }
                     }
 
-                    ArcaSectionCard(title: "Add Another Field", icon: "plus.circle.fill") {
-                        ArcaStyledTextField("Field Label (e.g., Serial Number, Vet Clinic)", text: $newFieldLabel, icon: "tag")
+                    ArcaSectionCard(title: viewModel.language.localized("Add Another Field"), icon: "plus.circle.fill") {
+                        ArcaStyledTextField(viewModel.language.localized("Field Label (e.g., Serial Number)"), text: $newFieldLabel, icon: "tag")
 
                         HStack {
-                            Text("Field Type")
-                                .font(.system(size: 13, weight: .medium))
+                            Text(viewModel.language.localized("Field Type"))
+                                .font(.footnote.weight(.medium))
                             Spacer()
-                            Picker("Field Type", selection: $newFieldType) {
+                            Picker(viewModel.language.localized("Field Type"), selection: $newFieldType) {
                                 ForEach(FieldType.allCases, id: \.self) { t in
-                                    Text(t.rawValue.replacingOccurrences(of: "_", with: " ").capitalized).tag(t)
+                                    Text(ArcaStrings.text("field.type." + t.rawValue, language: viewModel.language)).tag(t)
                                 }
                             }
                             .labelsHidden()
                         }
 
-                        Toggle("Required Field", isOn: $newFieldRequired)
-                            .font(.system(size: 13, weight: .medium))
+                        Toggle(viewModel.language.localized("Required Field"), isOn: $newFieldRequired)
+                            .font(.footnote.weight(.medium))
 
                         if newFieldType == .singleSelect || newFieldType == .multiSelect {
-                            ArcaStyledTextField("Choices (comma-separated, e.g., Active, Expired)", text: $newSelectOptionsComma, icon: "list.bullet")
+                            ArcaStyledTextField(viewModel.language.localized("Choices (comma-separated, e.g., Active, Expired)"), text: $newSelectOptionsComma, icon: "list.bullet")
                         }
 
-                        Button("Add Field to Collection") {
+                        Button(viewModel.language.localized("Add Field to Collection")) {
                             let trimmed = newFieldLabel.trimmingCharacters(in: .whitespacesAndNewlines)
                             guard !trimmed.isEmpty else { return }
                             let opts: [SelectOption] = newSelectOptionsComma

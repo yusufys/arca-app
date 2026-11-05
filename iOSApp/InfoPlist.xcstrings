@@ -1,0 +1,29 @@
+{
+  "sourceLanguage": "en",
+  "strings": {
+    "NSFaceIDUsageDescription": {
+      "comment": "System permission message. Follows the iOS app language.",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Arca uses Face ID to lock and protect your personal records on this device."
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "يستخدم آركا Face ID لقفل سجلاتك الشخصية وحمايتها على هذا الجهاز."
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Arca, bu cihazdaki kişisel kayıtlarınızı kilitlemek ve korumak için Face ID kullanır."
+          }
+        }
+      }
+    }
+  },
+  "version": "1.0"
+}

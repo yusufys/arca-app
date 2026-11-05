@@ -23,16 +23,16 @@ public struct SensitivePrivacyConsentView: View {
         NavigationStack {
             Form {
                 Section {
-                    Text("Do you want to sync “\(name)” to the cloud?").font(.headline)
-                    Text("It is kept on this device until you explicitly enable sync. A Local-Only Space or collection overrides this choice.")
-                    Button("Keep on this device") { dismiss() }
+                    Text(viewModel.language.format("Do you want to sync “%@” to the cloud?", name)).font(.headline)
+                    Text(viewModel.language.localized("It is kept on this device until you explicitly enable sync. A Local-Only Space or collection overrides this choice."))
+                    Button(viewModel.language.localized("Keep on this device")) { dismiss() }
                 }
-                Section(configured ? "Verify master password" : "Set up a master password") {
-                    SecureField(configured ? "Master password" : "At least 12 characters", text: $password)
+                Section(viewModel.language.localized(configured ? "Verify master password" : "Set up a master password")) {
+                    SecureField(viewModel.language.localized(configured ? "Master password" : "At least 12 characters"), text: $password)
                         .textContentType(configured ? .password : .newPassword)
-                    if !configured { SecureField("Confirm master password", text: $confirmation).textContentType(.newPassword) }
-                    Text("This password is verified on this device. It is separate from your account password and recovery phrase.").font(.footnote)
-                    Button("Sync securely") {
+                    if !configured { SecureField(viewModel.language.localized("Confirm master password"), text: $confirmation).textContentType(.newPassword) }
+                    Text(viewModel.language.localized("This password is verified on this device. It is separate from your account password and recovery phrase.")).font(.footnote)
+                    Button(viewModel.language.localized("Sync securely")) {
                         working = true
                         Task {
                             do {
@@ -49,13 +49,13 @@ public struct SensitivePrivacyConsentView: View {
                 }
                 if let error { Section { Text(error).foregroundStyle(.red) } }
                 if viewModel.pendingPrivacyDeletionCollectionIds.contains(collectionId) {
-                    Section("Remote deletion pending") {
-                        Text("Older server copies must be removed before this collection can upload again. Reconnect and sync to retry. An offline device may still hold an earlier copy.")
+                    Section(viewModel.language.localized("Remote deletion pending")) {
+                        Text(viewModel.language.localized("Older server copies must be removed before this collection can upload again. Reconnect and sync to retry. An offline device may still hold an earlier copy."))
                     }
                 }
             }
-            .navigationTitle("Sensitive data")
-            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { password = ""; dismiss() } } }
+            .navigationTitle(viewModel.language.localized("Sensitive data"))
+            .toolbar { ToolbarItem(placement: .cancellationAction) { Button(viewModel.language.localized("Cancel")) { password = ""; dismiss() } } }
         }.onAppear { configured = viewModel.hasConsentMasterPassword }
     }
 }

@@ -37,6 +37,7 @@ final class ArcaPurchases: ObservableObject {
             } else if Purchases.shared.appUserID != account {
                 _ = try await Purchases.shared.logIn(account)
             }
+            Purchases.shared.overridePreferredUILocale(model.language.rawValue)
             let info = try await Purchases.shared.customerInfo()
             guard !Task.isCancelled, model.purchaseAccountID == account else { return }
             apply(info, to: model)
@@ -69,23 +70,23 @@ struct ArcaPlanView: View {
 
     var body: some View {
         List {
-            Section("Your plan") {
-                Text(model.isProSubscriber ? "Arca Pro" : "Arca Free")
+            Section(model.language.localized("Your plan")) {
+                Text(model.language.localized(model.isProSubscriber ? "Arca Pro" : "Arca Free"))
                 if let active = purchases.customerInfo?.entitlements[ArcaPurchases.entitlementID], active.isActive {
                     if let date = active.expirationDate {
-                        Text("Access through \(date.formatted(date: .abbreviated, time: .omitted))")
-                    } else { Text("Lifetime access") }
+                        Text(model.language.format("Access through %@", date.formatted(.dateTime.day().month().year().locale(model.language.locale))))
+                    } else { Text(model.language.localized("Lifetime access")) }
                 }
             }
             if model.purchaseAccountID == nil {
-                Text("Connect your Arca account in Settings to purchase or restore Pro.")
+                Text(model.language.localized("Connect your Arca account in Settings to purchase or restore Pro."))
             } else if purchases.ready {
                 Section {
                     if !model.isProSubscriber {
-                        Button("View plans") { showPaywall = true }
+                        Button(model.language.localized("View plans")) { showPaywall = true }
                             .disabled(offering == nil || working)
                     }
-                    Button("Restore purchases") {
+                    Button(model.language.localized("Restore purchases")) {
                         Task {
                             working = true
                             defer { working = false }
@@ -95,19 +96,22 @@ struct ArcaPlanView: View {
                             } catch { feedback = error.localizedDescription }
                         }
                     }.disabled(working)
-                    Button("Manage purchases") { showCenter = true }
+                    Button(model.language.localized("Manage purchases")) { showCenter = true }
                 }
             }
             if let text = feedback ?? purchases.message {
-                Text(text)
-                Button("Retry") {
+                Text(model.language.localized(text))
+                Button(model.language.localized("Retry")) {
                     if purchases.ready { retry += 1 } else { purchases.retryConnection() }
                 }
             }
         }
-        .navigationTitle("Arca Pro")
-        .task(id: "\(purchases.ready)-\(retry)") {
+        .navigationTitle(model.language.localized("Arca Pro"))
+        .environment(\.locale, model.language.locale)
+        .environment(\.layoutDirection, model.language.layoutDirection)
+        .task(id: "\(purchases.ready)-\(retry)-\(model.language.rawValue)") {
             guard purchases.ready else { offering = nil; return }
+            Purchases.shared.overridePreferredUILocale(model.language.rawValue)
             do {
                 feedback = nil
                 offering = try await Purchases.shared.offerings().current
@@ -117,6 +121,8 @@ struct ArcaPlanView: View {
         .sheet(isPresented: $showPaywall) {
             if let offering {
                 PaywallView(offering: offering, displayCloseButton: true)
+                    .environment(\.locale, model.language.locale)
+                    .environment(\.layoutDirection, model.language.layoutDirection)
                     .onPurchaseCompleted { info in
                         purchases.apply(info, to: model)
                         showPaywall = false
@@ -125,8 +131,8 @@ struct ArcaPlanView: View {
                         purchases.apply(info, to: model)
                         showPaywall = false
                     }
-                    .onPurchaseFailure { error in feedback = error.localizedDescription }
-                    .onRestoreFailure { error in feedback = error.localizedDescription }
+                    .onPurchaseFailure { _ in feedback = "The purchase could not be completed. Please try again." }
+                    .onRestoreFailure { _ in feedback = "The purchase could not be completed. Please try again." }
             }
         }
         .presentCustomerCenter(isPresented: $showCenter)

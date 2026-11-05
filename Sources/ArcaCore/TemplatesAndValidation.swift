@@ -240,8 +240,11 @@ public enum SchemaEngine {
     /// Validates a candidate record's values against the active `CollectionSchema`.
     public static func validate(
         values: [UUID: FieldValue],
-        against schema: CollectionSchema
+        against schema: CollectionSchema,
+        locale: Locale = Locale(identifier: "en")
     ) -> [RecordValidationError] {
+        let code = locale.language.languageCode?.identifier ?? "en"
+        let bundle = Bundle.module.path(forResource: code, ofType: "lproj").flatMap(Bundle.init(path:)) ?? .module
         var errors: [RecordValidationError] = []
         for field in schema.activeFields {
             let value = values[field.id] ?? .null
@@ -249,7 +252,7 @@ public enum SchemaEngine {
                 errors.append(RecordValidationError(
                     fieldId: field.id,
                     fieldLabel: field.label,
-                    reason: "This field is required."
+                    reason: String(localized: "This field is required.", bundle: bundle, locale: locale)
                 ))
                 continue
             }
@@ -261,7 +264,7 @@ public enum SchemaEngine {
                     errors.append(RecordValidationError(
                         fieldId: field.id,
                         fieldLabel: field.label,
-                        reason: "Must be \(maxLen) characters or fewer."
+                        reason: String(format: String(localized: "Use no more than %d characters.", bundle: bundle, locale: locale), locale: locale, maxLen)
                     ))
                 }
             case (.number, .number(let num)):
@@ -269,14 +272,14 @@ public enum SchemaEngine {
                     errors.append(RecordValidationError(
                         fieldId: field.id,
                         fieldLabel: field.label,
-                        reason: "Must be at least \(min)."
+                        reason: String(format: String(localized: "Must be at least %@.", bundle: bundle, locale: locale), min.formatted(.number.locale(locale)))
                     ))
                 }
                 if let max = field.validation.maxNumber, num > max {
                     errors.append(RecordValidationError(
                         fieldId: field.id,
                         fieldLabel: field.label,
-                        reason: "Must be at most \(max)."
+                        reason: String(format: String(localized: "Must be at most %@.", bundle: bundle, locale: locale), max.formatted(.number.locale(locale)))
                     ))
                 }
             case (.rating, .rating(let stars)):
@@ -284,7 +287,7 @@ public enum SchemaEngine {
                     errors.append(RecordValidationError(
                         fieldId: field.id,
                         fieldLabel: field.label,
-                        reason: "Rating must be between 0 and \(field.validation.maxRating)."
+                        reason: String(format: String(localized: "Rating must be between 0 and %d.", bundle: bundle, locale: locale), locale: locale, field.validation.maxRating)
                     ))
                 }
             case (.currency, .currency),
@@ -299,7 +302,7 @@ public enum SchemaEngine {
                 errors.append(RecordValidationError(
                     fieldId: field.id,
                     fieldLabel: field.label,
-                    reason: "Value does not match expected field type (\(field.type.rawValue))."
+                    reason: String(localized: "Value does not match the field type.", bundle: bundle, locale: locale)
                 ))
             }
         }

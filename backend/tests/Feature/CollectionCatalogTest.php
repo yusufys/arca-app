@@ -36,6 +36,40 @@ class CollectionCatalogTest extends TestCase
         ]);
     }
 
+    public function test_translated_catalog_is_validated_and_preserved_on_legacy_admin_updates(): void
+    {
+        $this->actingAs(User::factory()->create(['is_admin' => true]));
+        $payload = $this->payload();
+        $payload['localizations_json'] = json_encode(['ar' => [
+            'subtitle' => 'مقتنيات المنزل',
+            'schema' => ['name' => 'مقتنيات', 'fields' => [['label' => 'الاسم', 'type' => 'short_text']]],
+        ]]);
+        $this->postJson('/admin/collection-templates', $payload)->assertCreated();
+        $template = CollectionTemplate::where('slug', 'equipment')->firstOrFail();
+        $this->getJson('/api/v1/collection-templates')->assertOk()
+            ->assertJsonPath('templates.0.localizations.ar.schema.fields.0.label', 'الاسم');
+
+        unset($payload['localizations_json']);
+        $this->postJson('/admin/collection-templates/'.$template->id, $payload)->assertOk();
+        $this->assertSame('مقتنيات', $template->fresh()->localizations['ar']['schema']['name']);
+
+        $payload['localizations_json'] = json_encode(['ar' => [
+            'subtitle' => 'Invalid', 'schema' => ['name' => 'Invalid', 'fields' => [['label' => 'URL', 'type' => 'url']]],
+        ]]);
+        $this->postJson('/admin/collection-templates/'.$template->id, $payload)->assertUnprocessable();
+        $this->assertSame('مقتنيات', $template->fresh()->localizations['ar']['schema']['name']);
+    }
+
+    public function test_prompt_uses_requested_language_without_translating_schema_keys(): void
+    {
+        foreach (['ar' => 'Arabic', 'tr' => 'Turkish', 'en' => 'English'] as $locale => $name) {
+            $response = $this->postJson('/api/v1/collection-prompt', ['intent' => 'Home', 'language' => $locale])->assertOk();
+            $this->assertStringContainsString('in '.$name, $response->json('prompt'));
+            $this->assertStringContainsString('short_text', $response->json('prompt'));
+        }
+        $this->postJson('/api/v1/collection-prompt', ['intent' => 'Home', 'language' => 'xx'])->assertUnprocessable();
+    }
+
     public function test_catalog_can_be_empty_without_inserting_defaults(): void
     {
         $this->getJson('/api/v1/collection-templates')->assertOk()->assertExactJson(['version' => 1, 'templates' => []]);

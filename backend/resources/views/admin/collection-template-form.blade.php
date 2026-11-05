@@ -19,5 +19,8 @@
     </select>
     <label for="{{ $prefix }}-schema">Collection schema JSON</label>
     <textarea id="{{ $prefix }}-schema" name="schema_json" rows="16" required spellcheck="false">{{ $restore ? old('schema_json') : json_encode($schema, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) }}</textarea>
+    <label for="{{ $prefix }}-localizations">Translations JSON (English, Turkish, Arabic)</label>
+    <p>Optional keys: en, tr, ar. Each contains a subtitle and a complete schema using the same contract. Example: {"ar":{"subtitle":"وصف المجموعة","schema":{"name":"مجموعة","fields":[{"label":"الاسم","type":"short_text"}]}}}. Missing languages use the base schema. Existing user collections are never renamed.</p>
+    <textarea id="{{ $prefix }}-localizations" name="localizations_json" rows="12" spellcheck="false">{{ $restore ? old('localizations_json') : json_encode($template?->localizations ?: new \stdClass, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) }}</textarea>
     <button type="submit">{{ $editing ? 'Save template' : 'Create template' }}</button>
 </form>

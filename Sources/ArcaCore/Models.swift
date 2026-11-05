@@ -547,7 +547,9 @@ public enum FieldValue: Codable, Sendable, Equatable, Hashable {
             formatter.timeStyle = .short
             return formatter.string(from: dt)
         case .boolean(let b):
-            return b ? "Yes" : "No"
+            let code = locale.language.languageCode?.identifier ?? "en"
+            let bundle = Bundle.module.path(forResource: code, ofType: "lproj").flatMap(Bundle.init(path:)) ?? .module
+            return String(localized: b ? "Yes" : "No", bundle: bundle, locale: locale)
         case .singleSelect(let optionId):
             if let match = field?.options.first(where: { $0.id == optionId || $0.label == optionId }) {
                 return match.label

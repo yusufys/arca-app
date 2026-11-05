@@ -222,7 +222,7 @@ public struct AICollectionAssistantSheetView: View {
                 #if os(iOS)
                 .textInputAutocapitalization(.never)
                 #endif
-                .font(.system(size: 13, design: .monospaced))
+                .font(.system(.footnote, design: .monospaced))
                 .frame(minHeight: 150)
                 .scrollContentBackground(.hidden)
                 .padding(8)
@@ -236,7 +236,7 @@ public struct AICollectionAssistantSheetView: View {
                     preview = try viewModel.previewAICollectionReply(reply)
                 } catch {
                     preview = nil
-                    errorMessage = error.localizedDescription
+                    errorMessage = text("creation.invalidReply")
                 }
             }
             .buttonStyle(ArcaPrimaryButtonStyle())
@@ -331,7 +331,7 @@ public struct AICollectionAssistantSheetView: View {
             do {
                 preparedPrompt = try await viewModel.prepareAIAssistantPrompt(intent: intent)
             } catch {
-                errorMessage = error.localizedDescription
+                errorMessage = text("creation.requestFailed")
             }
         }
     }
@@ -372,7 +372,7 @@ public struct AICollectionAssistantSheetView: View {
                 try await viewModel.createAICollection(from: schema)
                 dismiss()
             } catch {
-                errorMessage = error.localizedDescription
+                errorMessage = text("creation.requestFailed")
             }
         }
     }

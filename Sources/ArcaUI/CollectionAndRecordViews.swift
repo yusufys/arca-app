@@ -30,7 +30,7 @@ public struct FieldEditorSheetView: View {
     public var body: some View {
         VStack(spacing: 0) {
             ArcaSheetHeaderBar(
-                title: "Manage Fields",
+                title: viewModel.language.localized("Manage Fields"),
                 subtitle: currentSchema.map { "\($0.name) • Schema v\($0.schemaVersion)" },
                 leadingLabel: "Done",
                 leadingAction: { dismiss() }
@@ -39,9 +39,9 @@ public struct FieldEditorSheetView: View {
             if let schema = currentSchema {
                 ScrollView(showsIndicators: false) {
                     VStack(alignment: .leading, spacing: 18) {
-                        ArcaSectionCard(title: "Collection privacy", icon: "hand.raised.fill") {
-                            Text(schema.privacy == .localOnly ? "Sensitive · kept on this device" : schema.privacy == .syncWithConsent ? "Sensitive · cloud sync consented" : "Ordinary collection")
-                            Button("Mark collection sensitive / change consent") {
+                        ArcaSectionCard(title: viewModel.language.localized("Collection privacy"), icon: "hand.raised.fill") {
+                            Text(viewModel.language.localized(schema.privacy == .localOnly ? "Sensitive · kept on this device" : schema.privacy == .syncWithConsent ? "Sensitive · cloud sync consented" : "Ordinary collection"))
+                            Button(viewModel.language.localized("Mark collection sensitive / change consent")) {
                                 Task {
                                     do {
                                         try await viewModel.keepSensitiveDataOnDevice(collectionId: schema.id)
@@ -50,29 +50,29 @@ public struct FieldEditorSheetView: View {
                                 }
                             }
                             if viewModel.pendingPrivacyDeletionCollectionIds.contains(schema.id) {
-                                Text("Remote deletion pending. Uploads for this collection remain paused until confirmed. Offline devices may retain earlier copies.").font(.footnote).foregroundStyle(.orange)
+                                Text(viewModel.language.localized("Remote deletion pending. Uploads for this collection remain paused until confirmed. Offline devices may retain earlier copies.")).font(.footnote).foregroundStyle(.orange)
                             }
                             if let privacyError { Text(privacyError).foregroundStyle(.red) }
                         }
                         ArcaSectionCard(
-                            title: "Active Fields (\(schema.activeFields.count))",
-                            subtitle: "Reorder, rename labels without losing values, or preview safe type conversions.",
+                            title: viewModel.language.localized("Active Fields"),
+                            subtitle: viewModel.language.localized("Reorder, rename labels without losing values, or preview safe type conversions."),
                             icon: "slider.horizontal.3"
                         ) {
                             VStack(spacing: 8) {
                                 ForEach(Array(schema.activeFields.enumerated()), id: \.element.id) { index, field in
                                     HStack(spacing: 10) {
                                         Image(systemName: field.type.iconName)
-                                            .font(.system(size: 14, weight: .semibold))
+                                            .font(.subheadline.weight(.semibold))
                                             .foregroundStyle(ArcaTheme.accent)
                                             .frame(width: 30, height: 30)
                                             .background(Circle().fill(ArcaTheme.accent.opacity(0.12)))
 
                                         VStack(alignment: .leading, spacing: 2) {
                                             Text(field.label)
-                                                .font(.system(size: 14, weight: .bold, design: .rounded))
-                                            Text("\(field.type.rawValue.replacingOccurrences(of: "_", with: " ").capitalized)\(field.isRequired ? " • Required" : "")")
-                                                .font(.system(size: 11))
+                                                .font(.subheadline.weight(.bold))
+                                            Text(ArcaStrings.text("field.type." + field.type.rawValue, language: viewModel.language) + (field.isRequired ? " • " + viewModel.language.localized("Required") : ""))
+                                                .font(.caption)
                                                 .foregroundStyle(.secondary)
                                         }
 
@@ -83,11 +83,12 @@ public struct FieldEditorSheetView: View {
                                                 Task { await viewModel.moveField(in: schema.id, fromIndex: index, direction: -1) }
                                             } label: {
                                                 Image(systemName: "arrow.up")
-                                                    .font(.system(size: 11, weight: .bold))
+                                                    .font(.caption.weight(.bold))
                                                     .frame(width: 26, height: 26)
                                                     .background(Circle().fill(Color.secondary.opacity(0.12)))
                                             }
                                             .buttonStyle(.plain)
+                                            .accessibilityLabel(viewModel.language.format("Move %@ up", field.label))
                                             .disabled(index == 0)
                                             .opacity(index == 0 ? 0.35 : 1)
 
@@ -95,16 +96,17 @@ public struct FieldEditorSheetView: View {
                                                 Task { await viewModel.moveField(in: schema.id, fromIndex: index, direction: 1) }
                                             } label: {
                                                 Image(systemName: "arrow.down")
-                                                    .font(.system(size: 11, weight: .bold))
+                                                    .font(.caption.weight(.bold))
                                                     .frame(width: 26, height: 26)
                                                     .background(Circle().fill(Color.secondary.opacity(0.12)))
                                             }
                                             .buttonStyle(.plain)
+                                            .accessibilityLabel(viewModel.language.format("Move %@ down", field.label))
                                             .disabled(index == schema.activeFields.count - 1)
                                             .opacity(index == schema.activeFields.count - 1 ? 0.35 : 1)
 
                                             Menu {
-                                                Button(field.privacy == nil ? "Mark Sensitive…" : "Sensitive Privacy / Consent…") {
+                                                Button(viewModel.language.localized(field.privacy == nil ? "Mark Sensitive…" : "Sensitive Privacy / Consent…")) {
                                                     Task {
                                                         do {
                                                             try await viewModel.keepSensitiveDataOnDevice(collectionId: schema.id, fieldId: field.id)
@@ -112,29 +114,29 @@ public struct FieldEditorSheetView: View {
                                                         } catch { privacyError = error.localizedDescription }
                                                     }
                                                 }
-                                                Button("Rename Label (Preserves Values)…") {
+                                                Button(viewModel.language.localized("Rename Label (Preserves Values)…")) {
                                                     renamingField = field
                                                     renameLabel = field.label
                                                 }
-                                                Button("Change Field Type (Dry-Run Preview)…") {
+                                                Button(viewModel.language.localized("Change Field Type (Dry-Run Preview)…")) {
                                                     convertingField = field
                                                     targetConversionType = field.type
                                                     conversionPreview = viewModel.previewFieldConversion(collectionId: schema.id, field: field, targetType: field.type)
                                                 }
                                                 Divider()
-                                                Button("Archive Field (Retain Existing Values)") {
+                                                Button(viewModel.language.localized("Archive Field (Retain Existing Values)")) {
                                                     Task {
                                                         await viewModel.removeField(in: schema.id, fieldId: field.id, policy: .archiveAndRetainValues)
                                                     }
                                                 }
-                                                Button("Permanently Purge Field & Values", role: .destructive) {
+                                                Button(viewModel.language.localized("Permanently Purge Field & Values"), role: .destructive) {
                                                     Task {
                                                         await viewModel.removeField(in: schema.id, fieldId: field.id, policy: .permanentlyPurgeValues)
                                                     }
                                                 }
                                             } label: {
                                                 Image(systemName: "ellipsis.circle.fill")
-                                                    .font(.system(size: 20))
+                                                    .font(.title3)
                                                     .foregroundStyle(.secondary)
                                             }
                                             .buttonStyle(.plain)
@@ -151,15 +153,15 @@ public struct FieldEditorSheetView: View {
 
                         if let renamingField {
                             ArcaSectionCard(
-                                title: "Rename “\(renamingField.label)”",
-                                subtitle: "Renaming a field only updates its display label. All existing record values stay bound to its stable UUID.",
+                                title: viewModel.language.format("Rename “%@”", renamingField.label),
+                                subtitle: viewModel.language.localized("Renaming a field only updates its display label. All existing record values stay bound to its stable UUID."),
                                 icon: "pencil"
                             ) {
-                                ArcaStyledTextField("New Display Label", text: $renameLabel, icon: "tag")
+                                ArcaStyledTextField(viewModel.language.localized("New Display Label"), text: $renameLabel, icon: "tag")
                                 HStack(spacing: 10) {
-                                    Button("Cancel") { self.renamingField = nil }
+                                    Button(viewModel.language.localized("Cancel")) { self.renamingField = nil }
                                         .buttonStyle(ArcaSecondaryButtonStyle(tint: .secondary))
-                                    Button("Save Label") {
+                                    Button(viewModel.language.localized("Save Label")) {
                                         Task {
                                             await viewModel.renameField(in: schema.id, fieldId: renamingField.id, newLabel: renameLabel)
                                             self.renamingField = nil
@@ -172,17 +174,17 @@ public struct FieldEditorSheetView: View {
 
                         if let convertingField {
                             ArcaSectionCard(
-                                title: "Convert Type for “\(convertingField.label)”",
-                                subtitle: "Arca runs a non-destructive dry-run preview across all existing records before allowing a type change.",
+                                title: viewModel.language.format("Convert Type for “%@”", convertingField.label),
+                                subtitle: viewModel.language.localized("Arca runs a non-destructive dry-run preview across all existing records before allowing a type change."),
                                 icon: "arrow.triangle.swap"
                             ) {
                                 HStack {
-                                    Text("Target Type")
-                                        .font(.system(size: 13, weight: .semibold))
+                                    Text(viewModel.language.localized("Target Type"))
+                                        .font(.footnote.weight(.semibold))
                                     Spacer()
-                                    Picker("Target Type", selection: $targetConversionType) {
+                                    Picker(viewModel.language.localized("Target Type"), selection: $targetConversionType) {
                                         ForEach(FieldType.allCases, id: \.self) { t in
-                                            Text(t.rawValue.replacingOccurrences(of: "_", with: " ").capitalized).tag(t)
+                                            Text(ArcaStrings.text("field.type." + t.rawValue, language: viewModel.language)).tag(t)
                                         }
                                     }
                                     .labelsHidden()
@@ -200,11 +202,11 @@ public struct FieldEditorSheetView: View {
                                             Text(preview.isSafeToApplyWithoutLoss
                                                  ? "All \(preview.totalRecordsExamined) records convert cleanly without data loss."
                                                  : "\(preview.failureCount) of \(preview.totalRecordsExamined) records cannot convert to \(preview.toType.rawValue).")
-                                                .font(.system(size: 12, weight: .semibold))
+                                                .font(.footnote.weight(.semibold))
                                         }
                                         ForEach(preview.sampleFailureDescriptions, id: \.self) { desc in
                                             Text("• \(desc)")
-                                                .font(.system(size: 11))
+                                                .font(.caption)
                                                 .foregroundStyle(ArcaTheme.dangerRed)
                                         }
                                     }
@@ -220,13 +222,13 @@ public struct FieldEditorSheetView: View {
                                 }
 
                                 HStack(spacing: 10) {
-                                    Button("Cancel") {
+                                    Button(viewModel.language.localized("Cancel")) {
                                         self.convertingField = nil
                                         self.conversionPreview = nil
                                     }
                                     .buttonStyle(ArcaSecondaryButtonStyle(tint: .secondary))
 
-                                    Button("Apply Conversion") {
+                                    Button(viewModel.language.localized("Apply Conversion")) {
                                         Task {
                                             do {
                                                 try await viewModel.applyFieldConversion(collectionId: schema.id, fieldId: convertingField.id, targetType: targetConversionType)
@@ -245,8 +247,8 @@ public struct FieldEditorSheetView: View {
 
                         if !schema.archivedFields.isEmpty {
                             ArcaSectionCard(
-                                title: "Archived Fields (Recoverable)",
-                                subtitle: "Historical values remain stored and can be restored to active forms at any time.",
+                                title: viewModel.language.localized("Archived Fields (Recoverable)"),
+                                subtitle: viewModel.language.localized("Historical values remain stored and can be restored to active forms at any time."),
                                 icon: "archivebox.fill",
                                 iconTint: ArcaTheme.warmAmber
                             ) {
@@ -254,13 +256,13 @@ public struct FieldEditorSheetView: View {
                                     HStack {
                                         VStack(alignment: .leading, spacing: 2) {
                                             Text(archived.label)
-                                                .font(.system(size: 14, weight: .semibold))
-                                            Text("Archived • Values preserved")
-                                                .font(.system(size: 11))
+                                                .font(.subheadline.weight(.semibold))
+                                            Text(viewModel.language.localized("Archived • Values preserved"))
+                                                .font(.caption)
                                                 .foregroundStyle(.secondary)
                                         }
                                         Spacer()
-                                        ArcaPillActionButton("Restore", icon: "arrow.uturn.backward") {
+                                        ArcaPillActionButton(viewModel.language.localized("Restore"), icon: "arrow.uturn.backward") {
                                             Task { await viewModel.restoreArchivedField(in: schema.id, fieldId: archived.id) }
                                         }
                                     }
@@ -268,20 +270,20 @@ public struct FieldEditorSheetView: View {
                             }
                         }
 
-                        ArcaSectionCard(title: "Add New Field", icon: "plus.circle.fill") {
-                            ArcaStyledTextField("Field Label", text: $newFieldLabel, icon: "plus")
+                        ArcaSectionCard(title: viewModel.language.localized("Add New Field"), icon: "plus.circle.fill") {
+                            ArcaStyledTextField(viewModel.language.localized("Field Label"), text: $newFieldLabel, icon: "plus")
                             HStack {
-                                Text("Field Type")
-                                    .font(.system(size: 13, weight: .medium))
+                                Text(viewModel.language.localized("Field Type"))
+                                    .font(.footnote.weight(.medium))
                                 Spacer()
-                                Picker("Type", selection: $newFieldType) {
+                                Picker(viewModel.language.localized("Field Type"), selection: $newFieldType) {
                                     ForEach(FieldType.allCases, id: \.self) { t in
-                                        Text(t.rawValue.replacingOccurrences(of: "_", with: " ").capitalized).tag(t)
+                                        Text(ArcaStrings.text("field.type." + t.rawValue, language: viewModel.language)).tag(t)
                                     }
                                 }
                                 .labelsHidden()
                             }
-                            Button("Add Field") {
+                            Button(viewModel.language.localized("Add Field")) {
                                 Task {
                                     await viewModel.addField(to: schema.id, label: newFieldLabel, type: newFieldType)
                                     newFieldLabel = ""
@@ -355,9 +357,9 @@ public struct CollectionRecordListView: View {
                     } label: {
                         HStack(spacing: 4) {
                             Image(systemName: "chevron.backward")
-                                .font(.system(size: 13, weight: .bold))
-                            Text("Back")
-                                .font(.system(size: 14, weight: .semibold, design: .rounded))
+                                .font(.footnote.weight(.bold))
+                            Text(viewModel.language.localized("Back"))
+                                .font(.subheadline.weight(.semibold))
                         }
                         .foregroundStyle(ArcaTheme.accent)
                         .padding(.horizontal, 12)
@@ -373,9 +375,9 @@ public struct CollectionRecordListView: View {
                     } label: {
                         HStack(spacing: 4) {
                             Image(systemName: "slider.horizontal.3")
-                                .font(.system(size: 12, weight: .bold))
-                            Text("Fields")
-                                .font(.system(size: 12, weight: .semibold, design: .rounded))
+                                .font(.footnote.weight(.bold))
+                            Text(viewModel.language.localized("Fields"))
+                                .font(.footnote.weight(.semibold))
                         }
                         .foregroundStyle(.primary)
                         .padding(.horizontal, 11)
@@ -390,9 +392,9 @@ public struct CollectionRecordListView: View {
                     } label: {
                         HStack(spacing: 4) {
                             Image(systemName: "plus")
-                                .font(.system(size: 12, weight: .bold))
-                            Text("Add")
-                                .font(.system(size: 13, weight: .bold, design: .rounded))
+                                .font(.footnote.weight(.bold))
+                            Text(viewModel.language.localized("Add"))
+                                .font(.footnote.weight(.bold))
                         }
                         .foregroundStyle(.white)
                         .padding(.horizontal, 13)
@@ -409,14 +411,14 @@ public struct CollectionRecordListView: View {
                             .fill(tint)
                             .frame(width: 46, height: 46)
                         Image(systemName: liveSchema.iconName)
-                            .font(.system(size: 20, weight: .semibold))
+                            .font(.title3.weight(.semibold))
                             .foregroundStyle(.white)
                     }
                     VStack(alignment: .leading, spacing: 2) {
                         Text(liveSchema.name)
-                            .font(.system(size: 24, weight: .bold, design: .rounded))
-                        Text("\(filteredRecords.count) record\(filteredRecords.count == 1 ? "" : "s") • \(liveSchema.activeFields.count) fields")
-                            .font(.system(size: 12, weight: .medium))
+                            .font(.title.weight(.bold))
+                        Text(viewModel.language.format("count.records", filteredRecords.count) + " • " + viewModel.language.format("count.fields", liveSchema.activeFields.count))
+                            .font(.footnote.weight(.medium))
                             .foregroundStyle(.secondary)
                     }
                     Spacer()
@@ -429,18 +431,18 @@ public struct CollectionRecordListView: View {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 8) {
                         Menu {
-                            Picker("Sort By", selection: $sortCriterion) {
-                                Text("Recently Updated").tag(RecordSortCriterion.updatedAtDescending)
-                                Text("Oldest Updated").tag(RecordSortCriterion.updatedAtAscending)
-                                Text("Title (A → Z)").tag(RecordSortCriterion.titleAscending)
-                                Text("Title (Z → A)").tag(RecordSortCriterion.titleDescending)
+                            Picker(viewModel.language.localized("Sort By"), selection: $sortCriterion) {
+                                Text(viewModel.language.localized("Recently Updated")).tag(RecordSortCriterion.updatedAtDescending)
+                                Text(viewModel.language.localized("Oldest Updated")).tag(RecordSortCriterion.updatedAtAscending)
+                                Text(viewModel.language.localized("Title (A → Z)")).tag(RecordSortCriterion.titleAscending)
+                                Text(viewModel.language.localized("Title (Z → A)")).tag(RecordSortCriterion.titleDescending)
                             }
                         } label: {
                             HStack(spacing: 4) {
                                 Image(systemName: "arrow.up.arrow.down")
-                                Text("Sort")
+                                Text(viewModel.language.localized("Sort"))
                             }
-                            .font(.system(size: 12, weight: .semibold, design: .rounded))
+                            .font(.footnote.weight(.semibold))
                             .padding(.horizontal, 11)
                             .padding(.vertical, 7)
                             .background(Capsule().fill(ArcaTheme.cardBackground(for: colorScheme)))
@@ -449,7 +451,7 @@ public struct CollectionRecordListView: View {
                         .buttonStyle(.plain)
 
                         filterChip(
-                            title: "Pinned",
+                            title: viewModel.language.localized("Pinned"),
                             icon: favoritesOnly ? "pin.fill" : "pin",
                             isSelected: favoritesOnly,
                             tint: ArcaTheme.warmAmber
@@ -458,7 +460,7 @@ public struct CollectionRecordListView: View {
                         }
 
                         filterChip(
-                            title: "Files",
+                            title: viewModel.language.localized("Files"),
                             icon: "paperclip",
                             isSelected: hasAttachmentsOnly,
                             tint: ArcaTheme.accent
@@ -490,11 +492,11 @@ public struct CollectionRecordListView: View {
                 if filteredRecords.isEmpty {
                     VStack(spacing: 14) {
                         Image(systemName: liveSchema.iconName)
-                            .font(.system(size: 32))
+                            .font(.largeTitle)
                             .foregroundStyle(.secondary)
-                        Text("No Records Match Your View")
-                            .font(.system(size: 16, weight: .bold, design: .rounded))
-                        Button("Add Record to \(liveSchema.name)") {
+                        Text(viewModel.language.localized("No Records Match Your View"))
+                            .font(.body.weight(.bold))
+                        Button(viewModel.language.format("Add Record to %@", liveSchema.name)) {
                             showingAddRecord = true
                         }
                         .buttonStyle(ArcaPrimaryButtonStyle(tint: tint, isFullWidth: false))
@@ -539,10 +541,10 @@ public struct CollectionRecordListView: View {
             HStack(spacing: 5) {
                 if let icon {
                     Image(systemName: icon)
-                        .font(.system(size: 11, weight: .semibold))
+                        .font(.caption.weight(.semibold))
                 }
                 Text(title)
-                    .font(.system(size: 12, weight: .semibold, design: .rounded))
+                    .font(.footnote.weight(.semibold))
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 7)
@@ -587,8 +589,8 @@ public struct AddEditRecordSheetView: View {
     public var body: some View {
         VStack(spacing: 0) {
             ArcaSheetHeaderBar(
-                title: existingRecord == nil ? "New \(schema.name)" : "Edit Record",
-                subtitle: "Saved locally first",
+                title: existingRecord == nil ? viewModel.language.format("New %@", schema.name) : viewModel.language.localized("Edit Record"),
+                subtitle: viewModel.language.localized("Saved locally first"),
                 leadingLabel: "Cancel",
                 leadingAction: { dismiss() },
                 trailingLabel: "Save",
@@ -599,10 +601,10 @@ public struct AddEditRecordSheetView: View {
                 VStack(alignment: .leading, spacing: 16) {
                     if let saveError { Text(saveError).foregroundStyle(ArcaTheme.dangerRed) }
                     if !validationErrors.isEmpty {
-                        ArcaSectionCard(title: "Please Check These Fields", icon: "exclamationmark.triangle.fill", iconTint: ArcaTheme.dangerRed) {
+                        ArcaSectionCard(title: viewModel.language.localized("Please Check These Fields"), icon: "exclamationmark.triangle.fill", iconTint: ArcaTheme.dangerRed) {
                             ForEach(validationErrors) { err in
                                 Label(err.errorDescription ?? err.reason, systemImage: "xmark.circle.fill")
-                                    .font(.system(size: 12, weight: .semibold))
+                                    .font(.footnote.weight(.semibold))
                                     .foregroundStyle(ArcaTheme.dangerRed)
                             }
                         }
@@ -616,12 +618,12 @@ public struct AddEditRecordSheetView: View {
                             HStack {
                                 Image(systemName: isFavorite ? "pin.fill" : "pin")
                                     .foregroundStyle(ArcaTheme.warmAmber)
-                                Text("Pin Record to Favorites")
-                                    .font(.system(size: 14, weight: .semibold, design: .rounded))
+                                Text(viewModel.language.localized("Pin Record to Favorites"))
+                                    .font(.subheadline.weight(.semibold))
                                     .foregroundStyle(.primary)
                                 Spacer()
                                 Image(systemName: isFavorite ? "checkmark.circle.fill" : "circle")
-                                    .font(.system(size: 20))
+                                    .font(.title3)
                                     .foregroundStyle(isFavorite ? ArcaTheme.warmAmber : .secondary)
                             }
                         }
@@ -629,7 +631,7 @@ public struct AddEditRecordSheetView: View {
                     }
 
                     // Dynamic Schema Fields Card
-                    ArcaSectionCard(title: "\(schema.name) Fields", icon: schema.iconName, iconTint: ArcaTheme.color(fromHex: schema.colorHex)) {
+                    ArcaSectionCard(title: viewModel.language.format("%@ Fields", schema.name), icon: schema.iconName, iconTint: ArcaTheme.color(fromHex: schema.colorHex)) {
                         VStack(alignment: .leading, spacing: 16) {
                             ForEach(schema.activeFields) { field in
                                 fieldEditorRow(for: field)
@@ -643,7 +645,7 @@ public struct AddEditRecordSheetView: View {
                     Button {
                         saveDraft()
                     } label: {
-                        Label(existingRecord == nil ? "Save Record" : "Save Changes", systemImage: "checkmark.circle.fill")
+                        Label(viewModel.language.localized(existingRecord == nil ? "Save Record" : "Save Changes"), systemImage: "checkmark.circle.fill")
                     }
                     .buttonStyle(ArcaPrimaryButtonStyle(tint: ArcaTheme.color(fromHex: schema.colorHex)))
                 }
@@ -702,11 +704,11 @@ public struct AddEditRecordSheetView: View {
         VStack(alignment: .leading, spacing: 7) {
             HStack {
                 Label(field.label, systemImage: field.type.iconName)
-                    .font(.system(size: 12, weight: .bold, design: .rounded))
+                    .font(.footnote.weight(.bold))
                     .foregroundStyle(.secondary)
                 if field.isRequired {
-                    Text("REQUIRED")
-                        .font(.system(size: 9, weight: .bold, design: .rounded))
+                    Text(viewModel.language.localized("Required"))
+                        .font(.caption2.weight(.bold))
                         .padding(.horizontal, 6)
                         .padding(.vertical, 2)
                         .background(Capsule().fill(ArcaTheme.accent.opacity(0.12)))
@@ -765,7 +767,7 @@ public struct AddEditRecordSheetView: View {
             case .currency:
                 HStack(spacing: 8) {
                     Text(field.validation.defaultCurrencyCode)
-                        .font(.system(size: 13, weight: .bold, design: .rounded))
+                        .font(.footnote.weight(.bold))
                         .foregroundStyle(ArcaTheme.accent)
                         .padding(.horizontal, 10)
                         .padding(.vertical, 10)
@@ -799,7 +801,7 @@ public struct AddEditRecordSheetView: View {
                     displayedComponents: [.date]
                 ) {
                     Text(field.label)
-                        .font(.system(size: 13, weight: .medium))
+                        .font(.footnote.weight(.medium))
                 }
 
             case .dateTime:
@@ -814,7 +816,7 @@ public struct AddEditRecordSheetView: View {
                     displayedComponents: [.date, .hourAndMinute]
                 ) {
                     Text(field.label)
-                        .font(.system(size: 13, weight: .medium))
+                        .font(.footnote.weight(.medium))
                 }
 
             case .boolean:
@@ -825,7 +827,7 @@ public struct AddEditRecordSheetView: View {
                     },
                     set: { draftValues[field.id] = .boolean($0) }
                 ))
-                .font(.system(size: 14, weight: .medium))
+                .font(.subheadline.weight(.medium))
 
             case .singleSelect:
                 ScrollView(.horizontal, showsIndicators: false) {
@@ -840,7 +842,7 @@ public struct AddEditRecordSheetView: View {
                                 draftValues[field.id] = selected ? .null : .singleSelect(opt.id)
                             } label: {
                                 Text(opt.label)
-                                    .font(.system(size: 12, weight: .semibold, design: .rounded))
+                                    .font(.footnote.weight(.semibold))
                                     .padding(.horizontal, 12)
                                     .padding(.vertical, 7)
                                     .background(Capsule().fill(selected ? ArcaTheme.accent : ArcaTheme.subtleFieldBackground(for: colorScheme)))
@@ -867,7 +869,7 @@ public struct AddEditRecordSheetView: View {
                                 draftValues[field.id] = updated.isEmpty ? .null : .multiSelect(Array(updated).sorted())
                             } label: {
                                 Text(opt.label)
-                                    .font(.system(size: 12, weight: .semibold, design: .rounded))
+                                    .font(.footnote.weight(.semibold))
                                     .padding(.horizontal, 12)
                                     .padding(.vertical, 7)
                                     .background(Capsule().fill(selected ? ArcaTheme.accent : ArcaTheme.subtleFieldBackground(for: colorScheme)))
@@ -884,13 +886,14 @@ public struct AddEditRecordSheetView: View {
                     if case .rating(let r) = draftValues[field.id] { return r }
                     return 0
                 }()
-                HStack(spacing: 10) {
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 44))], spacing: 8) {
                     ForEach(1...field.validation.maxRating, id: \.self) { star in
                         Button {
                             draftValues[field.id] = .rating(star)
                         } label: {
                             Image(systemName: star <= currentRating ? "star.fill" : "star")
-                                .font(.system(size: 22))
+                                .font(.title2)
+                                .frame(minWidth: 44, minHeight: 44)
                                 .foregroundStyle(star <= currentRating ? ArcaTheme.warmAmber : Color.secondary.opacity(0.35))
                         }
                         .buttonStyle(.plain)
@@ -911,10 +914,10 @@ public struct AddEditRecordSheetView: View {
                             Image(systemName: "doc.fill")
                                 .foregroundStyle(ArcaTheme.accent)
                             Text(att.filename)
-                                .font(.system(size: 13, weight: .medium))
+                                .font(.footnote.weight(.medium))
                             Spacer()
                             Text("\(ByteCountFormatter.string(fromByteCount: att.byteSize, countStyle: .file))")
-                                .font(.system(size: 11))
+                                .font(.caption)
                                 .foregroundStyle(.secondary)
                         }
                         .padding(10)
@@ -924,12 +927,12 @@ public struct AddEditRecordSheetView: View {
                         attachmentFieldId = field.id
                         showAttachmentPicker = true
                     } label: {
-                        Label("Attach File from Files", systemImage: "paperclip.badge.plus")
+                        Label(viewModel.language.localized("Attach File from Files"), systemImage: "paperclip.badge.plus")
                     }
                     .buttonStyle(ArcaSecondaryButtonStyle())
                     .disabled(viewModel.spaces.first(where: { $0.id == schema.spaceId })?.storageMode != .localOnly)
                     if viewModel.spaces.first(where: { $0.id == schema.spaceId })?.storageMode != .localOnly {
-                        Text("File attachments are available in Local-Only Spaces. Cloud attachment upload is not available yet.")
+                        Text(viewModel.language.localized("File attachments are available in Local-Only Spaces. Cloud attachment upload is not available yet."))
                             .font(.footnote).foregroundStyle(.secondary)
                     }
                 }
@@ -954,7 +957,7 @@ public struct AddEditRecordSheetView: View {
             }
         }
         saveError = nil
-        let errs = SchemaEngine.validate(values: draftValues, against: schema)
+        let errs = SchemaEngine.validate(values: draftValues, against: schema, locale: viewModel.language.locale)
         if !errs.isEmpty {
             validationErrors = errs
             saveError = errs.map { $0.errorDescription ?? $0.reason }.joined(separator: "\n")
@@ -1017,9 +1020,9 @@ public struct RecordDetailView: View {
                             } label: {
                                 HStack(spacing: 4) {
                                     Image(systemName: "chevron.backward")
-                                        .font(.system(size: 13, weight: .bold))
+                                        .font(.footnote.weight(.bold))
                                     Text(liveSchema.name)
-                                        .font(.system(size: 14, weight: .semibold, design: .rounded))
+                                        .font(.subheadline.weight(.semibold))
                                 }
                                 .foregroundStyle(ArcaTheme.accent)
                                 .padding(.horizontal, 12)
@@ -1034,7 +1037,7 @@ public struct RecordDetailView: View {
                                 Task { await viewModel.toggleFavorite(recordId: rec.id) }
                             } label: {
                                 Image(systemName: rec.isFavorite ? "pin.fill" : "pin")
-                                    .font(.system(size: 14, weight: .semibold))
+                                    .font(.subheadline.weight(.semibold))
                                     .foregroundStyle(rec.isFavorite ? .white : ArcaTheme.warmAmber)
                                     .frame(width: 34, height: 34)
                                     .background(Circle().fill(rec.isFavorite ? ArcaTheme.warmAmber : ArcaTheme.warmAmber.opacity(0.14)))
@@ -1044,8 +1047,8 @@ public struct RecordDetailView: View {
                             Button {
                                 showingEditSheet = true
                             } label: {
-                                Text("Edit")
-                                    .font(.system(size: 14, weight: .bold, design: .rounded))
+                                Text(viewModel.language.localized("Edit"))
+                                    .font(.subheadline.weight(.bold))
                                     .foregroundStyle(.white)
                                     .padding(.horizontal, 14)
                                     .padding(.vertical, 7)
@@ -1062,21 +1065,21 @@ public struct RecordDetailView: View {
                                         .fill(tint)
                                         .frame(width: 44, height: 44)
                                     Image(systemName: liveSchema.iconName)
-                                        .font(.system(size: 18, weight: .semibold))
+                                        .font(.headline.weight(.semibold))
                                         .foregroundStyle(.white)
                                 }
                                 VStack(alignment: .leading, spacing: 3) {
                                     Text(rec.title(using: liveSchema))
                                         .font(.system(size: 21, weight: .bold, design: .rounded))
-                                    Text("\(liveSchema.name) • Revision \(rec.revision) • Updated \(rec.updatedAt.formatted(date: .abbreviated, time: .shortened))")
-                                        .font(.system(size: 11))
+                                    Text(viewModel.language.format("%@ • Revision %d • Updated %@", liveSchema.name, rec.revision, rec.updatedAt.formatted(.dateTime.day().month().hour().minute().locale(viewModel.language.locale))))
+                                        .font(.caption)
                                         .foregroundStyle(.secondary)
                                 }
                             }
                         }
 
                         // Structured Fields Card
-                        ArcaSectionCard(title: "Saved Fields", icon: "list.clipboard.fill", iconTint: tint) {
+                        ArcaSectionCard(title: viewModel.language.localized("Saved Fields"), icon: "list.clipboard.fill", iconTint: tint) {
                             VStack(alignment: .leading, spacing: 14) {
                                 ForEach(liveSchema.activeFields) { field in
                                     let val = rec.values[field.id] ?? .null
@@ -1084,15 +1087,15 @@ public struct RecordDetailView: View {
                                         VStack(alignment: .leading, spacing: 4) {
                                             HStack(spacing: 5) {
                                                 Image(systemName: field.type.iconName)
-                                                    .font(.system(size: 11, weight: .semibold))
+                                                    .font(.caption.weight(.semibold))
                                                     .foregroundStyle(tint)
                                                 Text(field.label.uppercased())
-                                                    .font(.system(size: 10, weight: .bold, design: .rounded))
+                                                    .font(.caption2.weight(.bold))
                                                     .tracking(0.5)
                                                     .foregroundStyle(.secondary)
                                             }
                                             Text(val.plainTextSummary(for: field, locale: viewModel.language.locale))
-                                                .font(.system(size: 15, weight: .medium))
+                                                .font(.body.weight(.medium))
                                                 .foregroundStyle(.primary)
                                         }
                                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -1108,7 +1111,7 @@ public struct RecordDetailView: View {
 
                         // Attachments Card
                         if !rec.allAttachments.isEmpty {
-                            ArcaSectionCard(title: "Attachments (SHA-256 Verified)", icon: "paperclip", iconTint: ArcaTheme.secondaryEmerald) {
+                            ArcaSectionCard(title: viewModel.language.localized("Attachments (SHA-256 Verified)"), icon: "paperclip", iconTint: ArcaTheme.secondaryEmerald) {
                                 ForEach(rec.allAttachments) { att in
                                     HStack(spacing: 12) {
                                         ZStack {
@@ -1120,14 +1123,14 @@ public struct RecordDetailView: View {
                                         }
                                         VStack(alignment: .leading, spacing: 2) {
                                             Text(att.filename)
-                                                .font(.system(size: 14, weight: .semibold))
+                                                .font(.subheadline.weight(.semibold))
                                             Text("\(ByteCountFormatter.string(fromByteCount: att.byteSize, countStyle: .file)) • SHA-256 \(att.sha256Hex.prefix(10))…")
-                                                .font(.system(size: 11))
+                                                .font(.caption)
                                                 .foregroundStyle(.secondary)
                                         }
                                         Spacer()
                                         Text(att.uploadState.rawValue.replacingOccurrences(of: "_", with: " ").capitalized)
-                                            .font(.system(size: 10, weight: .bold, design: .rounded))
+                                            .font(.caption2.weight(.bold))
                                             .padding(.horizontal, 8)
                                             .padding(.vertical, 4)
                                             .background(Capsule().fill(ArcaTheme.secondaryEmerald.opacity(0.12)))
@@ -1138,20 +1141,20 @@ public struct RecordDetailView: View {
                         }
 
                         // Actions Card
-                        ArcaSectionCard(title: "Record Actions & Sharing", icon: "square.and.arrow.up") {
+                        ArcaSectionCard(title: viewModel.language.localized("Record Actions & Sharing"), icon: "square.and.arrow.up") {
                             VStack(spacing: 10) {
                                 HStack(spacing: 10) {
                                     Button {
                                         Task { await viewModel.duplicateRecord(rec) }
                                     } label: {
-                                        Label("Duplicate", systemImage: "plus.square.on.square")
+                                        Label(viewModel.language.localized("Duplicate"), systemImage: "plus.square.on.square")
                                     }
                                     .buttonStyle(ArcaSecondaryButtonStyle(isFullWidth: true))
 
                                     Button {
                                         showingLocalQRSheet = true
                                     } label: {
-                                        Label("Local QR Tag", systemImage: "qrcode")
+                                        Label(viewModel.language.localized("Local QR Tag"), systemImage: "qrcode")
                                     }
                                     .buttonStyle(ArcaSecondaryButtonStyle(isFullWidth: true))
                                 }
@@ -1169,7 +1172,7 @@ public struct RecordDetailView: View {
                                 Button {
                                     pendingRecordDeletion = RecordDeletionTarget(id: rec.id, title: rec.title(using: liveSchema))
                                 } label: {
-                                    Label("Delete Record", systemImage: "trash")
+                                    Label(viewModel.language.localized("Delete Record"), systemImage: "trash")
                                 }
                                 .buttonStyle(ArcaSecondaryButtonStyle(tint: ArcaTheme.dangerRed, isFullWidth: true))
                             }
@@ -1194,7 +1197,7 @@ public struct RecordDetailView: View {
                         .frame(minWidth: 370, idealWidth: 400, minHeight: 540, idealHeight: 620)
                 }
             } else {
-                Text("Record no longer available.")
+                Text(viewModel.language.localized("Record no longer available."))
                     .foregroundStyle(.secondary)
             }
         }
@@ -1221,7 +1224,7 @@ public struct RecordDetailView: View {
     private func localQRSheet(for rec: RecordItem) -> some View {
         let deepLink = OptionalCapabilityEngine.localRecordDeepLink(spaceId: rec.spaceId, collectionId: rec.collectionId, recordId: rec.id)
         return VStack(spacing: 0) {
-            ArcaSheetHeaderBar(title: "Local QR Deep Link", leadingLabel: "Done", leadingAction: { showingLocalQRSheet = false })
+            ArcaSheetHeaderBar(title: viewModel.language.localized("Local QR Deep Link"), leadingLabel: "Done", leadingAction: { showingLocalQRSheet = false })
 
             VStack(spacing: 20) {
                 Spacer()
@@ -1235,16 +1238,16 @@ public struct RecordDetailView: View {
                         .foregroundStyle(ArcaTheme.accent)
                 }
 
-                Text("Physical Asset Tag Deep Link")
-                    .font(.system(size: 18, weight: .bold, design: .rounded))
+                Text(viewModel.language.localized("Physical Asset Tag Deep Link"))
+                    .font(.headline.weight(.bold))
 
                 Text(deepLink.absoluteString)
                     .font(.system(size: 11, design: .monospaced))
                     .padding(12)
                     .background(RoundedRectangle(cornerRadius: 10).fill(ArcaTheme.subtleFieldBackground(for: colorScheme)))
 
-                Text("Privacy guarantee: A local QR code only identifies this record by UUID on devices that already have this Space. It never embeds or transmits your record contents.")
-                    .font(.system(size: 12))
+                Text(viewModel.language.localized("Privacy guarantee: A local QR code only identifies this record by UUID on devices that already have this Space. It never embeds or transmits your record contents."))
+                    .font(.footnote)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
                     .padding(.horizontal, 20)
@@ -1279,14 +1282,14 @@ public struct RecordDetailView: View {
                             } label: {
                                 HStack {
                                     Image(systemName: isSelected ? "checkmark.square.fill" : "square")
-                                        .font(.system(size: 18))
+                                        .font(.headline)
                                         .foregroundStyle(isSelected ? ArcaTheme.accent : .secondary)
                                     Text(field.label)
-                                        .font(.system(size: 14, weight: .semibold))
+                                        .font(.subheadline.weight(.semibold))
                                         .foregroundStyle(.primary)
                                     Spacer()
                                     Text((rec.values[field.id] ?? .null).plainTextSummary(for: field))
-                                        .font(.system(size: 12))
+                                        .font(.footnote)
                                         .foregroundStyle(.secondary)
                                         .lineLimit(1)
                                 }
@@ -1300,11 +1303,11 @@ public struct RecordDetailView: View {
                         ForEach(liveSchema.activeFields.filter { selectedSnapshotFieldIds.contains($0.id) }) { field in
                             HStack {
                                 Text(field.label)
-                                    .font(.system(size: 12, weight: .bold))
+                                    .font(.footnote.weight(.bold))
                                     .foregroundStyle(.secondary)
                                 Spacer()
                                 Text((rec.values[field.id] ?? .null).plainTextSummary(for: field))
-                                    .font(.system(size: 13, weight: .medium))
+                                    .font(.footnote.weight(.medium))
                             }
                         }
                     }

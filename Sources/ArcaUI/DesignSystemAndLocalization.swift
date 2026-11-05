@@ -19,18 +19,27 @@ public enum AppLanguage: String, CaseIterable, Codable, Sendable, Identifiable {
         return match.flatMap(AppLanguage.init(rawValue:)) ?? .english
     }
 
-    func localized(_ english: String) -> String {
-        guard let path = Bundle.main.path(forResource: rawValue, ofType: "lproj"),
-              let bundle = Bundle(path: path) else { return english }
-        return bundle.localizedString(forKey: english, value: english, table: nil)
+    /// Uses Apple's compiled String Catalog in this package, selected by the in-app language.
+    public var localizationBundle: Bundle {
+        guard let path = Bundle.module.path(forResource: rawValue, ofType: "lproj"),
+              let bundle = Bundle(path: path) else { return .module }
+        return bundle
+    }
+
+    public func localized(_ key: String) -> String {
+        String(localized: String.LocalizationValue(key), bundle: localizationBundle, locale: locale)
+    }
+
+    public func format(_ key: String, _ arguments: CVarArg...) -> String {
+        String(format: localized(key), locale: locale, arguments: arguments)
     }
     public var id: String { rawValue }
 
     public var displayName: String {
         switch self {
         case .english: return "English"
-        case .arabic: return "العربية (Arabic)"
-        case .turkish: return "Türkçe (Turkish)"
+        case .arabic: return "العربية"
+        case .turkish: return "Türkçe"
         }
     }
 
@@ -64,320 +73,8 @@ public enum AppAppearanceMode: String, CaseIterable, Codable, Sendable, Identifi
 
 public enum ArcaStrings {
     public static func text(_ key: String, language: AppLanguage) -> String {
-        if let langDict = table[language], let val = langDict[key] {
-            return val
-        }
-        return table[.english]?[key] ?? key
+        language.localized(key)
     }
-
-    private static let table: [AppLanguage: [String: String]] = [
-        .english: [
-            "creation.existingReply": "I already have an AI reply",
-            "creation.backToIntent": "Describe a New Collection",
-            "creation.ai": "Create with AI",
-            "creation.aiMenu": "Create with AI…",
-            "creation.templatesMenu": "Browse Templates…",
-            "creation.manualMenu": "Build Manually…",
-            "creation.manual": "Build Manually",
-            "creation.emptyTitle": "What would you like to organize?",
-            "creation.emptyBody": "Describe what you want to track. Use your favorite AI to design a collection, then review its fields before creating it.",
-            "creation.templates": "Templates",
-            "creation.templateSubtitle": "Suggested collections you can customize",
-            "creation.templateLibrary": "Template Library",
-            "creation.retry": "Retry",
-            "creation.noTemplates": "No suggested templates are available yet. Try again, or create your own collection from Home.",
-            "creation.steps": "Design a collection with your assistant",
-            "creation.review": "Review your collection",
-            "creation.close": "Close",
-            "creation.intentTitle": "What would you like to track?",
-            "creation.intentBody": "Describe your collection and what matters to you. Arca prepares the instructions for your AI assistant.",
-            "creation.intentExample": "For example: A garden journal with plants, watering dates, photos, and seasonal notes",
-            "creation.intentLabel": "What you want to track",
-            "creation.intentPrivacy": "Only this description is sent to Arca to prepare your prompt.",
-            "creation.preparing": "Preparing…",
-            "creation.prepare": "Prepare AI Prompt",
-            "creation.edit": "Edit",
-            "creation.askTitle": "1. Ask your AI assistant",
-            "creation.askBody": "Copy the prepared prompt, paste it into your assistant, and send it. Then copy the full reply and return to Arca.",
-            "creation.copy": "Copy Prompt",
-            "creation.openFailed": "The prompt is copied. Open %@ and paste it to continue.",
-            "creation.copyOpen": "Copy & Open %@",
-            "creation.openHint": "The app or website opens. Paste the copied prompt and send it there.",
-            "creation.replyTitle": "2. Bring the reply back",
-            "creation.replyBody": "Paste the assistant's full reply. Arca checks it before showing a collection preview.",
-            "creation.paste": "Paste Reply",
-            "creation.replyLabel": "AI assistant reply",
-            "creation.preview": "Preview Collection",
-            "creation.fieldCount": "%d fields • Review before creating",
-            "creation.titleField": "Title",
-            "creation.required": "Required",
-            "creation.space": "Create in %@",
-            "creation.creating": "Creating…",
-            "creation.create": "Create Collection",
-            "creation.editReply": "Edit Reply",
-            "creation.copied": "Prompt copied. Paste it into your assistant.",
-            "creation.clipboardEmpty": "The clipboard has no text. Copy the assistant's reply, then try again.",
-            "field.type.short_text": "Short Text",
-            "field.type.long_text": "Long Text",
-            "field.type.number": "Number",
-            "field.type.currency": "Currency",
-            "field.type.date": "Date",
-            "field.type.date_time": "Date & Time",
-            "field.type.boolean": "Yes / No",
-            "field.type.single_select": "Single Choice",
-            "field.type.multi_select": "Multiple Choice",
-            "field.type.rating": "Rating",
-            "field.type.attachment": "Attachment",
-            "app.name": "Arca",
-            "app.tagline": "Your records. Your way.",
-            "app.heroPrompt": "Save something important now. Find it easily when you need it.",
-            "tab.home": "Home",
-            "tab.insights": "Insights",
-            "tab.settings": "Settings",
-            "welcome.getStarted": "Get Started",
-            "welcome.localFirstTitle": "Organized, Private, Always Yours",
-            "welcome.localFirstBody": "Keep car maintenance, warranties, home inventory, and custom collections in one calm place—ready offline whenever you need them.",
-            "storage.title": "Choose How Arca Stores Your Spaces",
-            "storage.mode.arcaSync.title": "Arca Sync (Recommended)",
-            "storage.mode.arcaSync.summary": "Records live on your device and synchronize with end-to-end encryption across up to 2 devices for free.",
-            "storage.mode.localOnly.title": "On This Device Only",
-            "storage.mode.localOnly.summary": "No account needed. Records and attachments stay strictly on this device unless you export a backup.",
-            "storage.mode.personalCloud.title": "Personal Cloud Backup (Pro)",
-            "storage.mode.personalCloud.summary": "Optional encrypted backups directly to your own iCloud Drive or Google Drive after provider policy verification.",
-            "home.spaces": "Spaces",
-            "home.collections": "Collections",
-            "home.recentRecords": "Recent Records",
-            "home.favorites": "Pinned & Favorites",
-            "home.searchPlaceholder": "Search records, notes, serial numbers…",
-            "home.quickAddRecord": "New Record",
-            "home.newCollection": "New Collection",
-            "record.invalidNumber": "Enter a valid number for “%@” using your selected language's number format.",
-            "record.invalidAmount": "Enter a valid amount for “%@” with at most two decimal places.",
-            "record.checkInput": "Check This Record",
-            "delete.spaceTitle": "Delete “%@”?",
-            "delete.spaceBody": "This removes this Space's local records and attachments. Local-Only data cannot be recovered without a backup. Cloud copies remain and can sync back.",
-            "delete.recordTitle": "Delete “%@”?",
-            "delete.recordBody": "This removes the record from this device. For a synced Space, the deletion will sync to your other devices. This cannot be undone in Arca.",
-            "common.delete": "Delete",
-            "common.cancel": "Cancel",
-            "common.ok": "OK",
-            "insights.title": "Insights",
-            "insights.spendingOverTime": "Spending Over Time",
-            "insights.upcomingExpirations": "Upcoming Warranty Expirations",
-            "insights.numericTotals": "Totals & Averages",
-            "insights.categoryBreakdown": "Records by Category",
-            "settings.title": "Settings & Storage",
-            "settings.storageAndSync": "Sync, Devices & Cloud",
-            "settings.backups": "Portable Backups & Restore",
-            "settings.subscription": "Arca Pro & Plan",
-            "settings.appearanceAndLanguage": "Appearance & Language",
-            "settings.privacyAndSecurity": "Privacy, Encryption & Biometrics"
-        ],
-        .arabic: [
-            "creation.existingReply": "لدي رد من مساعد ذكي",
-            "creation.backToIntent": "وصف مجموعة جديدة",
-            "creation.ai": "إنشاء بالذكاء الاصطناعي",
-            "creation.aiMenu": "إنشاء بالذكاء الاصطناعي…",
-            "creation.templatesMenu": "تصفح القوالب…",
-            "creation.manualMenu": "إنشاء يدوياً…",
-            "creation.manual": "إنشاء يدوياً",
-            "creation.emptyTitle": "ما الذي تود تنظيمه؟",
-            "creation.emptyBody": "صف ما تريد تتبعه. صمم مجموعة بمساعدة مساعدك المفضل، ثم راجع حقولها قبل إنشائها.",
-            "creation.templates": "القوالب",
-            "creation.templateSubtitle": "مجموعات مقترحة يمكنك تخصيصها",
-            "creation.templateLibrary": "مكتبة القوالب",
-            "creation.retry": "إعادة المحاولة",
-            "creation.noTemplates": "لا توجد قوالب مقترحة حالياً. أعد المحاولة أو أنشئ مجموعتك من الصفحة الرئيسية.",
-            "creation.steps": "صمم مجموعة بمساعدة مساعدك",
-            "creation.review": "راجع مجموعتك",
-            "creation.close": "إغلاق",
-            "creation.intentTitle": "ما الذي تود تتبعه؟",
-            "creation.intentBody": "صف مجموعتك والتفاصيل التي تهمك. يُعد أركا التعليمات لمساعدك الذكي.",
-            "creation.intentExample": "مثلاً: سجل حديقة للنباتات ومواعيد الري والصور والملاحظات الموسمية",
-            "creation.intentLabel": "ما تريد تتبعه",
-            "creation.intentPrivacy": "يُرسل هذا الوصف فقط إلى أركا لإعداد التعليمات.",
-            "creation.preparing": "جارٍ الإعداد…",
-            "creation.prepare": "إعداد تعليمات المساعد",
-            "creation.edit": "تعديل",
-            "creation.askTitle": "١. اسأل مساعدك الذكي",
-            "creation.askBody": "انسخ التعليمات الجاهزة والصقها في مساعدك ثم أرسلها. انسخ الرد كاملاً وعد إلى أركا.",
-            "creation.copy": "نسخ التعليمات",
-            "creation.openFailed": "نُسخت التعليمات. افتح %@ والصقها للمتابعة.",
-            "creation.copyOpen": "نسخ وفتح %@",
-            "creation.openHint": "سيفتح التطبيق أو الموقع. الصق التعليمات المنسوخة وأرسلها هناك.",
-            "creation.replyTitle": "٢. أحضر الرد إلى أركا",
-            "creation.replyBody": "الصق رد المساعد كاملاً. يتحقق أركا منه قبل عرض معاينة المجموعة.",
-            "creation.paste": "لصق الرد",
-            "creation.replyLabel": "رد المساعد الذكي",
-            "creation.preview": "معاينة المجموعة",
-            "creation.fieldCount": "%d حقول • راجعها قبل الإنشاء",
-            "creation.titleField": "العنوان",
-            "creation.required": "مطلوب",
-            "creation.space": "إنشاء في %@",
-            "creation.creating": "جارٍ الإنشاء…",
-            "creation.create": "إنشاء المجموعة",
-            "creation.editReply": "تعديل الرد",
-            "creation.copied": "نُسخت التعليمات. الصقها في مساعدك.",
-            "creation.clipboardEmpty": "لا يوجد نص في الحافظة. انسخ رد المساعد ثم أعد المحاولة.",
-            "field.type.short_text": "نص قصير",
-            "field.type.long_text": "نص طويل",
-            "field.type.number": "رقم",
-            "field.type.currency": "مبلغ مالي",
-            "field.type.date": "تاريخ",
-            "field.type.date_time": "تاريخ ووقت",
-            "field.type.boolean": "نعم / لا",
-            "field.type.single_select": "اختيار واحد",
-            "field.type.multi_select": "اختيارات متعددة",
-            "field.type.rating": "تقييم",
-            "field.type.attachment": "مرفق",
-            "app.name": "أركا (Arca)",
-            "app.tagline": "سجلاتك. بطريقتك.",
-            "app.heroPrompt": "احفظ ما يهمك الآن، واعثر عليه بسهولة عندما تحتاج إليه.",
-            "tab.home": "الرئيسية",
-            "tab.insights": "إحصاءات",
-            "tab.settings": "الإعدادات",
-            "welcome.getStarted": "ابدأ الآن",
-            "welcome.localFirstTitle": "منظم، خاص، وملكك دائماً",
-            "welcome.localFirstBody": "احتفظ بصيانة السيارة، الضمانات، جرد المنزل، والمجموعات المخصصة في مكان هادئ يعمل دون اتصال بالإنترنت.",
-            "storage.title": "اختر طريقة تخزين مساحاتك",
-            "storage.mode.arcaSync.title": "مزامنة أركا (موصى به)",
-            "storage.mode.arcaSync.summary": "تبقى السجلات على جهازك وتتم مزامنتها بتشفير تام بين الطرفين على جهازين مجاناً.",
-            "storage.mode.localOnly.title": "على هذا الجهاز فقط",
-            "storage.mode.localOnly.summary": "لا يتطلب حساباً. تبقى السجلات والمرفقات على جهازك فقط ما لم تقم بتصدير نسخة احتياطية.",
-            "storage.mode.personalCloud.title": "نسخ احتياطي سحابي شخصي (Pro)",
-            "storage.mode.personalCloud.summary": "نسخ احتياطي مشفر اختياري مباشرة إلى iCloud Drive أو Google Drive.",
-            "home.spaces": "المساحات",
-            "home.collections": "المجموعات",
-            "home.recentRecords": "السجلات الأخيرة",
-            "home.favorites": "المثبتة والمفضلة",
-            "home.searchPlaceholder": "ابحث في السجلات، الملاحظات، الأرقام التسلسلية…",
-            "home.quickAddRecord": "سجل جديد",
-            "home.newCollection": "مجموعة جديدة",
-            "record.invalidNumber": "أدخل رقماً صالحاً للحقل «%@» بتنسيق الأرقام للغة المحددة.",
-            "record.invalidAmount": "أدخل مبلغاً صالحاً للحقل «%@» بمنزلتين عشريتين كحد أقصى.",
-            "record.checkInput": "تحقق من هذا السجل",
-            "delete.spaceTitle": "حذف «%@»؟",
-            "delete.spaceBody": "سيؤدي هذا إلى إزالة السجلات والمرفقات المحلية لهذه المساحة. لا يمكن استعادة البيانات المحلية فقط دون نسخة احتياطية. ستبقى النسخ السحابية وقد تتم مزامنتها مجدداً.",
-            "delete.recordTitle": "حذف «%@»؟",
-            "delete.recordBody": "سيُزال السجل من هذا الجهاز. إذا كانت المساحة متزامنة، فستتم مزامنة الحذف مع أجهزتك الأخرى. لا يمكن التراجع عن ذلك في أركا.",
-            "common.delete": "حذف",
-            "common.cancel": "إلغاء",
-            "common.ok": "حسناً",
-            "insights.title": "الإحصاءات",
-            "insights.spendingOverTime": "الإنفاق بمرور الوقت",
-            "insights.upcomingExpirations": "انتهاء صلاحية الضمانات القريبة",
-            "insights.numericTotals": "المجاميع والمتوسطات",
-            "insights.categoryBreakdown": "السجلات حسب الفئة",
-            "settings.title": "الإعدادات والتخزين",
-            "settings.storageAndSync": "المزامنة والأجهزة والسحابة",
-            "settings.backups": "النسخ الاحتياطي والاستعادة",
-            "settings.subscription": "أركا برو والاشتراك",
-            "settings.appearanceAndLanguage": "المظهر واللغة",
-            "settings.privacyAndSecurity": "الخصوصية والتشفير والقفل الحيوي"
-        ],
-        .turkish: [
-            "creation.existingReply": "Yapay zekâ yanıtım zaten var",
-            "creation.backToIntent": "Yeni Bir Koleksiyon Anlat",
-            "creation.ai": "Yapay Zekâyla Oluştur",
-            "creation.aiMenu": "Yapay Zekâyla Oluştur…",
-            "creation.templatesMenu": "Şablonlara Göz At…",
-            "creation.manualMenu": "Elle Oluştur…",
-            "creation.manual": "Elle Oluştur",
-            "creation.emptyTitle": "Neleri düzenlemek istersiniz?",
-            "creation.emptyBody": "Neleri takip etmek istediğinizi anlatın. Tercih ettiğiniz yapay zekâyla bir koleksiyon tasarlayın, ardından oluşturmadan önce alanlarını inceleyin.",
-            "creation.templates": "Şablonlar",
-            "creation.templateSubtitle": "Özelleştirebileceğiniz koleksiyon önerileri",
-            "creation.templateLibrary": "Şablon Kitaplığı",
-            "creation.retry": "Tekrar Dene",
-            "creation.noTemplates": "Henüz önerilen bir şablon yok. Tekrar deneyin veya Ana Sayfa’dan kendi koleksiyonunuzu oluşturun.",
-            "creation.steps": "Asistanınızla bir koleksiyon tasarlayın",
-            "creation.review": "Koleksiyonunuzu inceleyin",
-            "creation.close": "Kapat",
-            "creation.intentTitle": "Neleri takip etmek istersiniz?",
-            "creation.intentBody": "Koleksiyonunuzu ve sizin için önemli olan ayrıntıları anlatın. Arca, yapay zekâ asistanınız için yönergeleri hazırlar.",
-            "creation.intentExample": "Örneğin: Bitkiler, sulama tarihleri, fotoğraflar ve mevsimlik notlar içeren bir bahçe günlüğü",
-            "creation.intentLabel": "Takip etmek istedikleriniz",
-            "creation.intentPrivacy": "İsteminizi hazırlamak için Arca’ya yalnızca bu açıklama gönderilir.",
-            "creation.preparing": "Hazırlanıyor…",
-            "creation.prepare": "Yapay Zekâ İstemini Hazırla",
-            "creation.edit": "Düzenle",
-            "creation.askTitle": "1. Yapay zekâ asistanınıza sorun",
-            "creation.askBody": "Hazırlanan istemi kopyalayın, asistanınıza yapıştırıp gönderin. Ardından yanıtın tamamını kopyalayıp Arca’ya dönün.",
-            "creation.copy": "İstemi Kopyala",
-            "creation.openFailed": "İstem kopyalandı. Devam etmek için %@ uygulamasını veya sitesini açıp yapıştırın.",
-            "creation.copyOpen": "Kopyala ve %@ Aç",
-            "creation.openHint": "Uygulama veya web sitesi açılır. Kopyalanan istemi oraya yapıştırıp gönderin.",
-            "creation.replyTitle": "2. Yanıtı Arca’ya getirin",
-            "creation.replyBody": "Asistanın yanıtının tamamını yapıştırın. Arca, koleksiyon önizlemesini göstermeden önce yanıtı kontrol eder.",
-            "creation.paste": "Yanıtı Yapıştır",
-            "creation.replyLabel": "Yapay zekâ asistanının yanıtı",
-            "creation.preview": "Koleksiyonu Önizle",
-            "creation.fieldCount": "%d alan • Oluşturmadan önce inceleyin",
-            "creation.titleField": "Başlık",
-            "creation.required": "Zorunlu",
-            "creation.space": "%@ alanında oluştur",
-            "creation.creating": "Oluşturuluyor…",
-            "creation.create": "Koleksiyon Oluştur",
-            "creation.editReply": "Yanıtı Düzenle",
-            "creation.copied": "İstem kopyalandı. Asistanınıza yapıştırın.",
-            "creation.clipboardEmpty": "Panoda metin yok. Asistanın yanıtını kopyalayıp tekrar deneyin.",
-            "field.type.short_text": "Kısa Metin",
-            "field.type.long_text": "Uzun Metin",
-            "field.type.number": "Sayı",
-            "field.type.currency": "Para Tutarı",
-            "field.type.date": "Tarih",
-            "field.type.date_time": "Tarih ve Saat",
-            "field.type.boolean": "Evet / Hayır",
-            "field.type.single_select": "Tek Seçim",
-            "field.type.multi_select": "Çoklu Seçim",
-            "field.type.rating": "Puan",
-            "field.type.attachment": "Ek",
-            "app.name": "Arca",
-            "app.tagline": "Kayıtlarınız. Sizin yönteminiz.",
-            "app.heroPrompt": "Önemli olanı şimdi kaydedin. İhtiyaç duyduğunuzda kolayca bulun.",
-            "tab.home": "Ana Sayfa",
-            "tab.insights": "Analizler",
-            "tab.settings": "Ayarlar",
-            "welcome.getStarted": "Başlayın",
-            "welcome.localFirstTitle": "Düzenli, Gizli ve Her Zaman Sizin",
-            "welcome.localFirstBody": "Araç bakımı, garantiler, ev envanteri ve özel koleksiyonlarınızı internet bağlantısı gerekmeden güvenle saklayın.",
-            "storage.title": "Alanlarınızın Nasıl Saklanacağını Seçin",
-            "storage.mode.arcaSync.title": "Arca Senkronizasyon (Önerilen)",
-            "storage.mode.arcaSync.summary": "Kayıtlar cihazınızda tutulur ve uçtan uca şifreleme ile ücretsiz olarak 2 cihaza kadar eşitlenir.",
-            "storage.mode.localOnly.title": "Yalnızca Bu Cihazda",
-            "storage.mode.localOnly.summary": "Hesap gerekmez. Siz dışa aktarmadıkça kayıtlar ve ekler yalnızca bu cihazda kalır.",
-            "storage.mode.personalCloud.title": "Kişisel Bulut Yedekleme (Pro)",
-            "storage.mode.personalCloud.summary": "iCloud Drive veya Google Drive hesabınıza doğrudan uçtan uca şifreli yedekleme.",
-            "home.spaces": "Alanlar",
-            "home.collections": "Koleksiyonlar",
-            "home.recentRecords": "Son Kayıtlar",
-            "home.favorites": "Sabitlenenler ve Favoriler",
-            "home.searchPlaceholder": "Kayıtlarda, notlarda, seri numaralarında ara…",
-            "home.quickAddRecord": "Yeni Kayıt",
-            "home.newCollection": "Yeni Koleksiyon",
-            "record.invalidNumber": "“%@” için seçtiğiniz dilin sayı biçiminde geçerli bir sayı girin.",
-            "record.invalidAmount": "“%@” için en fazla iki ondalık basamak içeren geçerli bir tutar girin.",
-            "record.checkInput": "Bu Kaydı Kontrol Edin",
-            "delete.spaceTitle": "“%@” silinsin mi?",
-            "delete.spaceBody": "Bu alanın yerel kayıtları ve ekleri kaldırılır. Yalnızca cihazda tutulan veriler yedek olmadan kurtarılamaz. Bulut kopyaları kalır ve yeniden eşitlenebilir.",
-            "delete.recordTitle": "“%@” silinsin mi?",
-            "delete.recordBody": "Kayıt bu cihazdan kaldırılır. Alan eşitleniyorsa silme işlemi diğer cihazlarınıza da eşitlenir. Bu işlem Arca içinde geri alınamaz.",
-            "common.delete": "Sil",
-            "common.cancel": "İptal",
-            "common.ok": "Tamam",
-            "insights.title": "Analizler",
-            "insights.spendingOverTime": "Zaman İçinde Harcamalar",
-            "insights.upcomingExpirations": "Yaklaşan Garanti Bitiş Tarihleri",
-            "insights.numericTotals": "Toplamlar ve Ortalamalar",
-            "insights.categoryBreakdown": "Kategoriye Göre Kayıtlar",
-            "settings.title": "Ayarlar ve Depolama",
-            "settings.storageAndSync": "Senkronizasyon ve Cihazlar",
-            "settings.backups": "Taşınabilir Yedekleme ve Geri Yükleme",
-            "settings.subscription": "Arca Pro ve Abonelik",
-            "settings.appearanceAndLanguage": "Görünüm ve Dil",
-            "settings.privacyAndSecurity": "Gizlilik, Şifreleme ve Biyometrik Kilit"
-        ]
-    ]
 }
 
 // MARK: - Arca archive palette (see BRAND.md)
@@ -442,7 +139,7 @@ public struct ArcaPrimaryButtonStyle: ButtonStyle {
 
     public func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(.system(size: 15, weight: .semibold, design: .rounded))
+            .font(.body.weight(.semibold))
             .foregroundStyle(.white)
             .frame(maxWidth: isFullWidth ? .infinity : nil)
             .padding(.horizontal, 18)
@@ -483,7 +180,7 @@ public struct ArcaSecondaryButtonStyle: ButtonStyle {
 
     public func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(.system(size: 14, weight: .semibold, design: .rounded))
+            .font(.subheadline.weight(.semibold))
             .foregroundStyle(tint)
             .frame(maxWidth: isFullWidth ? .infinity : nil)
             .padding(.horizontal, 16)
@@ -504,6 +201,9 @@ public struct ArcaSecondaryButtonStyle: ButtonStyle {
 
 @available(macOS 14.0, iOS 17.0, *)
 public struct ArcaPillActionButton: View {
+    @Environment(\.locale) private var locale
+    private var language: AppLanguage { AppLanguage(rawValue: locale.language.languageCode?.identifier ?? "en") ?? .english }
+
     public let title: String
     public let icon: String?
     public var tint: Color = ArcaTheme.accent
@@ -521,10 +221,10 @@ public struct ArcaPillActionButton: View {
             HStack(spacing: 5) {
                 if let icon {
                     Image(systemName: icon)
-                        .font(.system(size: 12, weight: .bold))
+                        .font(.footnote.weight(.bold))
                 }
-                Text(title)
-                    .font(.system(size: 13, weight: .semibold, design: .rounded))
+                Text(language.localized(title))
+                    .font(.footnote.weight(.semibold))
             }
             .foregroundStyle(tint)
             .padding(.horizontal, 12)
@@ -538,6 +238,9 @@ public struct ArcaPillActionButton: View {
 /// Elevated iOS-style grouped section card that looks identical on iPhone and macOS.
 @available(macOS 14.0, iOS 17.0, *)
 public struct ArcaSectionCard<Content: View>: View {
+    @Environment(\.locale) private var locale
+    private var language: AppLanguage { AppLanguage(rawValue: locale.language.languageCode?.identifier ?? "en") ?? .english }
+
     public let title: String?
     public let subtitle: String?
     public let icon: String?
@@ -565,11 +268,12 @@ public struct ArcaSectionCard<Content: View>: View {
                 HStack(spacing: 6) {
                     if let icon {
                         Image(systemName: icon)
-                            .font(.system(size: 12, weight: .bold))
+                            .font(.footnote.weight(.bold))
                             .foregroundStyle(iconTint)
                     }
-                    Text(title.uppercased())
-                        .font(.system(size: 11, weight: .bold, design: .rounded))
+                    Text(verbatim: title.uppercased(with: locale))
+                        .accessibilityAddTraits(.isHeader)
+                        .font(.caption.weight(.bold))
                         .tracking(0.6)
                         .foregroundStyle(.secondary)
                     Spacer()
@@ -579,7 +283,7 @@ public struct ArcaSectionCard<Content: View>: View {
 
             VStack(alignment: .leading, spacing: 12) {
                 if let subtitle {
-                    Text(subtitle)
+                    Text(verbatim: subtitle)
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -604,6 +308,9 @@ public struct ArcaSectionCard<Content: View>: View {
 /// Clean iOS-style text input field without ugly macOS NSTextField square focus borders.
 @available(macOS 14.0, iOS 17.0, *)
 public struct ArcaStyledTextField: View {
+    @Environment(\.locale) private var locale
+    private var language: AppLanguage { AppLanguage(rawValue: locale.language.languageCode?.identifier ?? "en") ?? .english }
+
     public let placeholder: String
     @Binding public var text: String
     public var icon: String?
@@ -621,7 +328,7 @@ public struct ArcaStyledTextField: View {
         HStack(spacing: 10) {
             if let icon {
                 Image(systemName: icon)
-                    .font(.system(size: 14, weight: .medium))
+                    .font(.subheadline.weight(.medium))
                     .foregroundStyle(.secondary)
                     .frame(width: 20)
             }
@@ -629,21 +336,24 @@ public struct ArcaStyledTextField: View {
                 SecureField(placeholder, text: $text)
                     .textFieldStyle(.plain)
                     .font(.body)
+                    .accessibilityLabel(placeholder)
             } else {
                 TextField(placeholder, text: $text)
                     .textFieldStyle(.plain)
                     .font(.body)
+                    .accessibilityLabel(placeholder)
             }
             if !text.isEmpty {
                 Button {
                     text = ""
                 } label: {
                     Image(systemName: "xmark.circle.fill")
-                        .font(.system(size: 14))
+                        .font(.subheadline)
                         .foregroundStyle(.tertiary)
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel(Text("Clear \(placeholder)"))
+                .frame(minWidth: 44, minHeight: 44)
+                .accessibilityLabel(language.format("Clear %@", placeholder))
             }
         }
         .padding(.horizontal, 14)
@@ -663,6 +373,9 @@ public struct ArcaStyledTextField: View {
 @available(macOS 14.0, iOS 17.0, *)
 public struct ArcaSearchBar: View {
     @Binding public var text: String
+    @Environment(\.locale) private var locale
+    private var language: AppLanguage { AppLanguage(rawValue: locale.language.languageCode?.identifier ?? "en") ?? .english }
+
     public let placeholder: String
     @Environment(\.colorScheme) private var colorScheme
 
@@ -674,19 +387,19 @@ public struct ArcaSearchBar: View {
     public var body: some View {
         HStack(spacing: 10) {
             Image(systemName: "magnifyingglass")
-                .font(.system(size: 15, weight: .medium))
+                .font(.body.weight(.medium))
                 .foregroundStyle(.secondary)
 
             TextField(placeholder, text: $text)
                 .textFieldStyle(.plain)
-                .font(.system(size: 15))
+                .font(.body)
 
             if !text.isEmpty {
                 Button {
                     text = ""
                 } label: {
                     Image(systemName: "xmark.circle.fill")
-                        .font(.system(size: 15))
+                        .font(.body)
                         .foregroundStyle(.secondary)
                 }
                 .buttonStyle(.plain)
@@ -709,6 +422,8 @@ public struct ArcaSearchBar: View {
 /// Modal Sheet Header Bar for consistent iOS sheet appearance across platforms.
 @available(macOS 14.0, iOS 17.0, *)
 public struct ArcaSheetHeaderBar: View {
+    @Environment(\.locale) private var locale
+    private var language: AppLanguage { AppLanguage(rawValue: locale.language.languageCode?.identifier ?? "en") ?? .english }
     public let title: String
     public var subtitle: String? = nil
     public var leadingLabel: String? = "Close"
@@ -735,66 +450,63 @@ public struct ArcaSheetHeaderBar: View {
         self.trailingAction = trailingAction
     }
 
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
     public var body: some View {
         VStack(spacing: 6) {
-            Capsule()
-                .fill(Color.secondary.opacity(0.28))
-                .frame(width: 38, height: 5)
-                .padding(.top, 8)
-
-            HStack {
-                if let leadingLabel, let leadingAction {
-                    Button(action: leadingAction) {
-                        Text(leadingLabel)
-                            .font(.system(size: 15, weight: .medium))
-                            .foregroundStyle(.secondary)
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 6)
-                            .background(Capsule().fill(Color.secondary.opacity(0.10)))
+            Capsule().fill(Color.secondary.opacity(0.28))
+                .frame(width: 38, height: 5).padding(.top, 8)
+                .accessibilityHidden(true)
+            Group {
+                if dynamicTypeSize.isAccessibilitySize {
+                    VStack(spacing: 8) {
+                        titleBlock
+                        HStack { leadingControl; Spacer(); trailingControl }
                     }
-                    .buttonStyle(.plain)
                 } else {
-                    Spacer().frame(width: 64)
-                }
-
-                Spacer()
-
-                VStack(spacing: 1) {
-                    Text(title)
-                        .font(.system(size: 16, weight: .bold, design: .rounded))
-                    if let subtitle {
-                        Text(subtitle)
-                            .font(.system(size: 11, weight: .medium))
-                            .foregroundStyle(.secondary)
-                    }
-                }
-
-                Spacer()
-
-                if let trailingLabel, let trailingAction {
-                    Button(action: trailingAction) {
-                        Text(trailingLabel)
-                            .font(.system(size: 14, weight: .semibold, design: .rounded))
-                            .foregroundStyle(.white)
-                            .padding(.horizontal, 14)
-                            .padding(.vertical, 6)
-                            .background(
-                                Capsule().fill(trailingDisabled ? Color.secondary.opacity(0.35) : ArcaTheme.accent)
-                            )
-                    }
-                    .buttonStyle(.plain)
-                    .disabled(trailingDisabled)
-                } else {
-                    Spacer().frame(width: 64)
+                    HStack { leadingControl; Spacer(); titleBlock; Spacer(); trailingControl }
                 }
             }
             .padding(.horizontal, 16)
             .padding(.bottom, 10)
         }
         .background(.ultraThinMaterial)
-        .overlay(alignment: .bottom) {
-            Divider().opacity(0.5)
+        .overlay(alignment: .bottom) { Divider().opacity(0.5) }
+    }
+
+    private var titleBlock: some View {
+        VStack(spacing: 1) {
+            Text(verbatim: title).font(.body.weight(.bold))
+                .accessibilityAddTraits(.isHeader)
+            if let subtitle {
+                Text(verbatim: subtitle).font(.caption.weight(.medium)).foregroundStyle(.secondary)
+            }
         }
+        .fixedSize(horizontal: false, vertical: true)
+    }
+
+    @ViewBuilder private var leadingControl: some View {
+        if let leadingLabel, let leadingAction {
+            Button(action: leadingAction) {
+                Text(language.localized(leadingLabel))
+                    .font(.body.weight(.medium)).foregroundStyle(.secondary)
+                    .padding(.horizontal, 10).padding(.vertical, 6)
+                    .background(Capsule().fill(Color.secondary.opacity(0.10)))
+                    .frame(minWidth: 44, minHeight: 44).contentShape(Rectangle())
+            }.buttonStyle(.plain)
+        } else { Color.clear.frame(width: 64, height: 1).accessibilityHidden(true) }
+    }
+
+    @ViewBuilder private var trailingControl: some View {
+        if let trailingLabel, let trailingAction {
+            Button(action: trailingAction) {
+                Text(language.localized(trailingLabel))
+                    .font(.subheadline.weight(.semibold)).foregroundStyle(.white)
+                    .padding(.horizontal, 14).padding(.vertical, 6)
+                    .background(Capsule().fill(trailingDisabled ? Color.secondary.opacity(0.35) : ArcaTheme.accent))
+                    .frame(minWidth: 44, minHeight: 44).contentShape(Rectangle())
+            }.buttonStyle(.plain).disabled(trailingDisabled)
+        } else { Color.clear.frame(width: 64, height: 1).accessibilityHidden(true) }
     }
 }
 
@@ -826,6 +538,8 @@ public enum OperationalBannerState: Equatable, Hashable, Sendable, Identifiable 
 
 @available(macOS 14.0, iOS 17.0, *)
 public struct OperationalStateBannerView: View {
+    @Environment(\.locale) private var locale
+    private var language: AppLanguage { AppLanguage(rawValue: locale.language.languageCode?.identifier ?? "en") ?? .english }
     public let state: OperationalBannerState
     public var onAction: (() -> Void)?
 
@@ -843,7 +557,7 @@ public struct OperationalStateBannerView: View {
                 icon: "wifi.slash",
                 title: "Working Offline • Local Storage Active",
                 subtitle: count > 0
-                    ? "\(count) change\(count == 1 ? "" : "s") saved safely on this device and queued for sync."
+                    ? language.format("count.pendingChanges", count)
                     : "You can read, create, and edit records without internet access.",
                 tint: ArcaTheme.warmAmber,
                 actionLabel: nil
@@ -851,16 +565,16 @@ public struct OperationalStateBannerView: View {
         case .syncConflictsDetected(let count):
             bannerCard(
                 icon: "exclamationmark.arrow.triangle.2.circlepath",
-                title: "\(count) Sync Edit Conflict\(count == 1 ? "" : "s") Preserved",
+                title: language.format("count.conflicts", count),
                 subtitle: "Both versions were kept safely so nothing was lost. Tap Review to choose which edits to keep.",
                 tint: ArcaTheme.plumSensitive,
                 actionLabel: "Review"
             )
-        case .failedUpload(let message):
+        case .failedUpload:
             bannerCard(
                 icon: "icloud.slash",
                 title: "Attachment Upload Paused",
-                subtitle: "\(message) Your local record and file remain safe on this device.",
+                subtitle: "Your local record and file remain safe on this device. Retry when connected.",
                 tint: ArcaTheme.dangerRed,
                 actionLabel: "Retry"
             )
@@ -880,19 +594,19 @@ public struct OperationalStateBannerView: View {
                 tint: ArcaTheme.warmAmber,
                 actionLabel: "Devices"
             )
-        case .permissionDenied(let resource):
+        case .permissionDenied:
             bannerCard(
                 icon: "lock.shield",
-                title: "\(resource) Access Not Granted",
+                title: "Permission Required",
                 subtitle: "You can enable permission in System Settings or continue attaching files from the Files picker.",
                 tint: .secondary,
                 actionLabel: "Dismiss"
             )
-        case .restoreValidationFailed(let reason):
+        case .restoreValidationFailed:
             bannerCard(
                 icon: "xmark.shield.fill",
                 title: "Backup Restore Rejected Safely",
-                subtitle: "\(reason) Your live spaces were not modified.",
+                subtitle: "The backup could not be verified. Your current spaces were not changed.",
                 tint: ArcaTheme.dangerRed,
                 actionLabel: "Dismiss"
             )
@@ -912,17 +626,17 @@ public struct OperationalStateBannerView: View {
                     .fill(tint.opacity(0.16))
                     .frame(width: 36, height: 36)
                 Image(systemName: icon)
-                    .font(.system(size: 15, weight: .semibold))
+                    .font(.body.weight(.semibold))
                     .foregroundStyle(tint)
             }
             .accessibilityHidden(true)
 
             VStack(alignment: .leading, spacing: 3) {
-                Text(title)
-                    .font(.system(size: 13, weight: .bold, design: .rounded))
+                Text(language.localized(title))
+                    .font(.footnote.weight(.bold))
                     .foregroundStyle(.primary)
-                Text(subtitle)
-                    .font(.system(size: 12))
+                Text(language.localized(subtitle))
+                    .font(.footnote)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -931,8 +645,8 @@ public struct OperationalStateBannerView: View {
 
             if let actionLabel, let onAction {
                 Button(action: onAction) {
-                    Text(actionLabel)
-                        .font(.system(size: 12, weight: .bold, design: .rounded))
+                    Text(language.localized(actionLabel))
+                        .font(.footnote.weight(.bold))
                         .foregroundStyle(.white)
                         .padding(.horizontal, 12)
                         .padding(.vertical, 6)

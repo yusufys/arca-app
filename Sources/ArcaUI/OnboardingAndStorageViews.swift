@@ -7,6 +7,7 @@ import ArcaCore
 public struct OnboardingContainerView: View {
     @Bindable var viewModel: ArcaAppViewModel
 
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @ViewState private var currentStep: Int = 1
     @ViewState private var selectedMode: SpaceStorageMode = .arcaSync
     @ViewState private var acceptedCloudTerms: Bool = false
@@ -28,17 +29,21 @@ public struct OnboardingContainerView: View {
                                 .fill(ArcaTheme.accent)
                                 .frame(width: 28, height: 28)
                             Image(systemName: "archivebox.fill")
-                                .font(.system(size: 13, weight: .bold))
+                                .font(.footnote.weight(.bold))
                                 .foregroundStyle(.white)
                         }
-                        Text(ArcaStrings.text("app.name", language: viewModel.language))
-                            .font(.system(size: 17, weight: .bold, design: .rounded))
+                        if !dynamicTypeSize.isAccessibilitySize {
+                            Text(ArcaStrings.text("app.name", language: viewModel.language))
+                                .font(.headline.weight(.bold))
+                        }
                     }
 
                     Spacer()
 
-                    Text("Step \(currentStep) of 4")
-                        .font(.system(size: 12, weight: .semibold, design: .rounded))
+                    Text(viewModel.language.format("Step %d of 4", currentStep))
+                        .fixedSize(horizontal: false, vertical: true)
+                        .multilineTextAlignment(.center)
+                        .font(.footnote.weight(.semibold))
                         .foregroundStyle(.secondary)
 
                     Spacer()
@@ -54,9 +59,11 @@ public struct OnboardingContainerView: View {
                     } label: {
                         HStack(spacing: 4) {
                             Image(systemName: "globe")
-                                .font(.system(size: 12, weight: .semibold))
-                            Text(viewModel.language.rawValue.uppercased())
-                                .font(.system(size: 12, weight: .bold, design: .rounded))
+                                .font(.footnote.weight(.semibold))
+                            if !dynamicTypeSize.isAccessibilitySize {
+                                Text(viewModel.language.rawValue.uppercased())
+                                    .font(.footnote.weight(.bold))
+                            }
                         }
                         .foregroundStyle(ArcaTheme.accent)
                         .padding(.horizontal, 10)
@@ -64,6 +71,9 @@ public struct OnboardingContainerView: View {
                         .background(Capsule().fill(ArcaTheme.accent.opacity(0.12)))
                     }
                     .buttonStyle(.plain)
+                    .frame(minWidth: 44, minHeight: 44)
+                    .accessibilityLabel(viewModel.language.localized("Language & RTL Layout"))
+                    .accessibilityIdentifier("onboarding.language")
                 }
 
                 // Step Progress Bar
@@ -74,7 +84,7 @@ public struct OnboardingContainerView: View {
                             .frame(height: 5)
                     }
                 }
-                .accessibilityLabel("Onboarding step \(currentStep) of 4")
+                .accessibilityHidden(true)
             }
             .padding(.horizontal, 20)
             .padding(.top, 14)
@@ -116,17 +126,17 @@ public struct OnboardingContainerView: View {
                             .shadow(color: ArcaTheme.accent.opacity(0.30), radius: 12, x: 0, y: 6)
 
                         Image(systemName: "archivebox.fill")
-                            .font(.system(size: 28, weight: .bold))
+                            .font(.largeTitle.weight(.bold))
                             .foregroundStyle(.white)
                     }
 
                     VStack(alignment: .leading, spacing: 6) {
                         Text(ArcaStrings.text("app.tagline", language: viewModel.language))
-                            .font(.system(size: 28, weight: .bold, design: .rounded))
+                            .font(.largeTitle.weight(.bold))
                             .foregroundStyle(.primary)
 
                         Text(ArcaStrings.text("app.heroPrompt", language: viewModel.language))
-                            .font(.system(size: 15))
+                            .font(.body)
                             .foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
                     }
@@ -134,27 +144,27 @@ public struct OnboardingContainerView: View {
                 .padding(.top, 6)
 
                 // Value Pillars Card
-                ArcaSectionCard(title: "Why People Trust Arca", icon: "checkmark.seal.fill") {
+                ArcaSectionCard(title: viewModel.language.localized("Why People Trust Arca"), icon: "checkmark.seal.fill") {
                     VStack(alignment: .leading, spacing: 16) {
                         featureRow(
                             icon: "internaldrive.fill",
                             tint: ArcaTheme.accent,
-                            title: "Local-First & Offline Ready",
-                            subtitle: "Every Space lives on your phone first. Create, search, and edit records in a garage or on a flight with zero signal."
+                            title: viewModel.language.localized("Local-First & Offline Ready"),
+                            subtitle: viewModel.language.localized("Every Space lives on your phone first. Create, search, and edit records in a garage or on a flight with zero signal.")
                         )
                         Divider().opacity(0.5)
                         featureRow(
                             icon: "slider.horizontal.3",
                             tint: ArcaTheme.secondaryEmerald,
-                            title: "Friendly Forms, No Database Jargon",
-                            subtitle: "Choose a suggested collection or describe the collection you want to create."
+                            title: viewModel.language.localized("Friendly Forms, No Database Jargon"),
+                            subtitle: viewModel.language.localized("Choose a suggested collection or describe the collection you want to create.")
                         )
                         Divider().opacity(0.5)
                         featureRow(
                             icon: "lock.shield.fill",
                             tint: ArcaTheme.plumSensitive,
-                            title: "Per-Space Privacy Control",
-                            subtitle: "Choose whether a Space syncs. In a synced Space, you can keep a sensitive field or collection on this device."
+                            title: viewModel.language.localized("Per-Space Privacy Control"),
+                            subtitle: viewModel.language.localized("Choose whether a Space syncs. In a synced Space, you can keep a sensitive field or collection on this device.")
                         )
                     }
                 }
@@ -164,10 +174,11 @@ public struct OnboardingContainerView: View {
                 } label: {
                     HStack {
                         Text(ArcaStrings.text("welcome.getStarted", language: viewModel.language))
-                        Image(systemName: "arrow.right")
+                        Image(systemName: "arrow.forward")
                     }
                 }
                 .buttonStyle(ArcaPrimaryButtonStyle())
+                .accessibilityIdentifier("onboarding.getStarted")
             }
             .padding(20)
         }
@@ -199,11 +210,12 @@ public struct OnboardingContainerView: View {
         ScrollView(showsIndicators: false) {
             VStack(alignment: .leading, spacing: 18) {
                 VStack(alignment: .leading, spacing: 6) {
-                    Text("Set Up Arca Sync & Recovery Key")
-                        .font(.system(size: 22, weight: .bold, design: .rounded))
+                    Text(viewModel.language.localized("Set Up Arca Sync & Recovery Key"))
+                        .font(.title2.weight(.bold))
+                        .accessibilityAddTraits(.isHeader)
 
-                    Text("Your account password signs you in, while your Recovery Key decrypts your records if you ever lose all enrolled devices.")
-                        .font(.system(size: 13))
+                    Text(viewModel.language.localized("Your account password signs you in, while your Recovery Key decrypts your records if you ever lose all enrolled devices."))
+                        .font(.subheadline)
                         .foregroundStyle(.secondary)
                 }
 
@@ -217,16 +229,17 @@ public struct OnboardingContainerView: View {
 
                 VStack(spacing: 10) {
                     HStack(spacing: 10) {
-                        Button("Back") {
+                        Button(viewModel.language.localized("Back")) {
                             withAnimation { currentStep = 2 }
                         }
                         .buttonStyle(ArcaSecondaryButtonStyle(tint: .secondary))
 
-                        Button("Skip & Use Local-Only Instead") {
+                        Button(viewModel.language.localized("Skip & Use Local-Only Instead")) {
                             selectedMode = .localOnly
                             withAnimation { currentStep = 4 }
                         }
                         .buttonStyle(ArcaSecondaryButtonStyle(tint: ArcaTheme.accent, isFullWidth: true))
+                        .accessibilityIdentifier("onboarding.skipAccount")
                     }
                 }
             }
@@ -239,17 +252,18 @@ public struct OnboardingContainerView: View {
         ScrollView(showsIndicators: false) {
             VStack(alignment: .leading, spacing: 16) {
                 VStack(alignment: .leading, spacing: 6) {
-                    Text("Choose Starter Collections")
-                        .font(.system(size: 22, weight: .bold, design: .rounded))
+                    Text(viewModel.language.localized("Choose Starter Collections"))
+                        .font(.title2.weight(.bold))
+                        .accessibilityAddTraits(.isHeader)
 
-                    Text("Choose the collections to copy into your Space, or start with an empty Space.")
-                        .font(.system(size: 13))
+                    Text(viewModel.language.localized("Choose the collections to copy into your Space, or start with an empty Space."))
+                        .font(.subheadline)
                         .foregroundStyle(.secondary)
                 }
 
                 if let message = viewModel.catalogStatus {
-                    Text(message).foregroundStyle(.secondary)
-                    Button("Retry") { Task { await viewModel.refreshSuggestedTemplates() } }
+                    Text(viewModel.language.localized(message)).foregroundStyle(.secondary)
+                    Button(viewModel.language.localized("Retry")) { Task { await viewModel.refreshSuggestedTemplates() } }
                 }
                 ForEach(viewModel.suggestedTemplates) { template in
                     let isSelected = selectedTemplates.contains(template.id)
@@ -269,16 +283,16 @@ public struct OnboardingContainerView: View {
                                         .fill(tintColor)
                                         .frame(width: 42, height: 42)
                                     Image(systemName: template.iconName)
-                                        .font(.system(size: 18, weight: .semibold))
+                                        .font(.headline.weight(.semibold))
                                         .foregroundStyle(.white)
                                 }
 
                                 VStack(alignment: .leading, spacing: 3) {
                                     Text(template.name)
-                                        .font(.system(size: 15, weight: .bold, design: .rounded))
+                                        .font(.body.weight(.bold))
                                         .foregroundStyle(.primary)
                                     Text(template.subtitle)
-                                        .font(.system(size: 12))
+                                        .font(.footnote)
                                         .foregroundStyle(.secondary)
                                         .multilineTextAlignment(.leading)
                                 }
@@ -286,13 +300,13 @@ public struct OnboardingContainerView: View {
                                 Spacer()
 
                                 Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
-                                    .font(.system(size: 22, weight: .semibold))
+                                    .font(.title2.weight(.semibold))
                                     .foregroundStyle(isSelected ? tintColor : Color.secondary.opacity(0.4))
                             }
 
                             if let disclosure = template.sensitivityDisclosure {
                                 Text(disclosure)
-                                    .font(.system(size: 11))
+                                    .font(.caption)
                                     .foregroundStyle(.secondary)
                                     .padding(10)
                                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -313,14 +327,16 @@ public struct OnboardingContainerView: View {
                         )
                     }
                     .buttonStyle(.plain)
+                    .accessibilityElement(children: .combine)
+                    .accessibilityAddTraits(isSelected ? .isSelected : [])
                 }
 
                 if let message = viewModel.onboardingError {
-                    Text(message).foregroundStyle(ArcaTheme.dangerRed)
+                    Text(viewModel.language.localized(message)).foregroundStyle(ArcaTheme.dangerRed)
                 }
 
                 HStack(spacing: 10) {
-                    Button("Back") {
+                    Button(viewModel.language.localized("Back")) {
                         withAnimation { currentStep = 2 }
                     }
                     .buttonStyle(ArcaSecondaryButtonStyle(tint: .secondary))
@@ -334,7 +350,7 @@ public struct OnboardingContainerView: View {
                             )
                         }
                     } label: {
-                        Label("Open My Spaces", systemImage: "sparkles")
+                        Label(viewModel.language.localized("Open My Spaces"), systemImage: "sparkles")
                     }
                     .buttonStyle(ArcaPrimaryButtonStyle())
                     .disabled(viewModel.completingOnboarding)
@@ -352,16 +368,16 @@ public struct OnboardingContainerView: View {
                     .fill(tint.opacity(0.14))
                     .frame(width: 36, height: 36)
                 Image(systemName: icon)
-                    .font(.system(size: 16, weight: .semibold))
+                    .font(.body.weight(.semibold))
                     .foregroundStyle(tint)
             }
             .accessibilityHidden(true)
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(title)
-                    .font(.system(size: 14, weight: .bold, design: .rounded))
+                    .font(.subheadline.weight(.bold))
                 Text(subtitle)
-                    .font(.system(size: 12))
+                    .font(.footnote)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -399,36 +415,37 @@ public struct StorageModeComparisonStepView: View {
             VStack(alignment: .leading, spacing: 16) {
                 VStack(alignment: .leading, spacing: 6) {
                     Text(ArcaStrings.text("storage.title", language: language))
-                        .font(.system(size: 22, weight: .bold, design: .rounded))
+                        .font(.title2.weight(.bold))
+                        .accessibilityAddTraits(.isHeader)
 
-                    Text("Arca Sync is the default cloud-synced E2EE mode for new Spaces. Local-Only is always available whenever you want records never to leave this phone.")
-                        .font(.system(size: 13))
+                    Text(language.localized("Arca Sync is the default cloud-synced E2EE mode for new Spaces. Local-Only is always available whenever you want records never to leave this phone."))
+                        .font(.subheadline)
                         .foregroundStyle(.secondary)
                 }
 
                 storageModeOptionCard(
                     mode: .arcaSync,
-                    badge: "Recommended",
+                    badge: language.localized("Recommended"),
                     icon: "arrow.triangle.2.circlepath.icloud.fill",
                     tint: ArcaTheme.accent,
-                    title: "Arca Sync",
+                    title: language.localized("Arca Sync"),
                     bullets: [
-                        "Save records on your device and sync changes after connecting your Arca account.",
-                        "Your device encrypts record changes before upload. Forge stores encrypted changes and wrapped keys for recovery.",
-                        "Free accounts support up to 2 active devices; Pro expands to 10 devices."
+                        language.localized("Save records on your device and sync changes after connecting your Arca account."),
+                        language.localized("Your device encrypts record changes before upload. The sync service stores encrypted changes and protected recovery keys."),
+                        language.localized("Free accounts support up to 2 active devices; Pro expands to 10 devices.")
                     ]
                 )
 
                 storageModeOptionCard(
                     mode: .localOnly,
-                    badge: "On This Device",
+                    badge: language.localized("On This Device"),
                     icon: "iphone",
                     tint: ArcaTheme.secondaryEmerald,
-                    title: "Local-Only (On This Device)",
+                    title: language.localized("Local-Only (On This Device)"),
                     bullets: [
-                        "Your records stay on this device unless you choose to export them.",
-                        "You can use a Local-Only Space without an account.",
-                        "Search, insights and manual backups work offline."
+                        language.localized("Your records stay on this device unless you choose to export them."),
+                        language.localized("You can use a Local-Only Space without an account."),
+                        language.localized("Search, insights and manual backups work offline.")
                     ]
                 )
 
@@ -438,15 +455,15 @@ public struct StorageModeComparisonStepView: View {
                     } label: {
                         HStack(alignment: .top, spacing: 12) {
                             Image(systemName: acceptedCloudTerms ? "checkmark.square.fill" : "square")
-                                .font(.system(size: 20, weight: .semibold))
+                                .font(.title3.weight(.semibold))
                                 .foregroundStyle(acceptedCloudTerms ? ArcaTheme.accent : .secondary)
 
                             VStack(alignment: .leading, spacing: 3) {
-                                Text("I understand and accept encrypted cloud storage for synced Spaces")
-                                    .font(.system(size: 13, weight: .semibold, design: .rounded))
+                                Text(language.localized("I understand and accept encrypted cloud storage for synced Spaces"))
+                                    .font(.subheadline.weight(.semibold))
                                     .foregroundStyle(.primary)
-                                Text("The sync service handles your account details, enrolled devices and their public keys, record identifiers, encrypted sizes and sync activity.")
-                                    .font(.system(size: 11))
+                                Text(language.localized("The sync service handles your account details, enrolled devices and their public keys, record identifiers, encrypted sizes and sync activity."))
+                                    .font(.caption)
                                     .foregroundStyle(.secondary)
                                     .multilineTextAlignment(.leading)
                             }
@@ -464,23 +481,25 @@ public struct StorageModeComparisonStepView: View {
                     }
                     .buttonStyle(.plain)
                     .accessibilityAddTraits(acceptedCloudTerms ? .isSelected : [])
+                    .accessibilityIdentifier("onboarding.acceptCloud")
                 }
 
                 if onBack != nil || onContinue != nil {
                     HStack(spacing: 10) {
                         if let back = onBack {
-                            Button("Back") {
+                            Button(language.localized("Back")) {
                                 back()
                             }
                             .buttonStyle(ArcaSecondaryButtonStyle(tint: .secondary))
                         }
 
                         if let cont = onContinue {
-                            Button("Continue") {
+                            Button(language.localized("Continue")) {
                                 cont()
                             }
                             .buttonStyle(ArcaPrimaryButtonStyle())
                             .disabled(selectedMode == .arcaSync && !acceptedCloudTerms)
+                            .accessibilityIdentifier("onboarding.continue")
                         }
                     }
                     .padding(.top, 4)
@@ -511,18 +530,18 @@ public struct StorageModeComparisonStepView: View {
                             .fill(tint.opacity(0.14))
                             .frame(width: 34, height: 34)
                         Image(systemName: icon)
-                            .font(.system(size: 15, weight: .semibold))
+                            .font(.body.weight(.semibold))
                             .foregroundStyle(tint)
                     }
 
                     Text(title)
-                        .font(.system(size: 15, weight: .bold, design: .rounded))
+                        .font(.body.weight(.bold))
                         .foregroundStyle(.primary)
 
                     Spacer()
 
                     Text(badge)
-                        .font(.system(size: 10, weight: .bold, design: .rounded))
+                        .font(.caption2.weight(.bold))
                         .padding(.horizontal, 8)
                         .padding(.vertical, 4)
                         .background(Capsule().fill(tint.opacity(0.14)))
@@ -536,7 +555,7 @@ public struct StorageModeComparisonStepView: View {
                             .frame(width: 5, height: 5)
                             .padding(.top, 5)
                         Text(bullet)
-                            .font(.system(size: 12))
+                            .font(.footnote)
                             .foregroundStyle(.secondary)
                             .multilineTextAlignment(.leading)
                     }
@@ -560,6 +579,7 @@ public struct StorageModeComparisonStepView: View {
 
 @available(macOS 14.0, iOS 17.0, *)
 struct CloudAccountForm: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Bindable var viewModel: ArcaAppViewModel
     var didConnect: () -> Void = {}
     @ViewState private var createAccount = false
@@ -568,25 +588,61 @@ struct CloudAccountForm: View {
     @ViewState private var recoveryPhrase = ""
     @ViewState private var errorMessage: String?
     @ViewState private var working = false
+    @FocusState private var focusedField: Field?
+    private enum Field: Hashable { case email, password, recovery }
+
+    private var accountModePicker: some View {
+        Picker(viewModel.language.localized("Account"), selection: $createAccount) {
+            Text(viewModel.language.localized("Sign in")).tag(false)
+            Text(viewModel.language.localized("Create account")).tag(true)
+        }
+    }
 
     var body: some View {
-        ArcaSectionCard(title: "Arca Sync account", icon: "icloud") {
-            Picker("Account", selection: $createAccount) {
-                Text("Sign in").tag(false)
-                Text("Create account").tag(true)
+        ArcaSectionCard(title: viewModel.language.localized("Arca Sync account"), icon: "icloud") {
+            if dynamicTypeSize.isAccessibilitySize {
+                accountModePicker.pickerStyle(.menu)
+            } else {
+                accountModePicker.pickerStyle(.segmented)
             }
-            .pickerStyle(.segmented)
-            ArcaStyledTextField("Email", text: $email, icon: "envelope")
-            ArcaStyledTextField("Account password", text: $password, icon: "lock", isSecure: true)
+            ArcaStyledTextField(viewModel.language.localized("Email"), text: $email, icon: "envelope")
+                .focused($focusedField, equals: .email)
+                .submitLabel(.next)
+                .onSubmit { focusedField = .password }
+                .accessibilityIdentifier("account.email")
+                #if os(iOS)
+                .keyboardType(.emailAddress)
+                .textContentType(.emailAddress)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                #endif
+            ArcaStyledTextField(viewModel.language.localized("Account password"), text: $password, icon: "lock", isSecure: true)
+                .focused($focusedField, equals: .password)
+                .submitLabel(createAccount ? .done : .next)
+                .onSubmit { focusedField = createAccount ? nil : .recovery }
+                .accessibilityIdentifier("account.password")
+                #if os(iOS)
+                .textContentType(createAccount ? .newPassword : .password)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                #endif
             if createAccount {
-                Text("Save this recovery key before continuing. You will need it on your next device.")
+                Text(viewModel.language.localized("Save this recovery key before continuing. You will need it on your next device."))
                 Text(viewModel.recoveryKeyPhrase).font(.system(.body, design: .monospaced)).textSelection(.enabled)
             } else {
-                ArcaStyledTextField("Recovery key from your first device", text: $recoveryPhrase, icon: "key", isSecure: true)
+                ArcaStyledTextField(viewModel.language.localized("Recovery key from your first device"), text: $recoveryPhrase, icon: "key", isSecure: true)
+                    .focused($focusedField, equals: .recovery)
+                    .submitLabel(.done)
+                    .onSubmit { focusedField = nil }
+                    #if os(iOS)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    #endif
             }
             if let errorMessage { Text(errorMessage).foregroundStyle(ArcaTheme.dangerRed) }
-            Button(working ? "Connecting…" : (createAccount ? "Create account" : "Connect this device")) {
+            Button(working ? viewModel.language.localized("Connecting…") : (createAccount ? viewModel.language.localized("Create account") : viewModel.language.localized("Connect this device"))) {
                 Task {
+                    focusedField = nil
                     working = true
                     defer { working = false }
                     do {
@@ -597,12 +653,20 @@ struct CloudAccountForm: View {
                         errorMessage = nil
                         didConnect()
                     } catch {
-                        errorMessage = error.localizedDescription
+                        errorMessage = viewModel.language.localized("Could not connect your account. Check your email, password and recovery key, then try again.")
                     }
                 }
             }
             .buttonStyle(ArcaPrimaryButtonStyle())
             .disabled(working || password.isEmpty || email.isEmpty || (!createAccount && recoveryPhrase.isEmpty))
         }
+        #if os(iOS)
+        .toolbar {
+            ToolbarItemGroup(placement: .keyboard) {
+                Spacer()
+                Button(viewModel.language.localized("Done")) { focusedField = nil }
+            }
+        }
+        #endif
     }
 }

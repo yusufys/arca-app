@@ -16,12 +16,12 @@ struct CollectionCatalogClient {
         try await request("collection-templates", byteLimit: 3_000_000)
     }
 
-    func prompt(for description: String) async throws -> String {
+    func prompt(for description: String, language: AppLanguage) async throws -> String {
         let intent = description.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !intent.isEmpty, intent.unicodeScalars.count <= 2000 else {
             throw CollectionDesignError("Describe your collection in 1 to 2,000 characters.")
         }
-        let body = try JSONEncoder().encode(["intent": intent])
+        let body = try JSONEncoder().encode(["intent": intent, "language": language.rawValue])
         let data = try await request("collection-prompt", body: body, byteLimit: 131_072)
         struct Reply: Decodable { let version: Int; let prompt: String }
         let reply = try JSONDecoder().decode(Reply.self, from: data)
@@ -52,7 +52,7 @@ struct CollectionCatalogClient {
         return data
     }
 
-    static func templates(in data: Data) throws -> [StarterTemplate] {
+    static func templates(in data: Data, language: AppLanguage = .english) throws -> [StarterTemplate] {
         guard data.count <= 3_000_000, let object = try JSONSerialization.jsonObject(with: data) as? [String: Any],
               object["version"] as? Int == 1, let rows = object["templates"] as? [[String: Any]] else {
             throw CollectionDesignError("This catalog requires a newer version of Arca.")
@@ -63,8 +63,11 @@ struct CollectionCatalogClient {
                   let subtitle = row["subtitle"] as? String, let blueprint = row["schema"] else {
                 throw CollectionDesignError("The collection catalog is incomplete.")
             }
-            let schema = try CollectionBlueprint.schema(from: blueprint, spaceID: UUID())
-            return StarterTemplate(id: id, name: schema.name, subtitle: subtitle,
+            let localized = (row["localizations"] as? [String: [String: Any]])?[language.rawValue]
+            // A translated schema is a full validated copy; never translate user-authored data.
+            let schema = try CollectionBlueprint.schema(from: localized?["schema"] ?? blueprint, spaceID: UUID())
+            let displaySubtitle = localized?["subtitle"] as? String ?? subtitle
+            return StarterTemplate(id: id, name: schema.name, subtitle: displaySubtitle,
                                    iconName: schema.iconName, colorHex: schema.colorHex, fields: schema.fields)
         }
     }
