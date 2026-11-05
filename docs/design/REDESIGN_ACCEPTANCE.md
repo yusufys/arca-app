@@ -27,7 +27,16 @@ Reference: `arca-ios-redesign-reference.html`, supplied by the product owner. Th
 
 ## Release evidence
 
-Record final commits, PR reviews, test results, screenshot evidence and the Apple build status here before release. An upload is not evidence of TestFlight availability.
+Implementation PRs: #1 (collections), #2 (shell), integrated in #3. Follow-up shell and collection reviews are recorded on #3; correctness fixes are in `a61025d`, `a9da3de`, `5ec9af1`, and `27ad3fa`. Arabic typography is in `0faab54`; final large-text navigation and stable test-fixture selection are in `3e7934e`.
+
+- Full Swift suite: 61 tests, zero failures, two existing opt-in HTTP tests skipped. Includes font registration/Arabic glyphs, EN/TR font isolation, collection preferences, exact range boundaries, concurrent metadata/field/privacy changes, strict write failures, encryption and relaunch behavior.
+- Eight distinct native iOS acceptance scenarios passed across the initial run and focused recheck: Arabic onboarding/keyboard, largest-text language switching, appearance restoration, Arabic dark/large-text screens, Home Add/View/Edit and AI input, six key screens in EN/AR/TR, record layout/data relaunch, and collection rename/full-screen add restoration.
+- Initial UI failures were test-harness defects: the AI input was queried as a TextView instead of its actual native control, and the fixture reopened the first display-sorted collection after a rename changed that order. The corrected tests verify actual input and a stable collection UUID. Both passed on recheck.
+- Screenshot inspection identified oversized bottom navigation at maximum text size. It now uses compact icons with spoken labels and iOS large-content viewing; rechecked screenshots and accessibility-label audits passed.
+- Local evidence: `/tmp/arca-redesign-acceptance.xcresult`, `/tmp/arca-redesign-recheck.xcresult`, and `/tmp/arca-redesign-coordination/swift-final-tests.log`. Generated screenshot files are not source-controlled.
+- The UI pass does not replace physical-device VoiceOver/Switch Control, real App Store product purchase tests or live two-device sync acceptance. Backend, sync protocol and encryption algorithms are unchanged.
+
+TestFlight delivery status is recorded in `IOS_RELEASE.md`; upload alone does not establish tester availability.
 
 ## Arabic typography
 
