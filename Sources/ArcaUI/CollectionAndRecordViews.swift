@@ -2,6 +2,1233 @@ import SwiftUI
 import UniformTypeIdentifiers
 import ArcaCore
 
+#if os(iOS)
+import PhotosUI
+#endif
+
+// MARK: - Collection Settings Screen (⚙️ Name, Theme Color, Compact Field, Add Mode, 4-Tab Icon Picker & Fields)
+
+@available(macOS 14.0, iOS 17.0, *)
+public struct CollectionSettingsView: View {
+    @Bindable var viewModel: ArcaAppViewModel
+    public let schema: CollectionSchema
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
+    private let presentationStore: CollectionPresentationStore = .shared
+
+    @ViewState private var draftName: String
+    @ViewState private var colColorDropdownOpen = false
+    @ViewState private var compactFieldDropdownOpen = false
+    @ViewState private var addFormModeDropdownOpen = false
+
+    @ViewState private var iconTab: CollectionIconTab = .library
+    @ViewState private var selectedLibraryCategory: String = CollectionDesignCatalog.iconCategories[0].titleKey
+    @ViewState private var selectedLibrarySubcategory: String = CollectionDesignCatalog.iconCategories[0].subcategories[0].titleKey
+    @ViewState private var customMonogram: String = ""
+    @ViewState private var customEmojiInput: String = ""
+    @ViewState private var showingIconFileImporter = false
+    @ViewState private var iconUploadError: String?
+
+    #if os(iOS)
+    @ViewState private var selectedPhotoPickerItem: PhotosPickerItem?
+    #endif
+
+    @ViewState private var showingFieldEditor = false
+    @ViewState private var showingPrivacyConsent = false
+    @ViewState private var privacyError: String?
+    @ViewState private var activeTestAddRecordSchema: CollectionSchema?
+
+    public init(viewModel: ArcaAppViewModel, schema: CollectionSchema) {
+        self.viewModel = viewModel
+        self.schema = schema
+        self._draftName = ViewState(initialValue: schema.name)
+    }
+
+    private var liveSchema: CollectionSchema {
+        viewModel.schema(for: schema.id) ?? schema
+    }
+
+    private var tint: Color {
+        ArcaTheme.color(fromHex: liveSchema.colorHex)
+    }
+
+    private var activeColorOption: CollectionColorOption {
+        CollectionDesignCatalog.colorOption(for: liveSchema.colorHex)
+    }
+
+    private var secondaryFieldOptions: [FieldDefinition] {
+        CollectionPresentationStore.secondaryFieldCandidates(for: liveSchema)
+    }
+
+    private var activeCompactField: FieldDefinition? {
+        presentationStore.resolvedSecondaryField(for: liveSchema)
+    }
+
+    private var activeAddFormMode: CollectionAddFormMode {
+        presentationStore.addFormMode(for: liveSchema.id)
+    }
+
+    public var body: some View {
+        VStack(spacing: 0) {
+            settingsHeaderBar
+
+            ScrollView(showsIndicators: false) {
+                VStack(alignment: .leading, spacing: 16) {
+                    identityPreviewCard
+                    themeColorDropdownCard
+                    compactSecondaryFieldDropdownCard
+                    addRecordFormStyleDropdownCard
+                    iconPickerCard
+                    collectionPrivacyCard
+                    schemaFieldsSummaryCard
+                }
+                .padding(18)
+            }
+            .background(ArcaTheme.canvasBackground(for: colorScheme))
+        }
+        #if os(iOS)
+        .toolbar(.hidden, for: .navigationBar)
+        #endif
+        .onAppear {
+            syncInitialState()
+        }
+        .onDisappear {
+            commitNameIfNeeded()
+        }
+        .modifier(CollectionAddRecordPresenter(viewModel: viewModel, schema: $activeTestAddRecordSchema))
+        .sheet(isPresented: $showingFieldEditor) {
+            FieldEditorSheetView(viewModel: viewModel, collectionId: liveSchema.id)
+                .frame(minWidth: 370, idealWidth: 400, minHeight: 580, idealHeight: 680)
+        }
+        .sheet(isPresented: $showingPrivacyConsent) {
+            SensitivePrivacyConsentView(viewModel: viewModel, collectionId: liveSchema.id, fieldId: nil)
+        }
+        .fileImporter(
+            isPresented: $showingIconFileImporter,
+            allowedContentTypes: [.image]
+        ) { result in
+            switch result {
+            case .success(let url):
+                do {
+                    try presentationStore.saveCustomIconImage(fromFileURL: url, for: liveSchema.id)
+                    iconUploadError = nil
+                } catch {
+                    iconUploadError = error.localizedDescription
+                }
+            case .failure(let error):
+                iconUploadError = error.localizedDescription
+            }
+        }
+        #if os(iOS)
+        .onChange(of: selectedPhotoPickerItem) { _, newItem in
+            guard let newItem else { return }
+            Task { @MainActor in
+                do {
+                    if let data = try await newItem.loadTransferable(type: Data.self) {
+                        try presentationStore.saveCustomIconImageData(data, for: liveSchema.id)
+                        iconUploadError = nil
+                    } else {
+                        iconUploadError = viewModel.language.localized("Could not load the selected photo.")
+                    }
+                } catch {
+                    iconUploadError = error.localizedDescription
+                }
+                selectedPhotoPickerItem = nil
+            }
+        }
+        #endif
+    }
+
+    private func syncInitialState() {
+        let current = liveSchema
+        draftName = current.name
+        let pref = presentationStore.preferences(for: current.id).iconPreference
+        if let pref {
+            iconTab = pref.tab
+            if case .monogram(let letters) = pref {
+                customMonogram = letters
+            } else {
+                customMonogram = CollectionPresentationStore.computeInitials(for: current.name)
+            }
+        } else {
+            // Default library icon for existing schema
+            iconTab = .library
+            customMonogram = CollectionPresentationStore.computeInitials(for: current.name)
+        }
+        let targetSymbol: String = {
+            if case .library(let sym) = pref, !sym.isEmpty { return sym }
+            return current.iconName
+        }()
+        if let match = CollectionDesignCatalog.locateCategoryAndSubcategory(forSymbol: targetSymbol) {
+            selectedLibraryCategory = match.category
+            selectedLibrarySubcategory = match.subcategory
+        }
+    }
+
+    private func commitNameIfNeeded() {
+        let trimmed = draftName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, trimmed != liveSchema.name else { return }
+        let collectionId = liveSchema.id
+        Task {
+            await viewModel.updateCollectionMetadata(collectionId: collectionId, name: trimmed)
+        }
+    }
+
+    private func closeAllDropdowns() {
+        colColorDropdownOpen = false
+        compactFieldDropdownOpen = false
+        addFormModeDropdownOpen = false
+    }
+
+    // MARK: - Top Header Bar
+
+    private var settingsHeaderBar: some View {
+        HStack(spacing: 10) {
+            Button {
+                commitNameIfNeeded()
+                dismiss()
+            } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: "chevron.backward")
+                        .font(.footnote.weight(.bold))
+                    Text(liveSchema.name)
+                        .font(.subheadline.weight(.bold))
+                        .lineLimit(1)
+                }
+                .foregroundStyle(tint)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .frame(minHeight: 44)
+                .background(Capsule().fill(tint.opacity(0.12)))
+            }
+            .buttonStyle(.plain)
+
+            Spacer()
+
+            Text(viewModel.language.localized("Collection Settings"))
+                .font(.subheadline.weight(.bold))
+                .accessibilityAddTraits(.isHeader)
+                .lineLimit(1)
+
+            Spacer()
+
+            Button {
+                commitNameIfNeeded()
+                dismiss()
+            } label: {
+                Text(viewModel.language.localized("Done"))
+                    .font(.subheadline.weight(.bold))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 15)
+                    .padding(.vertical, 8)
+                    .frame(minWidth: 44, minHeight: 44)
+                    .background(Capsule().fill(tint))
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.horizontal, 18)
+        .padding(.vertical, 10)
+        .background(ArcaTheme.cardBackground(for: colorScheme).opacity(0.96))
+        .overlay(alignment: .bottom) {
+            Divider().opacity(0.45)
+        }
+    }
+
+    // MARK: - Live Identity Card
+
+    private var identityPreviewCard: some View {
+        let recordCount = viewModel.recordCount(for: liveSchema.id)
+        let nameChanged = !draftName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && draftName.trimmingCharacters(in: .whitespacesAndNewlines) != liveSchema.name
+
+        return VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 14) {
+                CollectionBadgeView(schema: liveSchema, size: 52, presentationStore: presentationStore)
+
+                VStack(alignment: .leading, spacing: 6) {
+                    TextField(viewModel.language.localized("Collection Name"), text: $draftName)
+                        .textFieldStyle(.plain)
+                        .font(.headline.weight(.bold))
+                        .submitLabel(.done)
+                        .onSubmit {
+                            commitNameIfNeeded()
+                        }
+                        .accessibilityLabel(viewModel.language.localized("Collection Name"))
+
+                    Text(viewModel.language.format("count.records", recordCount) + " • " + viewModel.language.format("count.fields", liveSchema.activeFields.count))
+                        .font(.caption.weight(.medium))
+                        .foregroundStyle(.secondary)
+                }
+
+                Spacer(minLength: 4)
+
+                if nameChanged {
+                    Button {
+                        commitNameIfNeeded()
+                    } label: {
+                        Text(viewModel.language.localized("Save"))
+                            .font(.caption.weight(.bold))
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 7)
+                            .frame(minHeight: 44)
+                            .background(Capsule().fill(tint))
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        }
+        .padding(16)
+        .background(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .fill(ArcaTheme.cardBackground(for: colorScheme))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .strokeBorder(ArcaTheme.cardBorder(for: colorScheme), lineWidth: 1)
+        )
+    }
+
+    // MARK: - 1. Collection Theme Color Dropdown
+
+    private var themeColorDropdownCard: some View {
+        let activeOpt = activeColorOption
+        return VStack(alignment: .leading, spacing: 10) {
+            Text(viewModel.language.localized("Collection Theme Color"))
+                .font(.footnote.weight(.bold))
+                .accessibilityAddTraits(.isHeader)
+
+            Button {
+                let next = !colColorDropdownOpen
+                closeAllDropdowns()
+                colColorDropdownOpen = next
+            } label: {
+                HStack(spacing: 12) {
+                    ZStack {
+                        Circle()
+                            .fill(tint)
+                            .frame(width: 26, height: 26)
+                        Circle()
+                            .fill(Color.white.opacity(0.65))
+                            .frame(width: 8, height: 8)
+                    }
+                    .accessibilityHidden(true)
+
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(viewModel.language.localized(activeOpt.nameKey))
+                            .font(.subheadline.weight(.bold))
+                            .foregroundStyle(.primary)
+                        Text(viewModel.language.localized(activeOpt.tagKey) + " · " + activeOpt.hex)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+
+                    Spacer()
+
+                    Image(systemName: colColorDropdownOpen ? "chevron.up" : "chevron.down")
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 28, height: 28)
+                        .background(Circle().fill(ArcaTheme.cardBackground(for: colorScheme)))
+                }
+                .padding(12)
+                .frame(minHeight: 44)
+                .background(
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .fill(ArcaTheme.subtleFieldBackground(for: colorScheme))
+                )
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(viewModel.language.localized("Collection Theme Color"))
+            .accessibilityValue(viewModel.language.localized(activeOpt.nameKey))
+
+            if colColorDropdownOpen {
+                VStack(spacing: 0) {
+                    ForEach(Array(CollectionDesignCatalog.collectionColors.enumerated()), id: \.element.id) { index, item in
+                        let isSelected = item.hex.caseInsensitiveCompare(liveSchema.colorHex) == .orderedSame
+                        let itemColor = ArcaTheme.color(fromHex: item.hex)
+
+                        Button {
+                            colColorDropdownOpen = false
+                            let targetHex = item.hex
+                            let collectionId = liveSchema.id
+                            Task {
+                                await viewModel.updateCollectionMetadata(collectionId: collectionId, colorHex: targetHex)
+                            }
+                        } label: {
+                            HStack(spacing: 10) {
+                                Circle()
+                                    .fill(itemColor)
+                                    .frame(width: 20, height: 20)
+                                    .overlay(Circle().strokeBorder(Color.white.opacity(0.28), lineWidth: 1))
+                                    .accessibilityHidden(true)
+
+                                Text(viewModel.language.localized(item.nameKey))
+                                    .font(.footnote.weight(.bold))
+                                    .foregroundStyle(.primary)
+
+                                Text("· " + viewModel.language.localized(item.tagKey))
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+
+                                Spacer()
+
+                                Text(viewModel.language.localized("Sample"))
+                                    .font(.caption2.weight(.semibold))
+                                    .foregroundStyle(.white)
+                                    .padding(.horizontal, 8)
+                                    .padding(.vertical, 3)
+                                    .background(Capsule().fill(itemColor))
+                                    .accessibilityHidden(true)
+
+                                if isSelected {
+                                    Image(systemName: "checkmark")
+                                        .font(.caption.weight(.black))
+                                        .foregroundStyle(itemColor)
+                                        .frame(width: 16)
+                                } else {
+                                    Color.clear.frame(width: 16, height: 16)
+                                }
+                            }
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 10)
+                            .frame(minHeight: 44)
+                            .background(isSelected ? ArcaTheme.subtleFieldBackground(for: colorScheme) : Color.clear)
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel(viewModel.language.localized(item.nameKey) + ", " + viewModel.language.localized(item.tagKey))
+                        .accessibilityAddTraits(isSelected ? .isSelected : [])
+
+                        if index < CollectionDesignCatalog.collectionColors.count - 1 {
+                            Divider().opacity(0.45)
+                        }
+                    }
+                }
+                .background(
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .fill(ArcaTheme.cardBackground(for: colorScheme))
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .strokeBorder(ArcaTheme.cardBorder(for: colorScheme), lineWidth: 1)
+                )
+            }
+        }
+        .padding(16)
+        .background(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .fill(ArcaTheme.cardBackground(for: colorScheme))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .strokeBorder(ArcaTheme.cardBorder(for: colorScheme), lineWidth: 1)
+        )
+    }
+
+    // MARK: - 2. Compact Secondary Field Dropdown (Strictly Inside Settings)
+
+    private var compactSecondaryFieldDropdownCard: some View {
+        let primaryLabel = liveSchema.primaryTitleField?.label ?? viewModel.language.localized("Title")
+        let selectedField = activeCompactField
+
+        return VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(viewModel.language.localized("Field Shown Beside Title (Compact View)"))
+                    .font(.footnote.weight(.bold))
+                    .accessibilityAddTraits(.isHeader)
+                Text(viewModel.language.localized("Select which field appears next to the title when using Compact View."))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            if let selectedField {
+                Button {
+                    let next = !compactFieldDropdownOpen
+                    closeAllDropdowns()
+                    compactFieldDropdownOpen = next
+                } label: {
+                    HStack(spacing: 12) {
+                        Text(ArcaStrings.text("field.type." + selectedField.type.rawValue, language: viewModel.language).uppercased(with: viewModel.language.locale))
+                            .font(.caption2.weight(.bold))
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 5)
+                            .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(tint))
+
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(selectedField.label)
+                                .font(.subheadline.weight(.bold))
+                                .foregroundStyle(.primary)
+                            Text(viewModel.language.format("Shown beside %@", primaryLabel))
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+
+                        Spacer()
+
+                        Image(systemName: compactFieldDropdownOpen ? "chevron.up" : "chevron.down")
+                            .font(.caption.weight(.bold))
+                            .foregroundStyle(.secondary)
+                            .frame(width: 28, height: 28)
+                            .background(Circle().fill(ArcaTheme.cardBackground(for: colorScheme)))
+                    }
+                    .padding(12)
+                    .frame(minHeight: 44)
+                    .background(
+                        RoundedRectangle(cornerRadius: 14, style: .continuous)
+                            .fill(ArcaTheme.subtleFieldBackground(for: colorScheme))
+                    )
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(viewModel.language.localized("Field Shown Beside Title (Compact View)"))
+                .accessibilityValue(selectedField.label)
+
+                if compactFieldDropdownOpen {
+                    VStack(spacing: 0) {
+                        ForEach(Array(secondaryFieldOptions.enumerated()), id: \.element.id) { index, field in
+                            let isSelected = field.id == selectedField.id
+                            Button {
+                                presentationStore.setCompactSecondaryField(field.id, for: liveSchema.id)
+                                compactFieldDropdownOpen = false
+                            } label: {
+                                HStack(spacing: 10) {
+                                    Image(systemName: field.type.iconName)
+                                        .font(.caption.weight(.semibold))
+                                        .foregroundStyle(tint)
+                                        .frame(width: 20)
+
+                                    Text(field.label)
+                                        .font(.footnote.weight(.bold))
+                                        .foregroundStyle(.primary)
+
+                                    Text(ArcaStrings.text("field.type." + field.type.rawValue, language: viewModel.language))
+                                        .font(.caption2.weight(.medium))
+                                        .foregroundStyle(.secondary)
+                                        .padding(.horizontal, 6)
+                                        .padding(.vertical, 2)
+                                        .background(
+                                            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                                .fill(ArcaTheme.subtleFieldBackground(for: colorScheme))
+                                        )
+
+                                    Spacer()
+
+                                    if isSelected {
+                                        Image(systemName: "checkmark")
+                                            .font(.caption.weight(.black))
+                                            .foregroundStyle(tint)
+                                    }
+                                }
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 10)
+                                .frame(minHeight: 44)
+                                .background(isSelected ? ArcaTheme.subtleFieldBackground(for: colorScheme) : Color.clear)
+                                .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel(field.label)
+                            .accessibilityAddTraits(isSelected ? .isSelected : [])
+
+                            if index < secondaryFieldOptions.count - 1 {
+                                Divider().opacity(0.45)
+                            }
+                        }
+                    }
+                    .background(
+                        RoundedRectangle(cornerRadius: 14, style: .continuous)
+                            .fill(ArcaTheme.cardBackground(for: colorScheme))
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 14, style: .continuous)
+                            .strokeBorder(ArcaTheme.cardBorder(for: colorScheme), lineWidth: 1)
+                    )
+                }
+            }
+        }
+        .padding(16)
+        .background(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .fill(ArcaTheme.cardBackground(for: colorScheme))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .strokeBorder(ArcaTheme.cardBorder(for: colorScheme), lineWidth: 1)
+        )
+    }
+
+    // MARK: - 3. Add Record Form Style Dropdown (Popup Card vs. Complete New Screen)
+
+    private var addRecordFormStyleDropdownCard: some View {
+        let currentMode = activeAddFormMode
+        return VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(viewModel.language.localized("“Add Record” Form Style"))
+                        .font(.footnote.weight(.bold))
+                        .accessibilityAddTraits(.isHeader)
+                    Text(viewModel.language.localized("Open as a popup card or a complete new screen."))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                Spacer()
+
+                Button {
+                    activeTestAddRecordSchema = liveSchema
+                } label: {
+                    HStack(spacing: 4) {
+                        Text(viewModel.language.localized("Test"))
+                        Image(systemName: "arrow.forward")
+                    }
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .frame(minHeight: 44)
+                    .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(tint))
+                }
+                .buttonStyle(.plain)
+            }
+
+            Button {
+                let next = !addFormModeDropdownOpen
+                closeAllDropdowns()
+                addFormModeDropdownOpen = next
+            } label: {
+                HStack(spacing: 12) {
+                    Image(systemName: currentMode.iconName)
+                        .font(.footnote.weight(.bold))
+                        .foregroundStyle(.white)
+                        .frame(width: 30, height: 30)
+                        .background(RoundedRectangle(cornerRadius: 9, style: .continuous).fill(tint))
+                        .accessibilityHidden(true)
+
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(viewModel.language.localized(currentMode.titleKey))
+                            .font(.subheadline.weight(.bold))
+                            .foregroundStyle(.primary)
+                        Text(viewModel.language.localized(currentMode.subtitleKey))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+
+                    Spacer()
+
+                    Image(systemName: addFormModeDropdownOpen ? "chevron.up" : "chevron.down")
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 28, height: 28)
+                        .background(Circle().fill(ArcaTheme.cardBackground(for: colorScheme)))
+                }
+                .padding(12)
+                .frame(minHeight: 44)
+                .background(
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .fill(ArcaTheme.subtleFieldBackground(for: colorScheme))
+                )
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(viewModel.language.localized("“Add Record” Form Style"))
+            .accessibilityValue(viewModel.language.localized(currentMode.titleKey))
+
+            if addFormModeDropdownOpen {
+                VStack(spacing: 0) {
+                    ForEach(Array(CollectionAddFormMode.allCases.enumerated()), id: \.element.id) { index, mode in
+                        let isSelected = mode == currentMode
+                        Button {
+                            presentationStore.setAddFormMode(mode, for: liveSchema.id)
+                            addFormModeDropdownOpen = false
+                        } label: {
+                            HStack(spacing: 10) {
+                                Image(systemName: mode.iconName)
+                                    .font(.caption.weight(.bold))
+                                    .foregroundStyle(.white)
+                                    .frame(width: 26, height: 26)
+                                    .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(tint))
+                                    .accessibilityHidden(true)
+
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(viewModel.language.localized(mode.titleKey))
+                                        .font(.footnote.weight(.bold))
+                                        .foregroundStyle(.primary)
+                                    Text(viewModel.language.localized(mode.subtitleKey))
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+
+                                Spacer()
+
+                                if isSelected {
+                                    Image(systemName: "checkmark")
+                                        .font(.caption.weight(.black))
+                                        .foregroundStyle(tint)
+                                }
+                            }
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 10)
+                            .frame(minHeight: 44)
+                            .background(isSelected ? ArcaTheme.subtleFieldBackground(for: colorScheme) : Color.clear)
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel(viewModel.language.localized(mode.titleKey))
+                        .accessibilityAddTraits(isSelected ? .isSelected : [])
+
+                        if index < CollectionAddFormMode.allCases.count - 1 {
+                            Divider().opacity(0.45)
+                        }
+                    }
+                }
+                .background(
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .fill(ArcaTheme.cardBackground(for: colorScheme))
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .strokeBorder(ArcaTheme.cardBorder(for: colorScheme), lineWidth: 1)
+                )
+            }
+        }
+        .padding(16)
+        .background(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .fill(ArcaTheme.cardBackground(for: colorScheme))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .strokeBorder(ArcaTheme.cardBorder(for: colorScheme), lineWidth: 1)
+        )
+    }
+
+    // MARK: - 4. 4-Category Collection Icon Picker
+
+    private var iconPickerCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text(viewModel.language.localized("Collection Icon"))
+                .font(.footnote.weight(.bold))
+                .accessibilityAddTraits(.isHeader)
+
+            HStack(spacing: 4) {
+                ForEach(CollectionIconTab.allCases) { tab in
+                    let isSelected = iconTab == tab
+                    Button {
+                        iconTab = tab
+                    } label: {
+                        Text(viewModel.language.localized(tab.titleKey))
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(isSelected ? .white : .secondary)
+                            .frame(maxWidth: .infinity, minHeight: 38)
+                            .background(
+                                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                    .fill(isSelected ? tint : Color.clear)
+                            )
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .frame(minHeight: 44)
+                    .accessibilityAddTraits(isSelected ? .isSelected : [])
+                }
+            }
+            .padding(4)
+            .background(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(ArcaTheme.subtleFieldBackground(for: colorScheme))
+            )
+
+            switch iconTab {
+            case .library:
+                libraryIconTabContent
+            case .emoji:
+                emojiIconTabContent
+            case .upload:
+                uploadIconTabContent
+            case .letters:
+                lettersIconTabContent
+            }
+        }
+        .padding(16)
+        .background(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .fill(ArcaTheme.cardBackground(for: colorScheme))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .strokeBorder(ArcaTheme.cardBorder(for: colorScheme), lineWidth: 1)
+        )
+    }
+
+    private var libraryIconTabContent: some View {
+        let activeCategory = CollectionDesignCatalog.iconCategories.first(where: { $0.titleKey == selectedLibraryCategory })
+            ?? CollectionDesignCatalog.iconCategories[0]
+        let activeSubcategory = activeCategory.subcategories.first(where: { $0.titleKey == selectedLibrarySubcategory })
+            ?? activeCategory.subcategories[0]
+        let currentPref = presentationStore.preferences(for: liveSchema.id).iconPreference
+        let activeSymbol: String? = {
+            if case .library(let sym) = currentPref { return sym }
+            if currentPref == nil { return liveSchema.iconName }
+            return nil
+        }()
+
+        return VStack(alignment: .leading, spacing: 10) {
+            // Category Strip
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 6) {
+                    ForEach(CollectionDesignCatalog.iconCategories) { cat in
+                        let isSelected = cat.titleKey == activeCategory.titleKey
+                        Button {
+                            selectedLibraryCategory = cat.titleKey
+                            if let firstSub = cat.subcategories.first {
+                                selectedLibrarySubcategory = firstSub.titleKey
+                            }
+                        } label: {
+                            Text(viewModel.language.localized(cat.titleKey))
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(isSelected ? .white : .primary)
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 8)
+                                .frame(minHeight: 44)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                        .fill(isSelected ? tint : ArcaTheme.subtleFieldBackground(for: colorScheme))
+                                )
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityAddTraits(isSelected ? .isSelected : [])
+                    }
+                }
+            }
+
+            // Subcategory Strip
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 6) {
+                    ForEach(activeCategory.subcategories) { sub in
+                        let isSelected = sub.titleKey == activeSubcategory.titleKey
+                        Button {
+                            selectedLibrarySubcategory = sub.titleKey
+                        } label: {
+                            Text(viewModel.language.localized(sub.titleKey))
+                                .font(.caption.weight(.medium))
+                                .foregroundStyle(isSelected ? .white : .primary)
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 7)
+                                .frame(minHeight: 44)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 9, style: .continuous)
+                                        .fill(isSelected ? tint.opacity(0.84) : ArcaTheme.subtleFieldBackground(for: colorScheme))
+                                )
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityAddTraits(isSelected ? .isSelected : [])
+                    }
+                }
+            }
+
+            // Icons Grid
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 44), spacing: 8)], spacing: 8) {
+                ForEach(activeSubcategory.icons) { item in
+                    let isSelected = activeSymbol == item.symbol
+                    Button {
+                        selectLibraryIcon(item.symbol)
+                    } label: {
+                        Image(systemName: item.symbol)
+                            .font(.body.weight(.semibold))
+                            .foregroundStyle(isSelected ? .white : .primary)
+                            .frame(minWidth: 44, minHeight: 44)
+                            .background(
+                                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                    .fill(isSelected ? tint : ArcaTheme.subtleFieldBackground(for: colorScheme))
+                            )
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                    .strokeBorder(isSelected ? tint : Color.clear, lineWidth: 2)
+                            )
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(viewModel.language.localized(item.labelKey))
+                    .accessibilityAddTraits(isSelected ? .isSelected : [])
+                }
+            }
+        }
+    }
+
+    private func selectLibraryIcon(_ symbol: String) {
+        let collectionId = liveSchema.id
+        presentationStore.setIcon(.library(symbol: symbol), for: collectionId)
+        Task {
+            await viewModel.updateCollectionMetadata(collectionId: collectionId, iconName: symbol)
+        }
+    }
+
+    private var emojiIconTabContent: some View {
+        let currentPref = presentationStore.preferences(for: liveSchema.id).iconPreference
+        let activeEmoji: String? = {
+            if case .emoji(let em) = currentPref { return em }
+            return nil
+        }()
+
+        return VStack(alignment: .leading, spacing: 10) {
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 44), spacing: 8)], spacing: 8) {
+                ForEach(CollectionDesignCatalog.emojiOptions, id: \.self) { emoji in
+                    let isSelected = activeEmoji == emoji
+                    Button {
+                        presentationStore.setIcon(.emoji(emoji), for: liveSchema.id)
+                    } label: {
+                        Text(verbatim: emoji)
+                            .font(.title3)
+                            .frame(minWidth: 44, minHeight: 44)
+                            .background(
+                                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                    .fill(isSelected ? tint.opacity(0.22) : ArcaTheme.subtleFieldBackground(for: colorScheme))
+                            )
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                    .strokeBorder(isSelected ? tint : Color.clear, lineWidth: 2)
+                            )
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(emoji)
+                    .accessibilityAddTraits(isSelected ? .isSelected : [])
+                }
+            }
+
+            HStack(spacing: 8) {
+                ArcaStyledTextField(
+                    viewModel.language.localized("Or type any emoji…"),
+                    text: $customEmojiInput
+                )
+                Button {
+                    let trimmed = customEmojiInput.trimmingCharacters(in: .whitespacesAndNewlines)
+                    guard let first = trimmed.first else { return }
+                    presentationStore.setIcon(.emoji(String(first)), for: liveSchema.id)
+                    customEmojiInput = ""
+                } label: {
+                    Text(viewModel.language.localized("Use"))
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 14)
+                        .frame(minHeight: 44)
+                        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(tint))
+                }
+                .buttonStyle(.plain)
+                .disabled(customEmojiInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }
+        }
+    }
+
+    private var uploadIconTabContent: some View {
+        let hasCustomImage: Bool = {
+            if case .customImage = presentationStore.preferences(for: liveSchema.id).iconPreference {
+                return true
+            }
+            return false
+        }()
+
+        return VStack(spacing: 10) {
+            #if os(iOS)
+            PhotosPicker(selection: $selectedPhotoPickerItem, matching: .images) {
+                uploadBannerContent
+            }
+            .buttonStyle(.plain)
+            #else
+            Button {
+                showingIconFileImporter = true
+            } label: {
+                uploadBannerContent
+            }
+            .buttonStyle(.plain)
+            #endif
+
+            HStack(spacing: 8) {
+                Button {
+                    showingIconFileImporter = true
+                } label: {
+                    Label(viewModel.language.localized("Choose Image from Files"), systemImage: "folder.fill")
+                        .font(.caption.weight(.semibold))
+                        .frame(maxWidth: .infinity, minHeight: 44)
+                }
+                .buttonStyle(ArcaSecondaryButtonStyle(tint: tint, isFullWidth: true))
+
+                if hasCustomImage {
+                    Button {
+                        presentationStore.setIcon(.library(symbol: liveSchema.iconName), for: liveSchema.id)
+                    } label: {
+                        Text(viewModel.language.localized("Reset Icon"))
+                            .font(.caption.weight(.semibold))
+                            .frame(minHeight: 44)
+                    }
+                    .buttonStyle(ArcaSecondaryButtonStyle(tint: .secondary))
+                }
+            }
+
+            if let iconUploadError {
+                Text(iconUploadError)
+                    .font(.caption)
+                    .foregroundStyle(ArcaTheme.dangerRed)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+    }
+
+    private var uploadBannerContent: some View {
+        VStack(spacing: 6) {
+            Image(systemName: "photo.badge.plus")
+                .font(.title3.weight(.semibold))
+                .foregroundStyle(tint)
+            Text(viewModel.language.localized("Upload Custom Photo / Icon"))
+                .font(.footnote.weight(.bold))
+                .foregroundStyle(.primary)
+            Text(viewModel.language.localized("Choose from Photos or Files"))
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(16)
+        .background(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(ArcaTheme.subtleFieldBackground(for: colorScheme))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .strokeBorder(style: StrokeStyle(lineWidth: 1.5, dash: [6, 4]))
+                .foregroundStyle(tint.opacity(0.45))
+        )
+    }
+
+    private var lettersIconTabContent: some View {
+        let activeName = draftName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? liveSchema.name : draftName
+        let suggested = CollectionPresentationStore.computeInitials(for: activeName)
+
+        return VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Text(viewModel.language.format("Suggested from “%@”: %@", activeName, suggested))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                Spacer()
+
+                Button {
+                    customMonogram = suggested
+                    presentationStore.setIcon(.monogram(suggested), for: liveSchema.id)
+                } label: {
+                    Text(viewModel.language.format("Use “%@”", suggested))
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 7)
+                        .frame(minHeight: 44)
+                        .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(tint))
+                }
+                .buttonStyle(.plain)
+            }
+
+            HStack(spacing: 10) {
+                TextField(
+                    "W",
+                    text: Binding(
+                        get: { customMonogram },
+                        set: { newValue in
+                            let clean = CollectionPresentationStore.sanitizeMonogram(newValue, fallbackName: activeName)
+                            customMonogram = String(newValue.prefix(3)).uppercased()
+                            presentationStore.setIcon(.monogram(clean), for: liveSchema.id)
+                        }
+                    )
+                )
+                .textFieldStyle(.plain)
+                .font(.headline.weight(.black))
+                .multilineTextAlignment(.center)
+                .frame(width: 78)
+                .frame(minHeight: 44)
+                .background(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .fill(ArcaTheme.subtleFieldBackground(for: colorScheme))
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .strokeBorder(ArcaTheme.cardBorder(for: colorScheme), lineWidth: 1)
+                )
+                .accessibilityLabel(viewModel.language.localized("Monogram Letters"))
+
+                Text(viewModel.language.localized("Type 1–3 letters (e.g. W, HI, VM)"))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    // MARK: - 5. Collection Privacy & Sensitive Data Controls Card
+
+    private var collectionPrivacyCard: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 6) {
+                Image(systemName: "hand.raised.fill")
+                    .font(.footnote.weight(.bold))
+                    .foregroundStyle(ArcaTheme.plumSensitive)
+                Text(viewModel.language.localized("Collection privacy"))
+                    .font(.footnote.weight(.bold))
+                    .accessibilityAddTraits(.isHeader)
+                Spacer()
+            }
+
+            Text(
+                viewModel.language.localized(
+                    liveSchema.privacy == .localOnly
+                        ? "Sensitive · kept on this device"
+                        : liveSchema.privacy == .syncWithConsent
+                            ? "Sensitive · cloud sync consented"
+                            : "Ordinary collection"
+                )
+            )
+            .font(.caption)
+            .foregroundStyle(.secondary)
+
+            Button {
+                let colId = liveSchema.id
+                Task {
+                    do {
+                        try await viewModel.keepSensitiveDataOnDevice(collectionId: colId)
+                        privacyError = nil
+                        showingPrivacyConsent = true
+                    } catch {
+                        privacyError = error.localizedDescription
+                    }
+                }
+            } label: {
+                Label(
+                    viewModel.language.localized("Mark collection sensitive / change consent"),
+                    systemImage: "lock.shield"
+                )
+                .frame(maxWidth: .infinity, minHeight: 44)
+            }
+            .buttonStyle(ArcaSecondaryButtonStyle(tint: ArcaTheme.plumSensitive, isFullWidth: true))
+
+            if viewModel.pendingPrivacyDeletionCollectionIds.contains(liveSchema.id) {
+                Text(viewModel.language.localized("Remote deletion pending. Uploads for this collection remain paused until confirmed. Offline devices may retain earlier copies."))
+                    .font(.caption)
+                    .foregroundStyle(.orange)
+            }
+
+            if let privacyError {
+                Text(privacyError)
+                    .font(.caption)
+                    .foregroundStyle(ArcaTheme.dangerRed)
+            }
+        }
+        .padding(16)
+        .background(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .fill(ArcaTheme.cardBackground(for: colorScheme))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .strokeBorder(ArcaTheme.cardBorder(for: colorScheme), lineWidth: 1)
+        )
+    }
+
+    // MARK: - 6. Schema Fields Summary Card
+
+    private var schemaFieldsSummaryCard: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Text(viewModel.language.format("Fields (%d)", liveSchema.activeFields.count))
+                    .font(.footnote.weight(.bold))
+                    .accessibilityAddTraits(.isHeader)
+
+                Spacer()
+
+                Button {
+                    showingFieldEditor = true
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "plus")
+                        Text(viewModel.language.localized("Add Field"))
+                    }
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(tint)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .frame(minHeight: 44)
+                    .background(Capsule().fill(tint.opacity(0.12)))
+                }
+                .buttonStyle(.plain)
+            }
+
+            VStack(spacing: 0) {
+                ForEach(Array(liveSchema.activeFields.enumerated()), id: \.element.id) { index, field in
+                    Button {
+                        showingFieldEditor = true
+                    } label: {
+                        HStack(spacing: 10) {
+                            Image(systemName: field.type.iconName)
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(tint)
+                                .frame(width: 22)
+
+                            Text(field.label)
+                                .font(.footnote.weight(.semibold))
+                                .foregroundStyle(.primary)
+
+                            if field.isRequired {
+                                Text(viewModel.language.localized("Required"))
+                                    .font(.caption2.weight(.semibold))
+                                    .foregroundStyle(tint)
+                                    .padding(.horizontal, 6)
+                                    .padding(.vertical, 2)
+                                    .background(Capsule().fill(tint.opacity(0.12)))
+                            }
+
+                            if field.privacy != nil {
+                                Image(systemName: "hand.raised.fill")
+                                    .font(.caption2)
+                                    .foregroundStyle(ArcaTheme.plumSensitive)
+                            }
+
+                            Spacer()
+
+                            Text(ArcaStrings.text("field.type." + field.type.rawValue, language: viewModel.language))
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 3)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 7, style: .continuous)
+                                        .fill(ArcaTheme.subtleFieldBackground(for: colorScheme))
+                                )
+                        }
+                        .padding(.vertical, 10)
+                        .frame(minHeight: 44)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+
+                    if index < liveSchema.activeFields.count - 1 {
+                        Divider().opacity(0.45)
+                    }
+                }
+            }
+
+            Button {
+                showingFieldEditor = true
+            } label: {
+                Label(viewModel.language.localized("Manage Fields"), systemImage: "slider.horizontal.3")
+                    .frame(maxWidth: .infinity, minHeight: 44)
+            }
+            .buttonStyle(ArcaSecondaryButtonStyle(tint: tint, isFullWidth: true))
+        }
+        .padding(16)
+        .background(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .fill(ArcaTheme.cardBackground(for: colorScheme))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .strokeBorder(ArcaTheme.cardBorder(for: colorScheme), lineWidth: 1)
+        )
+    }
+}
+
 // MARK: - Screen 9: Field Editor & Reorder Interface (with Conversion Preview & Archived Retention)
 
 @available(macOS 14.0, iOS 17.0, *)
@@ -23,6 +1250,11 @@ public struct FieldEditorSheetView: View {
     @ViewState private var newFieldLabel = ""
     @ViewState private var newFieldType: FieldType = .shortText
 
+    public init(viewModel: ArcaAppViewModel, collectionId: UUID) {
+        self.viewModel = viewModel
+        self.collectionId = collectionId
+    }
+
     private var currentSchema: CollectionSchema? {
         viewModel.schema(for: collectionId)
     }
@@ -37,9 +1269,10 @@ public struct FieldEditorSheetView: View {
             )
 
             if let schema = currentSchema {
+                let tint = ArcaTheme.color(fromHex: schema.colorHex)
                 ScrollView(showsIndicators: false) {
                     VStack(alignment: .leading, spacing: 18) {
-                        ArcaSectionCard(title: viewModel.language.localized("Collection privacy"), icon: "hand.raised.fill") {
+                        ArcaSectionCard(title: viewModel.language.localized("Collection privacy"), icon: "hand.raised.fill", iconTint: ArcaTheme.plumSensitive) {
                             Text(viewModel.language.localized(schema.privacy == .localOnly ? "Sensitive · kept on this device" : schema.privacy == .syncWithConsent ? "Sensitive · cloud sync consented" : "Ordinary collection"))
                             Button(viewModel.language.localized("Mark collection sensitive / change consent")) {
                                 Task {
@@ -57,16 +1290,17 @@ public struct FieldEditorSheetView: View {
                         ArcaSectionCard(
                             title: viewModel.language.localized("Active Fields"),
                             subtitle: viewModel.language.localized("Reorder, rename labels without losing values, or preview safe type conversions."),
-                            icon: "slider.horizontal.3"
+                            icon: "slider.horizontal.3",
+                            iconTint: tint
                         ) {
                             VStack(spacing: 8) {
                                 ForEach(Array(schema.activeFields.enumerated()), id: \.element.id) { index, field in
                                     HStack(spacing: 10) {
                                         Image(systemName: field.type.iconName)
                                             .font(.subheadline.weight(.semibold))
-                                            .foregroundStyle(ArcaTheme.accent)
+                                            .foregroundStyle(tint)
                                             .frame(width: 30, height: 30)
-                                            .background(Circle().fill(ArcaTheme.accent.opacity(0.12)))
+                                            .background(Circle().fill(tint.opacity(0.12)))
 
                                         VStack(alignment: .leading, spacing: 2) {
                                             Text(field.label)
@@ -155,7 +1389,8 @@ public struct FieldEditorSheetView: View {
                             ArcaSectionCard(
                                 title: viewModel.language.format("Rename “%@”", renamingField.label),
                                 subtitle: viewModel.language.localized("Renaming a field only updates its display label. All existing record values stay bound to its stable UUID."),
-                                icon: "pencil"
+                                icon: "pencil",
+                                iconTint: tint
                             ) {
                                 ArcaStyledTextField(viewModel.language.localized("New Display Label"), text: $renameLabel, icon: "tag")
                                 HStack(spacing: 10) {
@@ -167,7 +1402,7 @@ public struct FieldEditorSheetView: View {
                                             self.renamingField = nil
                                         }
                                     }
-                                    .buttonStyle(ArcaPrimaryButtonStyle())
+                                    .buttonStyle(ArcaPrimaryButtonStyle(tint: tint))
                                 }
                             }
                         }
@@ -176,7 +1411,8 @@ public struct FieldEditorSheetView: View {
                             ArcaSectionCard(
                                 title: viewModel.language.format("Convert Type for “%@”", convertingField.label),
                                 subtitle: viewModel.language.localized("Arca runs a non-destructive dry-run preview across all existing records before allowing a type change."),
-                                icon: "arrow.triangle.swap"
+                                icon: "arrow.triangle.swap",
+                                iconTint: tint
                             ) {
                                 HStack {
                                     Text(viewModel.language.localized("Target Type"))
@@ -239,7 +1475,7 @@ public struct FieldEditorSheetView: View {
                                             }
                                         }
                                     }
-                                    .buttonStyle(ArcaPrimaryButtonStyle())
+                                    .buttonStyle(ArcaPrimaryButtonStyle(tint: tint))
                                     .disabled(!(conversionPreview?.isSafeToApplyWithoutLoss ?? false))
                                 }
                             }
@@ -252,7 +1488,7 @@ public struct FieldEditorSheetView: View {
                                 icon: "archivebox.fill",
                                 iconTint: ArcaTheme.warmAmber
                             ) {
-                               ForEach(schema.archivedFields) { archived in
+                                ForEach(schema.archivedFields) { archived in
                                     HStack {
                                         VStack(alignment: .leading, spacing: 2) {
                                             Text(archived.label)
@@ -262,7 +1498,7 @@ public struct FieldEditorSheetView: View {
                                                 .foregroundStyle(.secondary)
                                         }
                                         Spacer()
-                                        ArcaPillActionButton(viewModel.language.localized("Restore"), icon: "arrow.uturn.backward") {
+                                        ArcaPillActionButton(viewModel.language.localized("Restore"), icon: "arrow.uturn.backward", tint: tint) {
                                             Task { await viewModel.restoreArchivedField(in: schema.id, fieldId: archived.id) }
                                         }
                                     }
@@ -270,7 +1506,7 @@ public struct FieldEditorSheetView: View {
                             }
                         }
 
-                        ArcaSectionCard(title: viewModel.language.localized("Add New Field"), icon: "plus.circle.fill") {
+                        ArcaSectionCard(title: viewModel.language.localized("Add New Field"), icon: "plus.circle.fill", iconTint: tint) {
                             ArcaStyledTextField(viewModel.language.localized("Field Label"), text: $newFieldLabel, icon: "plus")
                             HStack {
                                 Text(viewModel.language.localized("Field Type"))
@@ -289,7 +1525,7 @@ public struct FieldEditorSheetView: View {
                                     newFieldLabel = ""
                                 }
                             }
-                            .buttonStyle(ArcaPrimaryButtonStyle())
+                            .buttonStyle(ArcaPrimaryButtonStyle(tint: tint))
                             .disabled(newFieldLabel.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                         }
                     }
@@ -304,7 +1540,58 @@ public struct FieldEditorSheetView: View {
     }
 }
 
-// MARK: - Screen 10: Collection Record List with Search, Sort, and Filters
+// MARK: - Field Filter Builder Models (Backed by Real RecordFieldFilter Queries)
+
+public enum NumericComparisonOperator: String, CaseIterable, Sendable, Identifiable {
+    case between = "between"
+    case greaterOrEqual = "gt"
+    case lessOrEqual = "lt"
+    case equals = "eq"
+
+    public var id: String { rawValue }
+
+    public var titleKey: String {
+        switch self {
+        case .between: return "Between"
+        case .greaterOrEqual: return "Greater ≥"
+        case .lessOrEqual: return "Lesser ≤"
+        case .equals: return "Equals ="
+        }
+    }
+}
+
+public enum DateComparisonOperator: String, CaseIterable, Sendable, Identifiable {
+    case between = "between"
+    case onOrAfter = "after"
+    case onOrBefore = "before"
+
+    public var id: String { rawValue }
+
+    public var titleKey: String {
+        switch self {
+        case .between: return "Between Dates"
+        case .onOrAfter: return "After Date"
+        case .onOrBefore: return "Before Date"
+        }
+    }
+}
+
+public struct AppliedCollectionFieldFilter: Identifiable, Equatable, Sendable {
+    public var id: String { filter.id }
+    public let fieldId: UUID
+    public let fieldLabel: String
+    public let summary: String
+    public let filter: RecordFieldFilter
+
+    public init(fieldId: UUID, fieldLabel: String, summary: String, filter: RecordFieldFilter) {
+        self.fieldId = fieldId
+        self.fieldLabel = fieldLabel
+        self.summary = summary
+        self.filter = filter
+    }
+}
+
+// MARK: - Screen 10: Collection Record List with Normal/Compact/Box Modes, Search, Sort & Field Filters
 
 @available(macOS 14.0, iOS 17.0, *)
 public struct CollectionRecordListView: View {
@@ -312,14 +1599,32 @@ public struct CollectionRecordListView: View {
     public let schema: CollectionSchema
     @Environment(\.dismiss) private var dismiss
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
+    private let presentationStore: CollectionPresentationStore = .shared
 
     @ViewState private var searchText = ""
     @ViewState private var sortCriterion: RecordSortCriterion = .updatedAtDescending
     @ViewState private var favoritesOnly = false
     @ViewState private var hasAttachmentsOnly = false
     @ViewState private var selectedOptionFilter: (fieldId: UUID, optionId: String)?
-    @ViewState private var showingAddRecord = false
-    @ViewState private var showingFieldEditor = false
+
+    @ViewState private var filterPanelOpen = false
+    @ViewState private var appliedFieldFilters: [AppliedCollectionFieldFilter] = []
+    @ViewState private var selectedDraftFilterFieldId: UUID?
+    @ViewState private var draftNumericOp: NumericComparisonOperator = .between
+    @ViewState private var draftNumberMinText: String = ""
+    @ViewState private var draftNumberMaxText: String = ""
+    @ViewState private var draftDateOp: DateComparisonOperator = .between
+    @ViewState private var draftFromDate: Date = Date()
+    @ViewState private var draftToDate: Date = Calendar.current.date(byAdding: .year, value: 1, to: Date()) ?? Date()
+    @ViewState private var draftBooleanValue: Bool = true
+    @ViewState private var draftSelectOptionId: String = ""
+    @ViewState private var draftMinimumRating: Int = 3
+
+    @ViewState private var activeRecordSheetCollection: CollectionSchema?
+    @ViewState private var showingCollectionSettings = false
+    @ViewState private var showingExportSheet = false
 
     public init(viewModel: ArcaAppViewModel, schema: CollectionSchema) {
         self.viewModel = viewModel
@@ -330,12 +1635,52 @@ public struct CollectionRecordListView: View {
         viewModel.schema(for: schema.id) ?? schema
     }
 
+    private var tint: Color {
+        ArcaTheme.color(fromHex: liveSchema.colorHex)
+    }
+
+    private var currentListMode: CollectionListMode {
+        presentationStore.listMode(for: liveSchema.id)
+    }
+
+    private var filterableFields: [FieldDefinition] {
+        liveSchema.activeFields.filter { field in
+            switch field.type {
+            case .number, .currency, .date, .singleSelect, .multiSelect, .boolean, .rating:
+                return true
+            case .shortText, .longText, .dateTime, .attachment:
+                return false
+            }
+        }
+    }
+
+    private var activeDraftFilterField: FieldDefinition? {
+        if let id = selectedDraftFilterFieldId,
+           let match = filterableFields.first(where: { $0.id == id }) {
+            return match
+        }
+        return filterableFields.first
+    }
+
+    private var totalActiveFilterCount: Int {
+        var count = appliedFieldFilters.count
+        if favoritesOnly { count += 1 }
+        if hasAttachmentsOnly { count += 1 }
+        if selectedOptionFilter != nil { count += 1 }
+        return count
+    }
+
     private var filteredRecords: [RecordItem] {
         var filters: [RecordFieldFilter] = []
         if favoritesOnly { filters.append(.favoritesOnly) }
         if hasAttachmentsOnly { filters.append(.hasAttachments) }
         if let sel = selectedOptionFilter {
             filters.append(.selectContains(fieldId: sel.fieldId, optionId: sel.optionId))
+        }
+        for item in appliedFieldFilters {
+            if !filters.contains(item.filter) {
+                filters.append(item.filter)
+            }
         }
         let query = RecordQuery(
             searchText: searchText,
@@ -347,178 +1692,26 @@ public struct CollectionRecordListView: View {
     }
 
     public var body: some View {
-        let tint = ArcaTheme.color(fromHex: liveSchema.colorHex)
         ScrollView(showsIndicators: false) {
-            VStack(alignment: .leading, spacing: 16) {
-                // Custom Mobile Collection Header
-                HStack(spacing: 10) {
-                    Button {
-                        dismiss()
-                    } label: {
-                        HStack(spacing: 4) {
-                            Image(systemName: "chevron.backward")
-                                .font(.footnote.weight(.bold))
-                            Text(viewModel.language.localized("Back"))
-                                .font(.subheadline.weight(.semibold))
-                        }
-                        .foregroundStyle(ArcaTheme.accent)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 7)
-                        .background(Capsule().fill(ArcaTheme.accent.opacity(0.10)))
-                    }
-                    .buttonStyle(.plain)
+            VStack(alignment: .leading, spacing: 14) {
+                topNavigationBar
+                collectionHeroBanner
+                ArcaSearchBar(
+                    text: $searchText,
+                    placeholder: viewModel.language.format("Filter %@…", liveSchema.name)
+                )
+                viewModeAndFilterTriggerBar
+                quickSortAndFilterChipsStrip
 
-                    Spacer()
-
-                    Button {
-                        showingFieldEditor = true
-                    } label: {
-                        HStack(spacing: 4) {
-                            Image(systemName: "slider.horizontal.3")
-                                .font(.footnote.weight(.bold))
-                            Text(viewModel.language.localized("Fields"))
-                                .font(.footnote.weight(.semibold))
-                        }
-                        .foregroundStyle(.primary)
-                        .padding(.horizontal, 11)
-                        .padding(.vertical, 7)
-                        .background(Capsule().fill(ArcaTheme.cardBackground(for: colorScheme)))
-                        .overlay(Capsule().strokeBorder(ArcaTheme.cardBorder(for: colorScheme), lineWidth: 1))
-                    }
-                    .buttonStyle(.plain)
-
-                    Button {
-                        showingAddRecord = true
-                    } label: {
-                        HStack(spacing: 4) {
-                            Image(systemName: "plus")
-                                .font(.footnote.weight(.bold))
-                            Text(viewModel.language.localized("Add"))
-                                .font(.footnote.weight(.bold))
-                        }
-                        .foregroundStyle(.white)
-                        .padding(.horizontal, 13)
-                        .padding(.vertical, 7)
-                        .background(Capsule().fill(tint))
-                    }
-                    .buttonStyle(.plain)
+                if filterPanelOpen {
+                    fieldFilterDrawerCard
                 }
 
-                // Collection Hero Title
-                HStack(spacing: 12) {
-                    ZStack {
-                        RoundedRectangle(cornerRadius: 14, style: .continuous)
-                            .fill(tint)
-                            .frame(width: 46, height: 46)
-                        Image(systemName: liveSchema.iconName)
-                            .font(.title3.weight(.semibold))
-                            .foregroundStyle(.white)
-                    }
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(liveSchema.name)
-                            .font(.title.weight(.bold))
-                        Text(viewModel.language.format("count.records", filteredRecords.count) + " • " + viewModel.language.format("count.fields", liveSchema.activeFields.count))
-                            .font(.footnote.weight(.medium))
-                            .foregroundStyle(.secondary)
-                    }
-                    Spacer()
+                if !appliedFieldFilters.isEmpty {
+                    activeAppliedFilterPillsStrip
                 }
 
-                // Search Bar
-                ArcaSearchBar(text: $searchText, placeholder: "Filter \(liveSchema.name)…")
-
-                // Filter & Sort Chips Strip
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 8) {
-                        Menu {
-                            Picker(viewModel.language.localized("Sort By"), selection: $sortCriterion) {
-                                Text(viewModel.language.localized("Recently Updated")).tag(RecordSortCriterion.updatedAtDescending)
-                                Text(viewModel.language.localized("Oldest Updated")).tag(RecordSortCriterion.updatedAtAscending)
-                                Text(viewModel.language.localized("Title (A → Z)")).tag(RecordSortCriterion.titleAscending)
-                                Text(viewModel.language.localized("Title (Z → A)")).tag(RecordSortCriterion.titleDescending)
-                            }
-                        } label: {
-                            HStack(spacing: 4) {
-                                Image(systemName: "arrow.up.arrow.down")
-                                Text(viewModel.language.localized("Sort"))
-                            }
-                            .font(.footnote.weight(.semibold))
-                            .padding(.horizontal, 11)
-                            .padding(.vertical, 7)
-                            .background(Capsule().fill(ArcaTheme.cardBackground(for: colorScheme)))
-                            .overlay(Capsule().strokeBorder(ArcaTheme.cardBorder(for: colorScheme), lineWidth: 1))
-                        }
-                        .buttonStyle(.plain)
-
-                        filterChip(
-                            title: viewModel.language.localized("Pinned"),
-                            icon: favoritesOnly ? "pin.fill" : "pin",
-                            isSelected: favoritesOnly,
-                            tint: ArcaTheme.warmAmber
-                        ) {
-                            favoritesOnly.toggle()
-                        }
-
-                        filterChip(
-                            title: viewModel.language.localized("Files"),
-                            icon: "paperclip",
-                            isSelected: hasAttachmentsOnly,
-                            tint: ArcaTheme.accent
-                        ) {
-                            hasAttachmentsOnly.toggle()
-                        }
-
-                        if let selectField = liveSchema.activeFields.first(where: { $0.type == .singleSelect }) {
-                            ForEach(selectField.options) { opt in
-                                let isActive = selectedOptionFilter?.fieldId == selectField.id && selectedOptionFilter?.optionId == opt.id
-                                filterChip(
-                                    title: opt.label,
-                                    icon: nil,
-                                    isSelected: isActive,
-                                    tint: tint
-                                ) {
-                                    if isActive {
-                                        selectedOptionFilter = nil
-                                    } else {
-                                        selectedOptionFilter = (selectField.id, opt.id)
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-
-                // Records List
-                if filteredRecords.isEmpty {
-                    VStack(spacing: 14) {
-                        Image(systemName: liveSchema.iconName)
-                            .font(.largeTitle)
-                            .foregroundStyle(.secondary)
-                        Text(viewModel.language.localized("No Records Match Your View"))
-                            .font(.body.weight(.bold))
-                        Button(viewModel.language.format("Add Record to %@", liveSchema.name)) {
-                            showingAddRecord = true
-                        }
-                        .buttonStyle(ArcaPrimaryButtonStyle(tint: tint, isFullWidth: false))
-                    }
-                    .frame(maxWidth: .infinity)
-                    .padding(28)
-                    .background(
-                        RoundedRectangle(cornerRadius: 18, style: .continuous)
-                            .fill(ArcaTheme.cardBackground(for: colorScheme))
-                    )
-                } else {
-                    VStack(spacing: 10) {
-                        ForEach(filteredRecords) { record in
-                            NavigationLink {
-                                RecordDetailView(viewModel: viewModel, recordId: record.id, schema: liveSchema)
-                            } label: {
-                                RecordRowCardView(record: record, schema: liveSchema, locale: viewModel.language.locale)
-                            }
-                            .buttonStyle(.plain)
-                        }
-                    }
-                }
+                recordsContentSection
             }
             .padding(18)
         }
@@ -526,14 +1719,956 @@ public struct CollectionRecordListView: View {
         #if os(iOS)
         .toolbar(.hidden, for: .navigationBar)
         #endif
-        .sheet(isPresented: $showingAddRecord) {
-            AddEditRecordSheetView(viewModel: viewModel, schema: liveSchema, existingRecord: nil)
-                .frame(minWidth: 370, idealWidth: 400, minHeight: 580, idealHeight: 680)
+        .modifier(CollectionAddRecordPresenter(viewModel: viewModel, schema: $activeRecordSheetCollection))
+        .sheet(isPresented: $showingCollectionSettings) {
+            CollectionSettingsView(viewModel: viewModel, schema: liveSchema)
+                .frame(minWidth: 370, idealWidth: 410, minHeight: 600, idealHeight: 720)
         }
-        .sheet(isPresented: $showingFieldEditor) {
-            FieldEditorSheetView(viewModel: viewModel, collectionId: liveSchema.id)
-                .frame(minWidth: 370, idealWidth: 400, minHeight: 580, idealHeight: 680)
+        .sheet(isPresented: $showingExportSheet) {
+            NavigationStack {
+                BackupExportRestoreScreenView(viewModel: viewModel)
+            }
+            .frame(minWidth: 370, idealWidth: 400, minHeight: 540, idealHeight: 640)
         }
+    }
+
+    // MARK: - Top Navigation Bar (Back · Export · ⚙️ Collection Settings)
+
+    private var topNavigationBar: some View {
+        let spaceName = viewModel.spaces.first(where: { $0.id == liveSchema.spaceId })?.name
+            ?? viewModel.language.localized("Back")
+
+        return HStack(spacing: 10) {
+            Button {
+                dismiss()
+            } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: "chevron.backward")
+                        .font(.footnote.weight(.bold))
+                    Text(spaceName)
+                        .font(.subheadline.weight(.bold))
+                        .lineLimit(1)
+                }
+                .foregroundStyle(tint)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .frame(minHeight: 44)
+                .background(Capsule().fill(tint.opacity(0.12)))
+            }
+            .buttonStyle(.plain)
+
+            Spacer()
+
+            Button {
+                showingExportSheet = true
+            } label: {
+                HStack(spacing: 5) {
+                    Image(systemName: "square.and.arrow.down")
+                        .font(.caption.weight(.bold))
+                    Text(viewModel.language.localized("Export"))
+                        .font(.footnote.weight(.semibold))
+                }
+                .foregroundStyle(.primary)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .frame(minHeight: 44)
+                .background(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .fill(ArcaTheme.subtleFieldBackground(for: colorScheme))
+                )
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(viewModel.language.localized("Export"))
+
+            Button {
+                showingCollectionSettings = true
+            } label: {
+                Image(systemName: "gearshape.fill")
+                    .font(.subheadline.weight(.bold))
+                    .foregroundStyle(.primary)
+                    .frame(width: 44, height: 44)
+                    .background(
+                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .fill(ArcaTheme.subtleFieldBackground(for: colorScheme))
+                    )
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(viewModel.language.localized("Collection Settings"))
+        }
+    }
+
+    // MARK: - Collection Hero Banner
+
+    private var collectionHeroBanner: some View {
+        HStack(spacing: 12) {
+            CollectionBadgeView(schema: liveSchema, size: 46, presentationStore: presentationStore)
+
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 6) {
+                    Text(liveSchema.name)
+                        .font(.headline.weight(.heavy))
+                        .foregroundStyle(.white)
+                        .lineLimit(1)
+                        .accessibilityAddTraits(.isHeader)
+                    if liveSchema.privacy != nil {
+                        Image(systemName: "hand.raised.fill")
+                            .font(.caption)
+                            .foregroundStyle(.white.opacity(0.9))
+                    }
+                }
+                Text(viewModel.language.format("count.records", filteredRecords.count))
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(.white.opacity(0.85))
+            }
+
+            Spacer(minLength: 8)
+
+            Button {
+                activeRecordSheetCollection = liveSchema
+            } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: "plus")
+                        .font(.caption.weight(.black))
+                    Text(viewModel.language.localized("Add"))
+                        .font(.footnote.weight(.heavy))
+                }
+                .foregroundStyle( Color(red: 0.067, green: 0.110, blue: 0.086) )
+                .padding(.horizontal, 14)
+                .padding(.vertical, 9)
+                .frame(minHeight: 44)
+                .background(
+                    RoundedRectangle(cornerRadius: 13, style: .continuous)
+                        .fill(Color.white)
+                )
+                .shadow(color: Color.black.opacity(0.12), radius: 4, x: 0, y: 2)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(viewModel.language.format("Add Record to %@", liveSchema.name))
+        }
+        .padding(14)
+        .background(
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .fill(
+                    LinearGradient(
+                        colors: [tint, tint.opacity(0.82)],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
+        )
+        .shadow(color: tint.opacity(0.24), radius: 8, x: 0, y: 4)
+    }
+
+    // MARK: - 3-View Switcher (Normal | Compact | Box) + Filter Trigger
+
+    private var viewModeAndFilterTriggerBar: some View {
+        let mode = currentListMode
+        return HStack(spacing: 10) {
+            HStack(spacing: 3) {
+                ForEach(CollectionListMode.allCases) { itemMode in
+                    let isSelected = mode == itemMode
+                    Button {
+                        presentationStore.setListMode(itemMode, for: liveSchema.id)
+                    } label: {
+                        Text(viewModel.language.localized(itemMode.titleKey))
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(isSelected ? .white : .secondary)
+                            .padding(.horizontal, 11)
+                            .padding(.vertical, 7)
+                            .frame(minHeight: 38)
+                            .background(
+                                RoundedRectangle(cornerRadius: 9, style: .continuous)
+                                    .fill(isSelected ? tint : Color.clear)
+                            )
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .frame(minHeight: 44)
+                    .accessibilityAddTraits(isSelected ? .isSelected : [])
+                }
+            }
+            .padding(3)
+            .background(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(ArcaTheme.subtleFieldBackground(for: colorScheme))
+            )
+
+            Spacer()
+
+            Button {
+                filterPanelOpen.toggle()
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: "line.3.horizontal.decrease.circle")
+                        .font(.caption.weight(.bold))
+                    Text(viewModel.language.localized("Filter"))
+                        .font(.caption.weight(.bold))
+                    if totalActiveFilterCount > 0 {
+                        Text("\(totalActiveFilterCount)")
+                            .font(.caption2.weight(.bold))
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(Capsule().fill(tint))
+                    }
+                }
+                .foregroundStyle(tint)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .frame(minHeight: 44)
+                .background(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .fill(filterPanelOpen ? tint.opacity(0.14) : Color.clear)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .strokeBorder(tint.opacity(0.42), lineWidth: 1)
+                )
+            }
+            .buttonStyle(.plain)
+            .accessibilityAddTraits(filterPanelOpen ? .isSelected : [])
+        }
+    }
+
+    // MARK: - Preserved Quick Sort & Filter Chips Strip
+
+    private var quickSortAndFilterChipsStrip: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                Menu {
+                    Picker(viewModel.language.localized("Sort By"), selection: $sortCriterion) {
+                        Text(viewModel.language.localized("Recently Updated")).tag(RecordSortCriterion.updatedAtDescending)
+                        Text(viewModel.language.localized("Oldest Updated")).tag(RecordSortCriterion.updatedAtAscending)
+                        Text(viewModel.language.localized("Title (A → Z)")).tag(RecordSortCriterion.titleAscending)
+                        Text(viewModel.language.localized("Title (Z → A)")).tag(RecordSortCriterion.titleDescending)
+                        ForEach(liveSchema.activeFields) { field in
+                            Text("\(field.label) ↑").tag(RecordSortCriterion.fieldAscending(field.id))
+                            Text("\(field.label) ↓").tag(RecordSortCriterion.fieldDescending(field.id))
+                        }
+                    }
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "arrow.up.arrow.down")
+                        Text(viewModel.language.localized("Sort"))
+                    }
+                    .font(.footnote.weight(.semibold))
+                    .padding(.horizontal, 11)
+                    .padding(.vertical, 7)
+                    .frame(minHeight: 44)
+                    .background(Capsule().fill(ArcaTheme.cardBackground(for: colorScheme)))
+                    .overlay(Capsule().strokeBorder(ArcaTheme.cardBorder(for: colorScheme), lineWidth: 1))
+                }
+                .buttonStyle(.plain)
+
+                filterChip(
+                    title: viewModel.language.localized("Pinned"),
+                    icon: favoritesOnly ? "pin.fill" : "pin",
+                    isSelected: favoritesOnly,
+                    tint: ArcaTheme.warmAmber
+                ) {
+                    favoritesOnly.toggle()
+                }
+
+                filterChip(
+                    title: viewModel.language.localized("Files"),
+                    icon: "paperclip",
+                    isSelected: hasAttachmentsOnly,
+                    tint: ArcaTheme.accent
+                ) {
+                    hasAttachmentsOnly.toggle()
+                }
+
+                if let selectField = liveSchema.activeFields.first(where: { $0.type == .singleSelect }) {
+                    ForEach(selectField.options) { opt in
+                        let isActive = selectedOptionFilter?.fieldId == selectField.id && selectedOptionFilter?.optionId == opt.id
+                        filterChip(
+                            title: opt.label,
+                            icon: nil,
+                            isSelected: isActive,
+                            tint: tint
+                        ) {
+                            if isActive {
+                                selectedOptionFilter = nil
+                            } else {
+                                selectedOptionFilter = (selectField.id, opt.id)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // MARK: - Type-Aware Field Filter Drawer
+
+    private var fieldFilterDrawerCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Text(viewModel.language.localized("Filter by Field"))
+                    .font(.footnote.weight(.bold))
+                    .foregroundStyle(tint)
+                Spacer()
+                Text(viewModel.language.localized("Number · Date · Select"))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            if filterableFields.isEmpty {
+                Text(viewModel.language.localized("Use the search bar above to filter text fields, or use Pinned and Files filters."))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } else {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 6) {
+                        ForEach(filterableFields) { field in
+                            let isSelected = activeDraftFilterField?.id == field.id
+                            Button {
+                                selectDraftFilterField(field)
+                            } label: {
+                                Text(field.label)
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundStyle(isSelected ? .white : .primary)
+                                    .padding(.horizontal, 11)
+                                    .padding(.vertical, 7)
+                                    .frame(minHeight: 44)
+                                    .background(
+                                        RoundedRectangle(cornerRadius: 9, style: .continuous)
+                                            .fill(isSelected ? tint : ArcaTheme.subtleFieldBackground(for: colorScheme))
+                                    )
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityAddTraits(isSelected ? .isSelected : [])
+                        }
+                    }
+                }
+
+                if let draftField = activeDraftFilterField {
+                    draftFilterInputControls(for: draftField)
+
+                    HStack(spacing: 8) {
+                        Spacer()
+                        if totalActiveFilterCount > 0 {
+                            Button {
+                                appliedFieldFilters.removeAll()
+                                favoritesOnly = false
+                                hasAttachmentsOnly = false
+                                selectedOptionFilter = nil
+                            } label: {
+                                Text(viewModel.language.localized("Reset"))
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundStyle(.primary)
+                                    .padding(.horizontal, 12)
+                                    .padding(.vertical, 7)
+                                    .frame(minHeight: 44)
+                                    .background(
+                                        RoundedRectangle(cornerRadius: 9, style: .continuous)
+                                            .fill(ArcaTheme.subtleFieldBackground(for: colorScheme))
+                                    )
+                            }
+                            .buttonStyle(.plain)
+                        }
+
+                        Button {
+                            applyCurrentDraftFilter(for: draftField)
+                        } label: {
+                            Text(viewModel.language.localized("Apply Filter"))
+                                .font(.caption.weight(.bold))
+                                .foregroundStyle(.white)
+                                .padding(.horizontal, 14)
+                                .padding(.vertical, 8)
+                                .frame(minHeight: 44)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 9, style: .continuous)
+                                        .fill(tint)
+                                )
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+        }
+        .padding(14)
+        .background(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .fill(ArcaTheme.cardBackground(for: colorScheme))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .strokeBorder(tint.opacity(0.32), lineWidth: 1)
+        )
+    }
+
+    private func selectDraftFilterField(_ field: FieldDefinition) {
+        selectedDraftFilterFieldId = field.id
+        if field.type == .singleSelect || field.type == .multiSelect {
+            draftSelectOptionId = field.options.first?.id ?? ""
+        }
+    }
+
+    @ViewBuilder
+    private func draftFilterInputControls(for field: FieldDefinition) -> some View {
+        switch field.type {
+        case .number, .currency:
+            VStack(alignment: .leading, spacing: 8) {
+                Picker(viewModel.language.localized("Comparison"), selection: $draftNumericOp) {
+                    ForEach(NumericComparisonOperator.allCases) { op in
+                        Text(viewModel.language.localized(op.titleKey)).tag(op)
+                    }
+                }
+                .pickerStyle(.segmented)
+
+                HStack(spacing: 8) {
+                    ArcaStyledTextField(
+                        draftNumericOp == .between
+                            ? viewModel.language.localized("Min")
+                            : viewModel.language.localized("Value"),
+                        text: $draftNumberMinText,
+                        icon: "number"
+                    )
+                    if draftNumericOp == .between {
+                        ArcaStyledTextField(
+                            viewModel.language.localized("Max"),
+                            text: $draftNumberMaxText,
+                            icon: "number"
+                        )
+                    }
+                }
+            }
+
+        case .date:
+            VStack(alignment: .leading, spacing: 8) {
+                Picker(viewModel.language.localized("Date Range"), selection: $draftDateOp) {
+                    ForEach(DateComparisonOperator.allCases) { op in
+                        Text(viewModel.language.localized(op.titleKey)).tag(op)
+                    }
+                }
+                .pickerStyle(.segmented)
+
+                HStack(spacing: 12) {
+                    DatePicker(
+                        viewModel.language.localized("From"),
+                        selection: $draftFromDate,
+                        displayedComponents: [.date]
+                    )
+                    .labelsHidden()
+
+                    if draftDateOp == .between {
+                        Text("–").foregroundStyle(.secondary)
+                        DatePicker(
+                            viewModel.language.localized("To"),
+                            selection: $draftToDate,
+                            displayedComponents: [.date]
+                        )
+                        .labelsHidden()
+                    }
+                }
+            }
+
+        case .singleSelect, .multiSelect:
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 6) {
+                    ForEach(field.options) { opt in
+                        let currentId = draftSelectOptionId.isEmpty ? (field.options.first?.id ?? "") : draftSelectOptionId
+                        let isSelected = currentId == opt.id
+                        Button {
+                            draftSelectOptionId = opt.id
+                        } label: {
+                            Text(opt.label)
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(isSelected ? .white : .primary)
+                                .padding(.horizontal, 11)
+                                .padding(.vertical, 7)
+                                .frame(minHeight: 44)
+                                .background(
+                                    Capsule().fill(isSelected ? tint : ArcaTheme.subtleFieldBackground(for: colorScheme))
+                                )
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityAddTraits(isSelected ? .isSelected : [])
+                    }
+                }
+            }
+
+        case .boolean:
+            HStack(spacing: 8) {
+                ForEach([true, false], id: \.self) { val in
+                    let isSelected = draftBooleanValue == val
+                    Button {
+                        draftBooleanValue = val
+                    } label: {
+                        Text(viewModel.language.localized(val ? "Yes" : "No"))
+                            .font(.caption.weight(.bold))
+                            .foregroundStyle(isSelected ? .white : .primary)
+                            .frame(maxWidth: .infinity, minHeight: 44)
+                            .background(
+                                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                    .fill(isSelected ? tint : ArcaTheme.subtleFieldBackground(for: colorScheme))
+                            )
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityAddTraits(isSelected ? .isSelected : [])
+                }
+            }
+
+        case .rating:
+            HStack(spacing: 8) {
+                Text(viewModel.language.localized("At least"))
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                ForEach(1...field.validation.maxRating, id: \.self) { star in
+                    Button {
+                        draftMinimumRating = star
+                    } label: {
+                        Image(systemName: star <= draftMinimumRating ? "star.fill" : "star")
+                            .foregroundStyle(star <= draftMinimumRating ? ArcaTheme.warmAmber : .secondary)
+                            .frame(minWidth: 44, minHeight: 44)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("\(star)")
+                    .accessibilityAddTraits(star == draftMinimumRating ? .isSelected : [])
+                }
+            }
+
+        default:
+            EmptyView()
+        }
+    }
+
+    private func applyCurrentDraftFilter(for field: FieldDefinition) {
+        let locale = viewModel.language.locale
+        switch field.type {
+        case .number, .currency:
+            let v1 = LocalizedNumericInput.number(draftNumberMinText, locale: locale)
+            let v2 = LocalizedNumericInput.number(draftNumberMaxText, locale: locale)
+            let recordFilter: RecordFieldFilter
+            let summary: String
+            switch draftNumericOp {
+            case .between:
+                guard v1 != nil || v2 != nil else { return }
+                let low = min(v1 ?? (v2 ?? 0), v2 ?? (v1 ?? 0))
+                let high = max(v1 ?? (v2 ?? 0), v2 ?? (v1 ?? 0))
+                recordFilter = .numberRange(fieldId: field.id, min: v1 != nil && v2 != nil ? low : v1, max: v1 != nil && v2 != nil ? high : v2)
+                summary = "\(field.label): \(draftNumberMinText)–\(draftNumberMaxText)"
+            case .greaterOrEqual:
+                guard let v1 else { return }
+                recordFilter = .numberRange(fieldId: field.id, min: v1, max: nil)
+                summary = "\(field.label) ≥ \(draftNumberMinText)"
+            case .lessOrEqual:
+                guard let v1 else { return }
+                recordFilter = .numberRange(fieldId: field.id, min: nil, max: v1)
+                summary = "\(field.label) ≤ \(draftNumberMinText)"
+            case .equals:
+                guard let v1 else { return }
+                recordFilter = .numberRange(fieldId: field.id, min: v1, max: v1)
+                summary = "\(field.label) = \(draftNumberMinText)"
+            }
+            upsertAppliedFilter(AppliedCollectionFieldFilter(
+                fieldId: field.id,
+                fieldLabel: field.label,
+                summary: summary,
+                filter: recordFilter
+            ))
+
+        case .date:
+            let d1 = CalendarDate(date: draftFromDate)
+            let d2 = CalendarDate(date: draftToDate)
+            let recordFilter: RecordFieldFilter
+            let summary: String
+            switch draftDateOp {
+            case .between:
+                let start = min(d1, d2)
+                let end = max(d1, d2)
+                recordFilter = .dateRange(fieldId: field.id, from: start, to: end)
+                summary = "\(field.label): \(start.formatted(locale: locale, style: .short))–\(end.formatted(locale: locale, style: .short))"
+            case .onOrAfter:
+                recordFilter = .dateRange(fieldId: field.id, from: d1, to: nil)
+                summary = "\(field.label) ≥ \(d1.formatted(locale: locale, style: .short))"
+            case .onOrBefore:
+                recordFilter = .dateRange(fieldId: field.id, from: nil, to: d1)
+                summary = "\(field.label) ≤ \(d1.formatted(locale: locale, style: .short))"
+            }
+            upsertAppliedFilter(AppliedCollectionFieldFilter(
+                fieldId: field.id,
+                fieldLabel: field.label,
+                summary: summary,
+                filter: recordFilter
+            ))
+
+        case .singleSelect, .multiSelect:
+            let optId = draftSelectOptionId.isEmpty ? (field.options.first?.id ?? "") : draftSelectOptionId
+            guard let opt = field.options.first(where: { $0.id == optId }) else { return }
+            let recordFilter = RecordFieldFilter.selectContains(fieldId: field.id, optionId: opt.id)
+            upsertAppliedFilter(AppliedCollectionFieldFilter(
+                fieldId: field.id,
+                fieldLabel: field.label,
+                summary: "\(field.label): \(opt.label)",
+                filter: recordFilter
+            ))
+
+        case .boolean:
+            let recordFilter = RecordFieldFilter.booleanEquals(fieldId: field.id, draftBooleanValue)
+            let yesNo = viewModel.language.localized(draftBooleanValue ? "Yes" : "No")
+            upsertAppliedFilter(AppliedCollectionFieldFilter(
+                fieldId: field.id,
+                fieldLabel: field.label,
+                summary: "\(field.label): \(yesNo)",
+                filter: recordFilter
+            ))
+
+        case .rating:
+            let recordFilter = RecordFieldFilter.minimumRating(fieldId: field.id, draftMinimumRating)
+            upsertAppliedFilter(AppliedCollectionFieldFilter(
+                fieldId: field.id,
+                fieldLabel: field.label,
+                summary: "\(field.label): ≥ \(draftMinimumRating)★",
+                filter: recordFilter
+            ))
+
+        default:
+            break
+        }
+    }
+
+    private func upsertAppliedFilter(_ item: AppliedCollectionFieldFilter) {
+        appliedFieldFilters.removeAll { $0.fieldId == item.fieldId }
+        appliedFieldFilters.append(item)
+    }
+
+    private var activeAppliedFilterPillsStrip: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 6) {
+                ForEach(appliedFieldFilters) { item in
+                    Button {
+                        appliedFieldFilters.removeAll { $0.id == item.id }
+                    } label: {
+                        HStack(spacing: 5) {
+                            Text(item.summary)
+                                .font(.caption.weight(.semibold))
+                            Image(systemName: "xmark")
+                                .font(.caption2.weight(.bold))
+                        }
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 11)
+                        .padding(.vertical, 6)
+                        .frame(minHeight: 36)
+                        .background(Capsule().fill(tint))
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(viewModel.language.format("Remove filter %@", item.summary))
+                }
+            }
+        }
+    }
+
+    // MARK: - Records List Content (Normal | Compact | Box)
+
+    @ViewBuilder
+    private var recordsContentSection: some View {
+        if filteredRecords.isEmpty {
+            VStack(spacing: 14) {
+                CollectionBadgeView(schema: liveSchema, size: 52, presentationStore: presentationStore)
+                Text(viewModel.language.localized("No Records Match Your View"))
+                    .font(.body.weight(.bold))
+                Button(viewModel.language.format("Add Record to %@", liveSchema.name)) {
+                    activeRecordSheetCollection = liveSchema
+                }
+                .buttonStyle(ArcaPrimaryButtonStyle(tint: tint, isFullWidth: false))
+            }
+            .frame(maxWidth: .infinity)
+            .padding(28)
+            .background(
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .fill(ArcaTheme.cardBackground(for: colorScheme))
+            )
+        } else {
+            switch currentListMode {
+            case .compact:
+                compactRecordsList
+            case .box:
+                boxRecordsGrid
+            case .normal:
+                normalRecordsList
+            }
+        }
+    }
+
+    private var compactRecordsList: some View {
+        let secondaryField = presentationStore.resolvedSecondaryField(for: liveSchema)
+        return VStack(spacing: 0) {
+            ForEach(Array(filteredRecords.enumerated()), id: \.element.id) { index, record in
+                NavigationLink {
+                    RecordDetailView(viewModel: viewModel, recordId: record.id, schema: liveSchema)
+                } label: {
+                    HStack(spacing: 10) {
+                        HStack(spacing: 6) {
+                            Text(record.title(using: liveSchema))
+                                .font(.subheadline.weight(.bold))
+                                .foregroundStyle(.primary)
+                                .lineLimit(1)
+                            if record.isFavorite {
+                                Image(systemName: "pin.fill")
+                                    .font(.caption2)
+                                    .foregroundStyle(ArcaTheme.warmAmber)
+                            }
+                            if !record.allAttachments.isEmpty {
+                                Image(systemName: "paperclip")
+                                    .font(.caption2.weight(.semibold))
+                                    .foregroundStyle(tint)
+                            }
+                        }
+
+                        Spacer(minLength: 6)
+
+                        if let secondaryField,
+                           let val = record.values[secondaryField.id],
+                           !val.isNullOrEmpty {
+                            let text = val.plainTextSummary(for: secondaryField, locale: viewModel.language.locale)
+                            if !text.isEmpty {
+                                Text(text)
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundStyle(tint)
+                                    .lineLimit(1)
+                                    .padding(.horizontal, 8)
+                                    .padding(.vertical, 4)
+                                    .background(
+                                        RoundedRectangle(cornerRadius: 7, style: .continuous)
+                                            .fill(tint.opacity(0.12))
+                                    )
+                            }
+                        }
+
+                        Image(systemName: "chevron.forward")
+                            .font(.caption.weight(.bold))
+                            .foregroundStyle(.tertiary)
+                    }
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 11)
+                    .frame(minHeight: 44)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+
+                if index < filteredRecords.count - 1 {
+                    Divider().opacity(0.45)
+                }
+            }
+        }
+        .background(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .fill(ArcaTheme.cardBackground(for: colorScheme))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .strokeBorder(ArcaTheme.cardBorder(for: colorScheme), lineWidth: 1)
+        )
+        .shadow(color: Color.black.opacity(colorScheme == .dark ? 0.16 : 0.025), radius: 6, x: 0, y: 2)
+    }
+
+    private var boxRecordsGrid: some View {
+        let cols = Array(repeating: GridItem(.flexible(), spacing: 10), count: dynamicTypeSize.isAccessibilitySize ? 1 : 2)
+        return LazyVGrid(columns: cols, spacing: 10) {
+            ForEach(filteredRecords) { record in
+                NavigationLink {
+                    RecordDetailView(viewModel: viewModel, recordId: record.id, schema: liveSchema)
+                } label: {
+                    boxRecordCard(for: record)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+    }
+
+    private func boxRecordCard(for record: RecordItem) -> some View {
+        let nonTitleFields = CollectionPresentationStore.secondaryFieldCandidates(for: liveSchema)
+        let firstSubtitle: String = {
+            for field in nonTitleFields {
+                if let val = record.values[field.id], !val.isNullOrEmpty {
+                    let s = val.plainTextSummary(for: field, locale: viewModel.language.locale)
+                    if !s.isEmpty { return s }
+                }
+            }
+            return liveSchema.name
+        }()
+        let badgeValueText = presentationStore.compactSecondaryDisplayText(
+            for: record,
+            schema: liveSchema,
+            locale: viewModel.language.locale
+        )
+        let dateText: String = {
+            if let dateField = liveSchema.activeFields.first(where: { $0.type == .date }),
+               case .date(let cd) = record.values[dateField.id] {
+                return cd.formatted(locale: viewModel.language.locale, style: .short)
+            }
+            return record.updatedAt.formatted(.dateTime.month(.abbreviated).day().locale(viewModel.language.locale))
+        }()
+
+        return VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text("#\(String(record.id.uuidString.prefix(5)).uppercased())")
+                    .font(.system(.caption2, design: .monospaced).weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(
+                        RoundedRectangle(cornerRadius: 6, style: .continuous)
+                            .fill(ArcaTheme.subtleFieldBackground(for: colorScheme))
+                    )
+
+                Spacer()
+
+                HStack(spacing: 4) {
+                    if record.isFavorite {
+                        Image(systemName: "pin.fill")
+                            .font(.caption2)
+                            .foregroundStyle(ArcaTheme.warmAmber)
+                    }
+                    Circle()
+                        .fill(tint)
+                        .frame(width: 8, height: 8)
+                }
+            }
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(record.title(using: liveSchema))
+                    .font(.subheadline.weight(.bold))
+                    .foregroundStyle(.primary)
+                    .lineLimit(2)
+                    .multilineTextAlignment(.leading)
+
+                Text(firstSubtitle)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            Spacer(minLength: 2)
+
+            Divider().opacity(0.45)
+
+            HStack {
+                Text(badgeValueText ?? "v\(record.revision)")
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(tint)
+                    .lineLimit(1)
+
+                Spacer()
+
+                Text(dateText)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, minHeight: 122, alignment: .topLeading)
+        .background(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(ArcaTheme.cardBackground(for: colorScheme))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .strokeBorder(ArcaTheme.cardBorder(for: colorScheme), lineWidth: 1)
+        )
+        .shadow(color: Color.black.opacity(colorScheme == .dark ? 0.16 : 0.025), radius: 6, x: 0, y: 2)
+    }
+
+    private var normalRecordsList: some View {
+        VStack(spacing: 10) {
+            ForEach(filteredRecords) { record in
+                NavigationLink {
+                    RecordDetailView(viewModel: viewModel, recordId: record.id, schema: liveSchema)
+                } label: {
+                    normalRecordCard(for: record)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+    }
+
+    private func normalRecordCard(for record: RecordItem) -> some View {
+        let secondaryText = presentationStore.compactSecondaryDisplayText(
+            for: record,
+            schema: liveSchema,
+            locale: viewModel.language.locale
+        )
+        let subtitle = record.subtitle(using: liveSchema, locale: viewModel.language.locale)
+        let dateFieldPair: (label: String, value: String)? = {
+            if let df = liveSchema.activeFields.first(where: { $0.type == .date }),
+               let val = record.values[df.id], !val.isNullOrEmpty {
+                return (df.label, val.plainTextSummary(for: df, locale: viewModel.language.locale))
+            }
+            return nil
+        }()
+
+        return VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .top, spacing: 10) {
+                VStack(alignment: .leading, spacing: 3) {
+                    HStack(spacing: 6) {
+                        Text(record.title(using: liveSchema))
+                            .font(.subheadline.weight(.bold))
+                            .foregroundStyle(.primary)
+                            .lineLimit(1)
+                        if record.isFavorite {
+                            Image(systemName: "pin.fill")
+                                .font(.caption)
+                                .foregroundStyle(ArcaTheme.warmAmber)
+                        }
+                        if !record.allAttachments.isEmpty {
+                            Image(systemName: "paperclip")
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(tint)
+                        }
+                    }
+
+                    if !subtitle.isEmpty {
+                        Text(subtitle)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
+                }
+
+                Spacer(minLength: 6)
+
+                if let secondaryText {
+                    Text(secondaryText)
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(tint)
+                        .padding(.horizontal, 9)
+                        .padding(.vertical, 4)
+                        .background(Capsule().fill(tint.opacity(0.14)))
+                }
+            }
+
+            if let pair = dateFieldPair {
+                Divider().opacity(0.45)
+                HStack {
+                    Text("#\(String(record.id.uuidString.prefix(6)).uppercased())")
+                        .font(.system(.caption2, design: .monospaced))
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    HStack(spacing: 4) {
+                        Text("\(pair.label):")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        Text(pair.value)
+                            .font(.caption.weight(.bold))
+                            .foregroundStyle(.primary)
+                    }
+                }
+            }
+        }
+        .padding(14)
+        .background(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(ArcaTheme.cardBackground(for: colorScheme))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .strokeBorder(ArcaTheme.cardBorder(for: colorScheme), lineWidth: 1)
+        )
+        .shadow(color: Color.black.opacity(colorScheme == .dark ? 0.16 : 0.025), radius: 6, x: 0, y: 2)
     }
 
     private func filterChip(title: String, icon: String?, isSelected: Bool, tint: Color, action: @escaping () -> Void) -> some View {
@@ -548,6 +2683,7 @@ public struct CollectionRecordListView: View {
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 7)
+            .frame(minHeight: 44)
             .background(
                 Capsule().fill(isSelected ? tint : ArcaTheme.cardBackground(for: colorScheme))
             )
@@ -557,10 +2693,11 @@ public struct CollectionRecordListView: View {
             .foregroundStyle(isSelected ? .white : .primary)
         }
         .buttonStyle(.plain)
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 }
 
-// MARK: - Screen 11: Add / Edit Record Form (Supports all 11 Field Types + Validation)
+// MARK: - Screen 11: Add / Edit Record Form (Supports all 11 Field Types + Validation + Popup/FullScreen Banner)
 
 @available(macOS 14.0, iOS 17.0, *)
 public struct AddEditRecordSheetView: View {
@@ -569,6 +2706,8 @@ public struct AddEditRecordSheetView: View {
     public let existingRecord: RecordItem?
     @Environment(\.dismiss) private var dismiss
     @Environment(\.colorScheme) private var colorScheme
+
+    private let presentationStore: CollectionPresentationStore = .shared
 
     @ViewState private var draftValues: [UUID: FieldValue] = [:]
     @ViewState private var isFavorite: Bool = false
@@ -586,11 +2725,27 @@ public struct AddEditRecordSheetView: View {
         self.existingRecord = existingRecord
     }
 
+    private var liveSchema: CollectionSchema {
+        viewModel.schema(for: schema.id) ?? schema
+    }
+
+    private var tint: Color {
+        ArcaTheme.color(fromHex: liveSchema.colorHex)
+    }
+
+    private var activeAddMode: CollectionAddFormMode {
+        presentationStore.addFormMode(for: liveSchema.id)
+    }
+
     public var body: some View {
         VStack(spacing: 0) {
             ArcaSheetHeaderBar(
-                title: existingRecord == nil ? viewModel.language.format("New %@", schema.name) : viewModel.language.localized("Edit Record"),
-                subtitle: viewModel.language.localized("Saved locally first"),
+                title: existingRecord == nil ? viewModel.language.format("New %@", liveSchema.name) : viewModel.language.localized("Edit Record"),
+                subtitle: viewModel.language.localized(
+                    existingRecord == nil
+                        ? (activeAddMode == .fullScreen ? "Full-Screen Form Mode" : "Popup Card Mode")
+                        : "Saved locally first"
+                ),
                 leadingLabel: "Cancel",
                 leadingAction: { dismiss() },
                 trailingLabel: "Save",
@@ -599,6 +2754,8 @@ public struct AddEditRecordSheetView: View {
 
             ScrollView(showsIndicators: false) {
                 VStack(alignment: .leading, spacing: 16) {
+                    collectionFormIdentityBanner
+
                     if let saveError { Text(saveError).foregroundStyle(ArcaTheme.dangerRed) }
                     if !validationErrors.isEmpty {
                         ArcaSectionCard(title: viewModel.language.localized("Please Check These Fields"), icon: "exclamationmark.triangle.fill", iconTint: ArcaTheme.dangerRed) {
@@ -626,16 +2783,18 @@ public struct AddEditRecordSheetView: View {
                                     .font(.title3)
                                     .foregroundStyle(isFavorite ? ArcaTheme.warmAmber : .secondary)
                             }
+                            .frame(minHeight: 44)
                         }
                         .buttonStyle(.plain)
+                        .accessibilityAddTraits(isFavorite ? .isSelected : [])
                     }
 
                     // Dynamic Schema Fields Card
-                    ArcaSectionCard(title: viewModel.language.format("%@ Fields", schema.name), icon: schema.iconName, iconTint: ArcaTheme.color(fromHex: schema.colorHex)) {
+                    ArcaSectionCard(title: viewModel.language.format("%@ Fields", liveSchema.name), icon: liveSchema.iconName, iconTint: tint) {
                         VStack(alignment: .leading, spacing: 16) {
-                            ForEach(schema.activeFields) { field in
+                            ForEach(liveSchema.activeFields) { field in
                                 fieldEditorRow(for: field)
-                                if field.id != schema.activeFields.last?.id {
+                                if field.id != liveSchema.activeFields.last?.id {
                                     Divider().opacity(0.45)
                                 }
                             }
@@ -647,7 +2806,7 @@ public struct AddEditRecordSheetView: View {
                     } label: {
                         Label(viewModel.language.localized(existingRecord == nil ? "Save Record" : "Save Changes"), systemImage: "checkmark.circle.fill")
                     }
-                    .buttonStyle(ArcaPrimaryButtonStyle(tint: ArcaTheme.color(fromHex: schema.colorHex)))
+                    .buttonStyle(ArcaPrimaryButtonStyle(tint: tint))
                 }
                 .padding(18)
             }
@@ -662,7 +2821,7 @@ public struct AddEditRecordSheetView: View {
                 guard let fieldId = attachmentFieldId else { return }
                 Task {
                     do {
-                        let ref = try await viewModel.attachFile(from: url, to: schema.spaceId)
+                        let ref = try await viewModel.attachFile(from: url, to: liveSchema.spaceId)
                         var refs: [AttachmentReference] = []
                         if case .attachments(let current) = draftValues[fieldId] { refs = current }
                         refs.append(ref)
@@ -679,18 +2838,44 @@ public struct AddEditRecordSheetView: View {
         }
     }
 
+    private var collectionFormIdentityBanner: some View {
+        HStack(spacing: 12) {
+            CollectionBadgeView(schema: liveSchema, size: 38, presentationStore: presentationStore)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(existingRecord == nil ? viewModel.language.format("New %@", liveSchema.name) : viewModel.language.localized("Edit Record"))
+                    .font(.subheadline.weight(.heavy))
+                    .foregroundStyle(.white)
+                Text(viewModel.language.localized(activeAddMode == .fullScreen ? "Full-Screen Form Mode" : "Popup Card Mode"))
+                    .font(.caption)
+                    .foregroundStyle(.white.opacity(0.85))
+            }
+            Spacer()
+        }
+        .padding(12)
+        .background(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(
+                    LinearGradient(
+                        colors: [tint, tint.opacity(0.82)],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
+        )
+    }
+
     private func populateInitialDraft() {
         if let rec = existingRecord {
             draftValues = rec.values
             isFavorite = rec.isFavorite
         } else {
-            for field in schema.activeFields {
+            for field in liveSchema.activeFields {
                 if let def = field.defaultValue {
                     draftValues[field.id] = def
                 }
             }
         }
-        for field in schema.activeFields {
+        for field in liveSchema.activeFields {
             if case .currency(let money) = draftValues[field.id] {
                 currencyTextInputs[field.id] = LocalizedNumericInput.editingText(for: money, locale: viewModel.language.locale)
             } else if case .number(let number) = draftValues[field.id] {
@@ -711,8 +2896,8 @@ public struct AddEditRecordSheetView: View {
                         .font(.caption2.weight(.bold))
                         .padding(.horizontal, 6)
                         .padding(.vertical, 2)
-                        .background(Capsule().fill(ArcaTheme.accent.opacity(0.12)))
-                        .foregroundStyle(ArcaTheme.accent)
+                        .background(Capsule().fill(tint.opacity(0.14)))
+                        .foregroundStyle(tint)
                 }
                 Spacer()
             }
@@ -768,10 +2953,10 @@ public struct AddEditRecordSheetView: View {
                 HStack(spacing: 8) {
                     Text(field.validation.defaultCurrencyCode)
                         .font(.footnote.weight(.bold))
-                        .foregroundStyle(ArcaTheme.accent)
+                        .foregroundStyle(tint)
                         .padding(.horizontal, 10)
                         .padding(.vertical, 10)
-                        .background(RoundedRectangle(cornerRadius: 10).fill(ArcaTheme.accent.opacity(0.12)))
+                        .background(RoundedRectangle(cornerRadius: 10).fill(tint.opacity(0.12)))
 
                     ArcaStyledTextField(
                         "\(field.label) (\(field.validation.defaultCurrencyCode))",
@@ -845,7 +3030,8 @@ public struct AddEditRecordSheetView: View {
                                     .font(.footnote.weight(.semibold))
                                     .padding(.horizontal, 12)
                                     .padding(.vertical, 7)
-                                    .background(Capsule().fill(selected ? ArcaTheme.accent : ArcaTheme.subtleFieldBackground(for: colorScheme)))
+                                    .frame(minHeight: 44)
+                                    .background(Capsule().fill(selected ? tint : ArcaTheme.subtleFieldBackground(for: colorScheme)))
                                     .foregroundStyle(selected ? .white : .primary)
                             }
                             .buttonStyle(.plain)
@@ -872,7 +3058,8 @@ public struct AddEditRecordSheetView: View {
                                     .font(.footnote.weight(.semibold))
                                     .padding(.horizontal, 12)
                                     .padding(.vertical, 7)
-                                    .background(Capsule().fill(selected ? ArcaTheme.accent : ArcaTheme.subtleFieldBackground(for: colorScheme)))
+                                    .frame(minHeight: 44)
+                                    .background(Capsule().fill(selected ? tint : ArcaTheme.subtleFieldBackground(for: colorScheme)))
                                     .foregroundStyle(selected ? .white : .primary)
                             }
                             .buttonStyle(.plain)
@@ -912,7 +3099,7 @@ public struct AddEditRecordSheetView: View {
                     ForEach(currentAttachments) { att in
                         HStack {
                             Image(systemName: "doc.fill")
-                                .foregroundStyle(ArcaTheme.accent)
+                                .foregroundStyle(tint)
                             Text(att.filename)
                                 .font(.footnote.weight(.medium))
                             Spacer()
@@ -929,9 +3116,9 @@ public struct AddEditRecordSheetView: View {
                     } label: {
                         Label(viewModel.language.localized("Attach File from Files"), systemImage: "paperclip.badge.plus")
                     }
-                    .buttonStyle(ArcaSecondaryButtonStyle())
-                    .disabled(viewModel.spaces.first(where: { $0.id == schema.spaceId })?.storageMode != .localOnly)
-                    if viewModel.spaces.first(where: { $0.id == schema.spaceId })?.storageMode != .localOnly {
+                    .buttonStyle(ArcaSecondaryButtonStyle(tint: tint))
+                    .disabled(viewModel.spaces.first(where: { $0.id == liveSchema.spaceId })?.storageMode != .localOnly)
+                    if viewModel.spaces.first(where: { $0.id == liveSchema.spaceId })?.storageMode != .localOnly {
                         Text(viewModel.language.localized("File attachments are available in Local-Only Spaces. Cloud attachment upload is not available yet."))
                             .font(.footnote).foregroundStyle(.secondary)
                     }
@@ -942,7 +3129,7 @@ public struct AddEditRecordSheetView: View {
 
     private func saveDraft() {
         guard !saving else { return }
-        for field in schema.activeFields {
+        for field in liveSchema.activeFields {
             if field.type == .number, let text = numberTextInputs[field.id],
                !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
                LocalizedNumericInput.number(text, locale: viewModel.language.locale) == nil {
@@ -957,7 +3144,7 @@ public struct AddEditRecordSheetView: View {
             }
         }
         saveError = nil
-        let errs = SchemaEngine.validate(values: draftValues, against: schema, locale: viewModel.language.locale)
+        let errs = SchemaEngine.validate(values: draftValues, against: liveSchema, locale: viewModel.language.locale)
         if !errs.isEmpty {
             validationErrors = errs
             saveError = errs.map { $0.errorDescription ?? $0.reason }.joined(separator: "\n")
@@ -967,7 +3154,7 @@ public struct AddEditRecordSheetView: View {
         Task {
             defer { saving = false }
             do {
-                try await viewModel.saveRecord(existingRecord: existingRecord, schema: schema,
+                try await viewModel.saveRecord(existingRecord: existingRecord, schema: liveSchema,
                                                values: draftValues, isFavorite: isFavorite)
                 dismiss()
             } catch {
@@ -977,7 +3164,7 @@ public struct AddEditRecordSheetView: View {
     }
 }
 
-// MARK: - Screen 12: Record Detail with Attachments, Duplicate, Local QR Deep Link, and Explicit Public Snapshot
+// MARK: - Screen 12: Record Detail with Color Header, Clean Field Cards, Attachments, Edit/Favorite & Security
 
 @available(macOS 14.0, iOS 17.0, *)
 public struct RecordDetailView: View {
@@ -986,6 +3173,9 @@ public struct RecordDetailView: View {
     public let schema: CollectionSchema
     @Environment(\.dismiss) private var dismiss
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
+    private let presentationStore: CollectionPresentationStore = .shared
 
     @ViewState private var showingEditSheet = false
     @ViewState private var showingLocalQRSheet = false
@@ -1022,12 +3212,13 @@ public struct RecordDetailView: View {
                                     Image(systemName: "chevron.backward")
                                         .font(.footnote.weight(.bold))
                                     Text(liveSchema.name)
-                                        .font(.subheadline.weight(.semibold))
+                                        .font(.subheadline.weight(.bold))
                                 }
-                                .foregroundStyle(ArcaTheme.accent)
+                                .foregroundStyle(tint)
                                 .padding(.horizontal, 12)
-                                .padding(.vertical, 7)
-                                .background(Capsule().fill(ArcaTheme.accent.opacity(0.10)))
+                                .padding(.vertical, 8)
+                                .frame(minHeight: 44)
+                                .background(Capsule().fill(tint.opacity(0.12)))
                             }
                             .buttonStyle(.plain)
 
@@ -1039,10 +3230,12 @@ public struct RecordDetailView: View {
                                 Image(systemName: rec.isFavorite ? "pin.fill" : "pin")
                                     .font(.subheadline.weight(.semibold))
                                     .foregroundStyle(rec.isFavorite ? .white : ArcaTheme.warmAmber)
-                                    .frame(width: 34, height: 34)
+                                    .frame(width: 44, height: 44)
                                     .background(Circle().fill(rec.isFavorite ? ArcaTheme.warmAmber : ArcaTheme.warmAmber.opacity(0.14)))
                             }
                             .buttonStyle(.plain)
+                            .accessibilityLabel(viewModel.language.localized("Pin Record to Favorites"))
+                            .accessibilityAddTraits(rec.isFavorite ? .isSelected : [])
 
                             Button {
                                 showingEditSheet = true
@@ -1050,64 +3243,22 @@ public struct RecordDetailView: View {
                                 Text(viewModel.language.localized("Edit"))
                                     .font(.subheadline.weight(.bold))
                                     .foregroundStyle(.white)
-                                    .padding(.horizontal, 14)
-                                    .padding(.vertical, 7)
+                                    .padding(.horizontal, 16)
+                                    .padding(.vertical, 8)
+                                    .frame(minHeight: 44)
                                     .background(Capsule().fill(tint))
                             }
                             .buttonStyle(.plain)
                         }
 
-                        // Record Hero Header Card
-                        ArcaSectionCard {
-                            HStack(spacing: 12) {
-                                ZStack {
-                                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                        .fill(tint)
-                                        .frame(width: 44, height: 44)
-                                    Image(systemName: liveSchema.iconName)
-                                        .font(.headline.weight(.semibold))
-                                        .foregroundStyle(.white)
-                                }
-                                VStack(alignment: .leading, spacing: 3) {
-                                    Text(rec.title(using: liveSchema))
-                                        .font(.system(size: 21, weight: .bold, design: .rounded))
-                                    Text(viewModel.language.format("%@ • Revision %d • Updated %@", liveSchema.name, rec.revision, rec.updatedAt.formatted(.dateTime.day().month().hour().minute().locale(viewModel.language.locale))))
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                }
-                            }
-                        }
+                        // Record Color Header Hero Card
+                        recordColorHeroHeaderCard(for: rec, tint: tint)
 
-                        // Structured Fields Card
-                        ArcaSectionCard(title: viewModel.language.localized("Saved Fields"), icon: "list.clipboard.fill", iconTint: tint) {
-                            VStack(alignment: .leading, spacing: 14) {
-                                ForEach(liveSchema.activeFields) { field in
-                                    let val = rec.values[field.id] ?? .null
-                                    if !val.isNullOrEmpty {
-                                        VStack(alignment: .leading, spacing: 4) {
-                                            HStack(spacing: 5) {
-                                                Image(systemName: field.type.iconName)
-                                                    .font(.caption.weight(.semibold))
-                                                    .foregroundStyle(tint)
-                                                Text(field.label.uppercased())
-                                                    .font(.caption2.weight(.bold))
-                                                    .tracking(0.5)
-                                                    .foregroundStyle(.secondary)
-                                            }
-                                            Text(val.plainTextSummary(for: field, locale: viewModel.language.locale))
-                                                .font(.body.weight(.medium))
-                                                .foregroundStyle(.primary)
-                                        }
-                                        .frame(maxWidth: .infinity, alignment: .leading)
-                                        .padding(12)
-                                        .background(
-                                            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                                .fill(ArcaTheme.subtleFieldBackground(for: colorScheme))
-                                        )
-                                    }
-                                }
-                            }
-                        }
+                        // Clean Structured Details Card
+                        savedFieldsDetailCard(for: rec, tint: tint)
+
+                        // Archived Field Values (if any retained on this record)
+                        archivedFieldsDetailCard(for: rec)
 
                         // Attachments Card
                         if !rec.allAttachments.isEmpty {
@@ -1141,7 +3292,7 @@ public struct RecordDetailView: View {
                         }
 
                         // Actions Card
-                        ArcaSectionCard(title: viewModel.language.localized("Record Actions & Sharing"), icon: "square.and.arrow.up") {
+                        ArcaSectionCard(title: viewModel.language.localized("Record Actions & Sharing"), icon: "square.and.arrow.up", iconTint: tint) {
                             VStack(spacing: 10) {
                                 HStack(spacing: 10) {
                                     Button {
@@ -1149,14 +3300,14 @@ public struct RecordDetailView: View {
                                     } label: {
                                         Label(viewModel.language.localized("Duplicate"), systemImage: "plus.square.on.square")
                                     }
-                                    .buttonStyle(ArcaSecondaryButtonStyle(isFullWidth: true))
+                                    .buttonStyle(ArcaSecondaryButtonStyle(tint: tint, isFullWidth: true))
 
                                     Button {
                                         showingLocalQRSheet = true
                                     } label: {
                                         Label(viewModel.language.localized("Local QR Tag"), systemImage: "qrcode")
                                     }
-                                    .buttonStyle(ArcaSecondaryButtonStyle(isFullWidth: true))
+                                    .buttonStyle(ArcaSecondaryButtonStyle(tint: tint, isFullWidth: true))
                                 }
 
                                 #if DEBUG
@@ -1213,6 +3364,171 @@ public struct RecordDetailView: View {
                 },
                 secondaryButton: .cancel(Text(ArcaStrings.text("common.cancel", language: viewModel.language)))
             )
+        }
+    }
+
+    // MARK: - Record Color Header Hero Card
+
+    private func recordColorHeroHeaderCard(for rec: RecordItem, tint: Color) -> some View {
+        let primaryId = liveSchema.primaryTitleField?.id
+        let highlightFields = liveSchema.activeFields.filter { field in
+            guard field.id != primaryId,
+                  let val = rec.values[field.id],
+                  !val.isNullOrEmpty else { return false }
+            return field.type != .attachment && field.type != .longText
+        }
+        let topHighlights = Array(highlightFields.prefix(2))
+
+        return VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 10) {
+                CollectionBadgeView(schema: liveSchema, size: 38, presentationStore: presentationStore)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(liveSchema.name.uppercased(with: viewModel.language.locale))
+                        .font(.caption.weight(.bold))
+                        .tracking(0.6)
+                        .foregroundStyle(tint)
+                    Text(viewModel.language.format("%@ • Revision %d • Updated %@", liveSchema.name, rec.revision, rec.updatedAt.formatted(.dateTime.day().month().hour().minute().locale(viewModel.language.locale))))
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+
+                Spacer()
+
+                Text("#\(String(rec.id.uuidString.prefix(6)).uppercased())")
+                    .font(.system(.caption2, design: .monospaced).weight(.bold))
+                    .foregroundStyle(tint)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(Capsule().fill(tint.opacity(0.14)))
+            }
+
+            Text(rec.title(using: liveSchema))
+                .font(.title3.weight(.heavy))
+                .foregroundStyle(.primary)
+                .accessibilityAddTraits(.isHeader)
+
+            if !topHighlights.isEmpty {
+                Divider().opacity(0.45)
+                LazyVGrid(
+                    columns: Array(repeating: GridItem(.flexible(), spacing: 10), count: dynamicTypeSize.isAccessibilitySize ? 1 : max(1, topHighlights.count)),
+                    spacing: 10
+                ) {
+                    ForEach(topHighlights) { field in
+                        let summary = (rec.values[field.id] ?? .null).plainTextSummary(for: field, locale: viewModel.language.locale)
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(field.label)
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(.secondary)
+                            Text(summary)
+                                .font(.subheadline.weight(.heavy))
+                                .foregroundStyle(field.type == .currency || field.type == .number ? tint : .primary)
+                                .lineLimit(2)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(10)
+                        .background(
+                            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                .fill(ArcaTheme.subtleFieldBackground(for: colorScheme))
+                        )
+                    }
+                }
+            }
+        }
+        .padding(16)
+        .padding(.top, 4)
+        .background(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .fill(ArcaTheme.cardBackground(for: colorScheme))
+        )
+        .overlay(alignment: .top) {
+            UnevenRoundedRectangle(
+                topLeadingRadius: 18,
+                bottomLeadingRadius: 0,
+                bottomTrailingRadius: 0,
+                topTrailingRadius: 18,
+                style: .continuous
+            )
+            .fill(tint)
+            .frame(height: 6)
+        }
+        .overlay(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .strokeBorder(ArcaTheme.cardBorder(for: colorScheme), lineWidth: 1)
+        )
+        .shadow(color: Color.black.opacity(colorScheme == .dark ? 0.22 : 0.035), radius: 10, x: 0, y: 4)
+    }
+
+    // MARK: - Clean Structured Field Cards
+
+    private func savedFieldsDetailCard(for rec: RecordItem, tint: Color) -> some View {
+        let populatedFields = liveSchema.activeFields.filter { field in
+            guard let val = rec.values[field.id] else { return false }
+            return !val.isNullOrEmpty
+        }
+
+        return ArcaSectionCard(title: viewModel.language.localized("Saved Fields"), icon: "list.clipboard.fill", iconTint: tint) {
+            VStack(alignment: .leading, spacing: 10) {
+                ForEach(populatedFields) { field in
+                    let val = rec.values[field.id] ?? .null
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack(spacing: 5) {
+                            Image(systemName: field.type.iconName)
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(tint)
+                            Text(field.label.uppercased(with: viewModel.language.locale))
+                                .font(.caption2.weight(.bold))
+                                .tracking(0.5)
+                                .foregroundStyle(.secondary)
+                            if field.privacy != nil {
+                                Image(systemName: "hand.raised.fill")
+                                    .font(.caption2)
+                                    .foregroundStyle(ArcaTheme.plumSensitive)
+                            }
+                        }
+                        Text(val.plainTextSummary(for: field, locale: viewModel.language.locale))
+                            .font(.body.weight(.medium))
+                            .foregroundStyle(.primary)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(12)
+                    .background(
+                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .fill(ArcaTheme.subtleFieldBackground(for: colorScheme))
+                    )
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func archivedFieldsDetailCard(for rec: RecordItem) -> some View {
+        let populatedArchived = liveSchema.archivedFields.filter { field in
+            guard let val = rec.values[field.id] else { return false }
+            return !val.isNullOrEmpty
+        }
+        if !populatedArchived.isEmpty {
+            ArcaSectionCard(title: viewModel.language.localized("Archived Fields (Recoverable)"), icon: "archivebox.fill", iconTint: ArcaTheme.warmAmber) {
+                VStack(alignment: .leading, spacing: 10) {
+                    ForEach(populatedArchived) { field in
+                        let val = rec.values[field.id] ?? .null
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(field.label.uppercased(with: viewModel.language.locale))
+                                .font(.caption2.weight(.bold))
+                                .foregroundStyle(.secondary)
+                            Text(val.plainTextSummary(for: field, locale: viewModel.language.locale))
+                                .font(.subheadline.weight(.medium))
+                                .foregroundStyle(.primary)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(10)
+                        .background(
+                            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                .fill(ArcaTheme.subtleFieldBackground(for: colorScheme))
+                        )
+                    }
+                }
+            }
         }
     }
 

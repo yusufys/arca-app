@@ -535,6 +535,60 @@ public final class ArcaAppViewModel {
         await reloadSpaceFromDisk(spaceId)
     }
 
+    public func updateCollectionMetadata(
+        collectionId: UUID,
+        name: String? = nil,
+        iconName: String? = nil,
+        colorHex: String? = nil
+    ) async {
+        guard var currentSchema = schema(for: collectionId) else { return }
+        var didChange = false
+
+        if let name {
+            let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmedName.isEmpty && trimmedName != currentSchema.name {
+                currentSchema.name = trimmedName
+                didChange = true
+            }
+        }
+
+        if let iconName {
+            let trimmedIcon = iconName.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmedIcon.isEmpty && trimmedIcon != currentSchema.iconName {
+                currentSchema.iconName = trimmedIcon
+                didChange = true
+            }
+        }
+
+        if let colorHex, let normalizedHex = Self.normalizedColorHex(colorHex) {
+            if normalizedHex.caseInsensitiveCompare(currentSchema.colorHex) != .orderedSame {
+                currentSchema.colorHex = normalizedHex
+                didChange = true
+            }
+        }
+
+        guard didChange else { return }
+        currentSchema.schemaVersion += 1
+        currentSchema.revision += 1
+        currentSchema.updatedAt = Date()
+
+        let store = await spaceStore(for: currentSchema.spaceId)
+        let enqueue = spaces.first(where: { $0.id == currentSchema.spaceId })?.storageMode == .arcaSync
+        await store.saveCollection(currentSchema, enqueueSync: enqueue)
+        await reloadSpaceFromDisk(currentSchema.spaceId)
+    }
+
+    private static func normalizedColorHex(_ rawHex: String) -> String? {
+        let cleaned = rawHex
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .trimmingCharacters(in: CharacterSet(charactersIn: "#"))
+            .uppercased()
+        guard cleaned.count == 6, UInt64(cleaned, radix: 16) != nil else {
+            return nil
+        }
+        return "#" + cleaned
+    }
+
     public func renameField(in collectionId: UUID, fieldId: UUID, newLabel: String) async {
         guard let currentSchema = schema(for: collectionId) else { return }
         let updated = SchemaEngine.renameField(in: currentSchema, fieldId: fieldId, newLabel: newLabel)
