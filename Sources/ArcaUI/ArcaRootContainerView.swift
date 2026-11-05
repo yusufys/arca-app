@@ -16,6 +16,7 @@ public struct ArcaRootContainerView: View {
     @AppStorage(AppAppearancePreferencesStore.accentColorDefaultsKey)
     private var storedAccentHex: String = AppAccentColorOption.defaultOption.rawValue
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.colorScheme) private var systemColorScheme
 
@@ -147,7 +148,7 @@ public struct ArcaRootContainerView: View {
             VStack(spacing: 4) {
                 ZStack(alignment: .topTrailing) {
                     Image(systemName: icon)
-                        .font(.footnote.weight(isSelected ? .bold : .medium))
+                        .font(.system(size: dynamicTypeSize.isAccessibilitySize ? 24 : 18, weight: isSelected ? .bold : .medium))
                         .foregroundStyle(isSelected ? .white : .secondary)
                         .frame(minWidth: 48, minHeight: 26)
                         .background(
@@ -155,7 +156,9 @@ public struct ArcaRootContainerView: View {
                                 .fill(isSelected ? appAccentColor : .clear)
                         )
 
-                    if badgeCount > 0 {
+                    if badgeCount > 0 && dynamicTypeSize.isAccessibilitySize {
+                        Circle().fill(ArcaTheme.plumSensitive).frame(width: 8, height: 8)
+                    } else if badgeCount > 0 {
                         Text("\(badgeCount)")
                             .arcaFont(.caption2, weight: .bold)
                             .foregroundStyle(.white)
@@ -166,11 +169,13 @@ public struct ArcaRootContainerView: View {
                     }
                 }
 
-                Text(title)
-                    .arcaFont(.caption, weight: isSelected ? .bold : .semibold)
-                    .foregroundStyle(isSelected ? labelTint : .secondary)
-                    .multilineTextAlignment(.center)
-                    .fixedSize(horizontal: false, vertical: true)
+                if !dynamicTypeSize.isAccessibilitySize {
+                    Text(title)
+                        .arcaFont(.caption, weight: isSelected ? .bold : .semibold)
+                        .foregroundStyle(isSelected ? labelTint : .secondary)
+                        .multilineTextAlignment(.center)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
             .frame(maxWidth: .infinity, minHeight: 44)
             .contentShape(Rectangle())
@@ -179,6 +184,11 @@ public struct ArcaRootContainerView: View {
         .accessibilityLabel(Text(title))
         .accessibilityValue(badgeCount > 0 ? viewModel.language.format("count.conflicts", badgeCount) : "")
         .accessibilityAddTraits(isSelected ? .isSelected : [])
+        #if os(iOS)
+        .accessibilityShowsLargeContentViewer {
+            Label(title, systemImage: icon)
+        }
+        #endif
     }
 
     // MARK: - macOS Studio iPhone 16 Pro Viewport Wrapper

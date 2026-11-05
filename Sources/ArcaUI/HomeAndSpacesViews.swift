@@ -204,7 +204,7 @@ public struct HomeScreenView: View {
                         .frame(width: 44, height: 44)
                         .shadow(color: appAccentColor.opacity(0.24), radius: 7, x: 0, y: 4)
                     Image(systemName: spaceIcon)
-                        .font(.headline.weight(.semibold))
+                        .font(.system(size: 20, weight: .semibold))
                         .foregroundStyle(.white)
                 }
                 .accessibilityHidden(true)

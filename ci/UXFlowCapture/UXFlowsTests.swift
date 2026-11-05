@@ -303,7 +303,10 @@ extension UXFlowsTests {
         reveal(app, newCollection); newCollection.tap()
         let ai = app.buttons["Create with AI…"]
         XCTAssertTrue(ai.waitForExistence(timeout: 5)); ai.tap()
-        XCTAssertTrue(app.textViews["aiCollection.intent"].waitForExistence(timeout: 5))
+        let intent = app.descendants(matching: .any)["aiCollection.intent"].firstMatch
+        XCTAssertTrue(intent.waitForExistence(timeout: 5))
+        intent.tap(); intent.typeText("Track household equipment")
+        XCTAssertTrue(app.buttons["aiCollection.prepare"].isEnabled)
         shot(app, "redesign-ai-creation-retained")
         app.terminate()
     }

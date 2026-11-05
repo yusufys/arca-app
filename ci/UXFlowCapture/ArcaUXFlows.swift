@@ -9,6 +9,10 @@ struct ArcaUXFlows: App {
     @State private var ready = false
     @StateObject private var purchases = ArcaPurchases()
     private var scenario: String { ProcessInfo.processInfo.environment["ARCA_FLOW_SCREEN"] ?? "onboarding" }
+    // A rename changes collection display order; relaunch tests must reopen the same UUID.
+    private var captureSchema: CollectionSchema? {
+        model.collectionsInCurrentSpace.min { $0.id.uuidString < $1.id.uuidString }
+    }
     var body: some Scene {
         WindowGroup {
             Group {
@@ -31,7 +35,7 @@ struct ArcaUXFlows: App {
                 await model.refreshSuggestedTemplates()
                 if scenario != "onboarding" && !model.hasCompletedOnboarding {
                     await model.finishOnboarding(defaultMode: .localOnly, acceptedCloudTerms: false, selectedTemplates: model.suggestedTemplates)
-                    if let schema = model.collectionsInCurrentSpace.first {
+                    if let schema = captureSchema {
                         var values: [UUID: FieldValue] = [:]
                         for field in schema.fields {
                             switch field.type {
@@ -85,13 +89,13 @@ struct ArcaUXFlows: App {
                 case "devices", "connected-devices": ActiveDeviceManagementScreenView(viewModel: model)
                 case "privacy": PrivacyAndEncryptionDetailsView(viewModel: model)
                 case "migration": if let space = model.currentSpace { StorageModeMigrationScreenView(viewModel: model, space: space) }
-                case "sensitive": if let schema = model.collectionsInCurrentSpace.first { SensitivePrivacyConsentView(viewModel: model, collectionId: schema.id) }
-                case "fields": if let schema = model.collectionsInCurrentSpace.first { FieldEditorSheetView(viewModel: model, collectionId: schema.id) }
-                case "collection-settings": if let schema = model.collectionsInCurrentSpace.first { CollectionSettingsView(viewModel: model, schema: schema) }
-                case "collection": if let schema = model.collectionsInCurrentSpace.first { CollectionRecordListView(viewModel: model, schema: schema) }
-                case "record-new": if let schema = model.collectionsInCurrentSpace.first { AddEditRecordSheetView(viewModel: model, schema: schema, existingRecord: nil) }
-                case "record-edit": if let schema = model.collectionsInCurrentSpace.first, let record = model.recordsInCurrentSpace.first { AddEditRecordSheetView(viewModel: model, schema: schema, existingRecord: record) }
-                case "record-detail": if let schema = model.collectionsInCurrentSpace.first, let record = model.recordsInCurrentSpace.first { RecordDetailView(viewModel: model, recordId: record.id, schema: schema) }
+                case "sensitive": if let schema = captureSchema { SensitivePrivacyConsentView(viewModel: model, collectionId: schema.id) }
+                case "fields": if let schema = captureSchema { FieldEditorSheetView(viewModel: model, collectionId: schema.id) }
+                case "collection-settings": if let schema = captureSchema { CollectionSettingsView(viewModel: model, schema: schema) }
+                case "collection": if let schema = captureSchema { CollectionRecordListView(viewModel: model, schema: schema) }
+                case "record-new": if let schema = captureSchema { AddEditRecordSheetView(viewModel: model, schema: schema, existingRecord: nil) }
+                case "record-edit": if let schema = captureSchema, let record = model.recordsInCurrentSpace.first { AddEditRecordSheetView(viewModel: model, schema: schema, existingRecord: record) }
+                case "record-detail": if let schema = captureSchema, let record = model.recordsInCurrentSpace.first { RecordDetailView(viewModel: model, recordId: record.id, schema: schema) }
                 default: Text("Unknown test route")
                 }
             }
