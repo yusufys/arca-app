@@ -1,3 +1,15 @@
+# Arca collection catalog
+
+The public endpoints are `GET /api/v1/collection-templates`, `GET /api/v1/collection-schema`, and `POST /api/v1/collection-prompt` with `{ "intent": "Describe a collection" }`. They require no cloud account. The prompt endpoint returns copyable instructions; it does not call an AI service. The collection intent is limited to 2,000 characters and is not stored by this feature. The app should send a collection idea, never existing records.
+
+After releasing the backend code, run `php artisan migrate --force`. The catalog-only data migration inserts the three initial suggestions, preserving any matching IDs. To restore missing initial suggestions later, run `php artisan db:seed --class=CollectionTemplateSeeder --force`. Re-running the seeder leaves existing catalog entries and operator edits intact. The database seeder also invokes this seeder on fresh installations.
+
+An administrator opens `/admin`, then **Manage suggested collections**. Create a draft with a unique stable catalog ID (the ID cannot change after creation), description, sort order, and collection JSON. Save the draft to validate it. Set its status to Active to publish it; set it back to Draft to withdraw it. Lower sort order appears first, with stable catalog ID as the tie-breaker. Editing or withdrawing a suggestion does not alter collections users already created.
+
+`resources/contracts/collection-v1.json` is the authoritative version 1 JSON Schema used for backend validation, public schema responses, and AI prompt instructions. The iOS app bundles a byte-identical resource for offline validation. Keep both copies identical when editing the contract; the Swift parity test detects drift. Version 1 supports only the field types in the contract, one optional short-text primary title, and nonblank unique string options for select fields. IDs, record values, privacy configuration, and unknown keys are not accepted. Changes that invalidate existing version 1 documents require a new contract version.
+
+Run catalog tests with `php artisan test --compact tests/Feature/CollectionCatalogTest.php`.
+
 <p align="center"><a href="https://laravel.com" target="_blank"><img src="https://raw.githubusercontent.com/laravel/art/master/logo-lockup/5%20SVG/2%20CMYK/1%20Full%20Color/laravel-logolockup-cmyk-red.svg" width="400" alt="Laravel Logo"></a></p>
 
 <p align="center">
