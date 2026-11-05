@@ -5,7 +5,7 @@ Reference: `arca-ios-redesign-reference.html`, supplied by the product owner. Th
 ## Design contract
 
 - Keep Home, Insights and Settings reachable. Home remains the chosen tab name; the prototype studio controls do not ship.
-- Forest accent #1F5D3F, paper canvas #F7F4EB and card #FFFDF7. Dark canvas #0D1311 and card #161F1C. Native semantic type and adaptive spacing take precedence over the fixed HTML phone dimensions.
+- Forest accent #1F5D3F, paper canvas #F7F4EB and card #FFFDF7. Dark canvas #0D1311 and card #161F1C. Native semantic type (IBM Plex Sans Arabic in Arabic only) and adaptive spacing take precedence over the fixed HTML phone dimensions.
 - Home: space switcher, search, collection cards with color strip/count/badge, Add/View/Edit action cluster, and AI-first New Collection choices. Retain favorites, recent records and operational notices.
 - Collection: Normal, Compact and Box record layouts; search, sort and actual filters. Compact secondary-field choice belongs only in collection settings.
 - Collection settings: persisted name/color, icon choices, compact secondary field, popup/full-screen add form choice, existing schema and sensitive-data controls.
@@ -28,3 +28,9 @@ Reference: `arca-ios-redesign-reference.html`, supplied by the product owner. Th
 ## Release evidence
 
 Record final commits, PR reviews, test results, screenshot evidence and the Apple build status here before release. An upload is not evidence of TestFlight availability.
+
+## Arabic typography
+
+Arabic app text uses IBM Plex Sans Arabic (Regular, Medium, SemiBold, Bold), bundled offline under the included SIL Open Font License. English and Turkish retain native system typography. `ArcaTypography` selects using SwiftUI's locale environment and uses `Font.custom(_:size:relativeTo:)` for Dynamic Type, with heavier faces for accessibility Bold Text. Technical monospaced values, emoji, SF Symbols, and platform-controlled navigation/purchase sheets retain their native rendering.
+
+Font source: [IBM Plex official repository](https://github.com/IBM/plex/tree/48e8676114c04f29033b4b53da4ec579f8846297/packages/plex-sans-arabic), pinned to commit `48e8676114c04f29033b4b53da4ec579f8846297`. Original files and license are in `Sources/ArcaUI/Resources/Fonts`. Verify real PostScript names when updating: they differ from the filenames. Font registration/glyph tests and Arabic onboarding/large-text screenshots are part of the release checks.

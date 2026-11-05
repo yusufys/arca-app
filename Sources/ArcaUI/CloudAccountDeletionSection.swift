@@ -11,9 +11,9 @@ struct CloudAccountDeletionSection: View {
         if viewModel.cloudAccountConnected || viewModel.hasPendingAccountDeletionCleanup || resultMessage != nil {
             ArcaSectionCard(title: viewModel.language.localized("Cloud Account"), icon: "person.crop.circle.badge.xmark", iconTint: ArcaTheme.dangerRed) {
                 Text(viewModel.language.localized("Delete your cloud account, encrypted remote records, recovery material and device registrations. Local records stay on this device in Local-Only Spaces. Any App Store subscription must be managed separately."))
-                    .font(.footnote).foregroundStyle(.secondary)
-                if let resultMessage { Text(viewModel.language.localized(resultMessage)).font(.footnote) }
-                if let errorMessage { Text(errorMessage).font(.footnote).foregroundStyle(ArcaTheme.dangerRed) }
+                    .arcaFont(.footnote).foregroundStyle(.secondary)
+                if let resultMessage { Text(viewModel.language.localized(resultMessage)).arcaFont(.footnote) }
+                if let errorMessage { Text(errorMessage).arcaFont(.footnote).foregroundStyle(ArcaTheme.dangerRed) }
                 if viewModel.hasPendingAccountDeletionCleanup {
                     Button(viewModel.language.localized("Finish Local Cleanup")) { performDeletion() }
                         .disabled(viewModel.isDeletingCloudAccount || viewModel.isSyncing)

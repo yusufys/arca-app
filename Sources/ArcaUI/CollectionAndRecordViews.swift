@@ -232,7 +232,7 @@ public struct CollectionSettingsView: View {
 
     private var settingsHeaderBar: some View {
         let title = Text(viewModel.language.localized("Collection Settings"))
-            .font(.subheadline.weight(.bold))
+            .arcaFont(.subheadline, weight: .bold)
             .accessibilityAddTraits(.isHeader)
 
         return Group {
@@ -280,7 +280,7 @@ public struct CollectionSettingsView: View {
             commitNameIfNeeded(dismissAfterSaving: true)
         } label: {
             Text(viewModel.language.localized("Done"))
-                .font(.subheadline.weight(.bold))
+                .arcaFont(.subheadline, weight: .bold)
                 .foregroundStyle(palette.onFill)
                 .padding(.horizontal, 15)
                 .padding(.vertical, 8)
@@ -301,7 +301,7 @@ public struct CollectionSettingsView: View {
                 VStack(alignment: .leading, spacing: 6) {
                     TextField(viewModel.language.localized("Collection Name"), text: $draftName)
                         .textFieldStyle(.plain)
-                        .font(.headline.weight(.bold))
+                        .arcaFont(.headline, weight: .bold)
                         .submitLabel(.done)
                         .onSubmit {
                             commitNameIfNeeded()
@@ -309,7 +309,7 @@ public struct CollectionSettingsView: View {
                         .accessibilityLabel(viewModel.language.localized("Collection Name"))
 
                     Text(viewModel.language.format("count.records", recordCount) + " • " + viewModel.language.format("count.fields", liveSchema.activeFields.count))
-                        .font(.caption.weight(.medium))
+                        .arcaFont(.caption, weight: .medium)
                         .foregroundStyle(.secondary)
                 }
 
@@ -319,7 +319,7 @@ public struct CollectionSettingsView: View {
                     commitNameIfNeeded()
                 } label: {
                     Text(viewModel.language.localized("Save"))
-                        .font(.caption.weight(.bold))
+                        .arcaFont(.caption, weight: .bold)
                         .foregroundStyle(palette.onFill)
                         .padding(.horizontal, 12)
                         .padding(.vertical, 7)
@@ -347,7 +347,7 @@ public struct CollectionSettingsView: View {
         let activeOpt = activeColorOption
         return VStack(alignment: .leading, spacing: 10) {
             Text(viewModel.language.localized("Collection Theme Color"))
-                .font(.footnote.weight(.bold))
+                .arcaFont(.footnote, weight: .bold)
                 .accessibilityAddTraits(.isHeader)
 
             Button {
@@ -368,10 +368,10 @@ public struct CollectionSettingsView: View {
 
                     VStack(alignment: .leading, spacing: 2) {
                         Text(viewModel.language.localized(activeOpt.nameKey))
-                            .font(.subheadline.weight(.bold))
+                            .arcaFont(.subheadline, weight: .bold)
                             .foregroundStyle(.primary)
                         Text(viewModel.language.localized(activeOpt.tagKey) + " · " + activeOpt.hex)
-                            .font(.caption)
+                            .arcaFont(.caption)
                             .foregroundStyle(.secondary)
                     }
 
@@ -411,14 +411,14 @@ public struct CollectionSettingsView: View {
                                     .accessibilityHidden(true)
 
                                 Text(viewModel.language.localized(item.nameKey))
-                                    .font(.footnote.weight(.bold))
+                                    .arcaFont(.footnote, weight: .bold)
                                     .foregroundStyle(.primary)
 
                                 Spacer(minLength: 4)
 
                                 if !dynamicTypeSize.isAccessibilitySize {
                                     Text(viewModel.language.localized("Sample"))
-                                        .font(.caption2.weight(.semibold))
+                                        .arcaFont(.caption2, weight: .semibold)
                                         .foregroundStyle(CollectionColorPalette(hex: item.hex).onFill)
                                         .padding(.horizontal, 8)
                                         .padding(.vertical, 3)
@@ -480,10 +480,10 @@ public struct CollectionSettingsView: View {
         return VStack(alignment: .leading, spacing: 10) {
             VStack(alignment: .leading, spacing: 3) {
                 Text(viewModel.language.localized("Field Shown Beside Title (Compact View)"))
-                    .font(.footnote.weight(.bold))
+                    .arcaFont(.footnote, weight: .bold)
                     .accessibilityAddTraits(.isHeader)
                 Text(viewModel.language.localized("Select which field appears next to the title when using Compact View."))
-                    .font(.caption)
+                    .arcaFont(.caption)
                     .foregroundStyle(.secondary)
             }
 
@@ -495,7 +495,7 @@ public struct CollectionSettingsView: View {
                 } label: {
                     HStack(spacing: 12) {
                         Text(ArcaStrings.text("field.type." + selectedField.type.rawValue, language: viewModel.language).uppercased(with: viewModel.language.locale))
-                            .font(.caption2.weight(.bold))
+                            .arcaFont(.caption2, weight: .bold)
                             .foregroundStyle(palette.onFill)
                             .padding(.horizontal, 8)
                             .padding(.vertical, 5)
@@ -503,10 +503,10 @@ public struct CollectionSettingsView: View {
 
                         VStack(alignment: .leading, spacing: 2) {
                             Text(selectedField.label)
-                                .font(.subheadline.weight(.bold))
+                                .arcaFont(.subheadline, weight: .bold)
                                 .foregroundStyle(.primary)
                             Text(viewModel.language.format("Shown beside %@", primaryLabel))
-                                .font(.caption)
+                                .arcaFont(.caption)
                                 .foregroundStyle(.secondary)
                         }
 
@@ -544,11 +544,11 @@ public struct CollectionSettingsView: View {
                                         .frame(width: 20)
 
                                     Text(field.label)
-                                        .font(.footnote.weight(.bold))
+                                        .arcaFont(.footnote, weight: .bold)
                                         .foregroundStyle(.primary)
 
                                     Text(ArcaStrings.text("field.type." + field.type.rawValue, language: viewModel.language))
-                                        .font(.caption2.weight(.medium))
+                                        .arcaFont(.caption2, weight: .medium)
                                         .foregroundStyle(.secondary)
                                         .padding(.horizontal, 6)
                                         .padding(.vertical, 2)
@@ -610,10 +610,10 @@ public struct CollectionSettingsView: View {
             HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 3) {
                     Text(viewModel.language.localized("“Add Record” Form Style"))
-                        .font(.footnote.weight(.bold))
+                        .arcaFont(.footnote, weight: .bold)
                         .accessibilityAddTraits(.isHeader)
                     Text(viewModel.language.localized("Open as a popup card or a complete new screen."))
-                        .font(.caption)
+                        .arcaFont(.caption)
                         .foregroundStyle(.secondary)
                 }
 
@@ -626,7 +626,7 @@ public struct CollectionSettingsView: View {
                         Text(viewModel.language.localized("Test"))
                         Image(systemName: "arrow.forward")
                     }
-                    .font(.caption.weight(.bold))
+                    .arcaFont(.caption, weight: .bold)
                     .foregroundStyle(palette.onFill)
                     .padding(.horizontal, 10)
                     .padding(.vertical, 6)
@@ -651,10 +651,10 @@ public struct CollectionSettingsView: View {
 
                     VStack(alignment: .leading, spacing: 2) {
                         Text(viewModel.language.localized(currentMode.titleKey))
-                            .font(.subheadline.weight(.bold))
+                            .arcaFont(.subheadline, weight: .bold)
                             .foregroundStyle(.primary)
                         Text(viewModel.language.localized(currentMode.subtitleKey))
-                            .font(.caption)
+                            .arcaFont(.caption)
                             .foregroundStyle(.secondary)
                     }
 
@@ -695,10 +695,10 @@ public struct CollectionSettingsView: View {
 
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text(viewModel.language.localized(mode.titleKey))
-                                        .font(.footnote.weight(.bold))
+                                        .arcaFont(.footnote, weight: .bold)
                                         .foregroundStyle(.primary)
                                     Text(viewModel.language.localized(mode.subtitleKey))
-                                        .font(.caption)
+                                        .arcaFont(.caption)
                                         .foregroundStyle(.secondary)
                                 }
 
@@ -751,7 +751,7 @@ public struct CollectionSettingsView: View {
     private var iconPickerCard: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text(viewModel.language.localized("Collection Icon"))
-                .font(.footnote.weight(.bold))
+                .arcaFont(.footnote, weight: .bold)
                 .accessibilityAddTraits(.isHeader)
 
             LazyVGrid(columns: Array(
@@ -764,7 +764,7 @@ public struct CollectionSettingsView: View {
                         iconTab = tab
                     } label: {
                         Text(viewModel.language.localized(tab.titleKey))
-                            .font(.caption.weight(.semibold))
+                            .arcaFont(.caption, weight: .semibold)
                             .foregroundStyle(isSelected ? palette.onFill : .secondary)
                             .frame(maxWidth: .infinity, minHeight: 44)
                             .background(
@@ -830,7 +830,7 @@ public struct CollectionSettingsView: View {
                             }
                         } label: {
                             Text(viewModel.language.localized(cat.titleKey))
-                                .font(.caption.weight(.semibold))
+                                .arcaFont(.caption, weight: .semibold)
                                 .foregroundStyle(isSelected ? palette.onFill : .primary)
                                 .padding(.horizontal, 12)
                                 .padding(.vertical, 8)
@@ -855,7 +855,7 @@ public struct CollectionSettingsView: View {
                             selectedLibrarySubcategory = sub.titleKey
                         } label: {
                             Text(viewModel.language.localized(sub.titleKey))
-                                .font(.caption.weight(.medium))
+                                .arcaFont(.caption, weight: .medium)
                                 .foregroundStyle(isSelected ? palette.onFill : .primary)
                                 .padding(.horizontal, 10)
                                 .padding(.vertical, 7)
@@ -921,7 +921,7 @@ public struct CollectionSettingsView: View {
                         presentationStore.setIcon(.emoji(emoji), for: liveSchema.id)
                     } label: {
                         Text(verbatim: emoji)
-                            .font(.title3)
+                            .arcaFont(.title3)
                             .frame(minWidth: 44, minHeight: 44)
                             .background(
                                 RoundedRectangle(cornerRadius: 12, style: .continuous)
@@ -950,7 +950,7 @@ public struct CollectionSettingsView: View {
                     customEmojiInput = ""
                 } label: {
                     Text(viewModel.language.localized("Use"))
-                        .font(.caption.weight(.bold))
+                        .arcaFont(.caption, weight: .bold)
                         .foregroundStyle(palette.onFill)
                         .padding(.horizontal, 14)
                         .frame(minHeight: 44)
@@ -990,7 +990,7 @@ public struct CollectionSettingsView: View {
                     showingIconFileImporter = true
                 } label: {
                     Label(viewModel.language.localized("Choose Image from Files"), systemImage: "folder.fill")
-                        .font(.caption.weight(.semibold))
+                        .arcaFont(.caption, weight: .semibold)
                         .frame(maxWidth: .infinity, minHeight: 44)
                 }
                 .buttonStyle(ArcaSecondaryButtonStyle(tint: ink, isFullWidth: true))
@@ -1000,7 +1000,7 @@ public struct CollectionSettingsView: View {
                         presentationStore.setIcon(.library(symbol: liveSchema.iconName), for: liveSchema.id)
                     } label: {
                         Text(viewModel.language.localized("Reset Icon"))
-                            .font(.caption.weight(.semibold))
+                            .arcaFont(.caption, weight: .semibold)
                             .frame(minHeight: 44)
                     }
                     .buttonStyle(ArcaSecondaryButtonStyle(tint: .secondary))
@@ -1009,7 +1009,7 @@ public struct CollectionSettingsView: View {
 
             if let iconUploadError {
                 Text(iconUploadError)
-                    .font(.caption)
+                    .arcaFont(.caption)
                     .foregroundStyle(ArcaTheme.dangerRed)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
@@ -1022,10 +1022,10 @@ public struct CollectionSettingsView: View {
                 .font(.title3.weight(.semibold))
                 .foregroundStyle(ink)
             Text(viewModel.language.localized("Upload Custom Photo / Icon"))
-                .font(.footnote.weight(.bold))
+                .arcaFont(.footnote, weight: .bold)
                 .foregroundStyle(.primary)
             Text(viewModel.language.localized("Choose from Photos or Files"))
-                .font(.caption)
+                .arcaFont(.caption)
                 .foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity)
@@ -1048,7 +1048,7 @@ public struct CollectionSettingsView: View {
         return VStack(alignment: .leading, spacing: 10) {
             HStack {
                 Text(viewModel.language.format("Suggested from “%@”: %@", activeName, suggested))
-                    .font(.caption)
+                    .arcaFont(.caption)
                     .foregroundStyle(.secondary)
 
                 Spacer()
@@ -1058,7 +1058,7 @@ public struct CollectionSettingsView: View {
                     presentationStore.setIcon(.monogram(suggested), for: liveSchema.id)
                 } label: {
                     Text(viewModel.language.format("Use “%@”", suggested))
-                        .font(.caption.weight(.bold))
+                        .arcaFont(.caption, weight: .bold)
                         .foregroundStyle(palette.onFill)
                         .padding(.horizontal, 12)
                         .padding(.vertical, 7)
@@ -1081,7 +1081,7 @@ public struct CollectionSettingsView: View {
                     )
                 )
                 .textFieldStyle(.plain)
-                .font(.headline.weight(.black))
+                .arcaFont(.headline, weight: .black)
                 .multilineTextAlignment(.center)
                 .frame(width: 78)
                 .frame(minHeight: 44)
@@ -1096,7 +1096,7 @@ public struct CollectionSettingsView: View {
                 .accessibilityLabel(viewModel.language.localized("Monogram Letters"))
 
                 Text(viewModel.language.localized("Type 1–3 letters (e.g. W, HI, VM)"))
-                    .font(.caption)
+                    .arcaFont(.caption)
                     .foregroundStyle(.secondary)
             }
         }
@@ -1111,7 +1111,7 @@ public struct CollectionSettingsView: View {
                     .font(.footnote.weight(.bold))
                     .foregroundStyle(ArcaTheme.plumSensitive)
                 Text(viewModel.language.localized("Collection privacy"))
-                    .font(.footnote.weight(.bold))
+                    .arcaFont(.footnote, weight: .bold)
                     .accessibilityAddTraits(.isHeader)
                 Spacer()
             }
@@ -1125,7 +1125,7 @@ public struct CollectionSettingsView: View {
                             : "Ordinary collection"
                 )
             )
-            .font(.caption)
+            .arcaFont(.caption)
             .foregroundStyle(.secondary)
 
             Button {
@@ -1150,13 +1150,13 @@ public struct CollectionSettingsView: View {
 
             if viewModel.pendingPrivacyDeletionCollectionIds.contains(liveSchema.id) {
                 Text(viewModel.language.localized("Remote deletion pending. Uploads for this collection remain paused until confirmed. Offline devices may retain earlier copies."))
-                    .font(.caption)
+                    .arcaFont(.caption)
                     .foregroundStyle(.orange)
             }
 
             if let privacyError {
                 Text(privacyError)
-                    .font(.caption)
+                    .arcaFont(.caption)
                     .foregroundStyle(ArcaTheme.dangerRed)
             }
         }
@@ -1177,7 +1177,7 @@ public struct CollectionSettingsView: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
                 Text(viewModel.language.format("Fields (%d)", liveSchema.activeFields.count))
-                    .font(.footnote.weight(.bold))
+                    .arcaFont(.footnote, weight: .bold)
                     .accessibilityAddTraits(.isHeader)
 
                 Spacer()
@@ -1189,7 +1189,7 @@ public struct CollectionSettingsView: View {
                         Image(systemName: "plus")
                         Text(viewModel.language.localized("Add Field"))
                     }
-                    .font(.caption.weight(.bold))
+                    .arcaFont(.caption, weight: .bold)
                     .foregroundStyle(ink)
                     .padding(.horizontal, 10)
                     .padding(.vertical, 6)
@@ -1211,12 +1211,12 @@ public struct CollectionSettingsView: View {
                                 .frame(width: 22)
 
                             Text(field.label)
-                                .font(.footnote.weight(.semibold))
+                                .arcaFont(.footnote, weight: .semibold)
                                 .foregroundStyle(.primary)
 
                             if field.isRequired {
                                 Text(viewModel.language.localized("Required"))
-                                    .font(.caption2.weight(.semibold))
+                                    .arcaFont(.caption2, weight: .semibold)
                                     .foregroundStyle(ink)
                                     .padding(.horizontal, 6)
                                     .padding(.vertical, 2)
@@ -1232,7 +1232,7 @@ public struct CollectionSettingsView: View {
                             Spacer()
 
                             Text(ArcaStrings.text("field.type." + field.type.rawValue, language: viewModel.language))
-                                .font(.caption)
+                                .arcaFont(.caption)
                                 .foregroundStyle(.secondary)
                                 .padding(.horizontal, 8)
                                 .padding(.vertical, 3)
@@ -1327,7 +1327,7 @@ public struct FieldEditorSheetView: View {
                                 }
                             }
                             if viewModel.pendingPrivacyDeletionCollectionIds.contains(schema.id) {
-                                Text(viewModel.language.localized("Remote deletion pending. Uploads for this collection remain paused until confirmed. Offline devices may retain earlier copies.")).font(.footnote).foregroundStyle(.orange)
+                                Text(viewModel.language.localized("Remote deletion pending. Uploads for this collection remain paused until confirmed. Offline devices may retain earlier copies.")).arcaFont(.footnote).foregroundStyle(.orange)
                             }
                             if let privacyError { Text(privacyError).foregroundStyle(.red) }
                         }
@@ -1348,9 +1348,9 @@ public struct FieldEditorSheetView: View {
 
                                         VStack(alignment: .leading, spacing: 2) {
                                             Text(field.label)
-                                                .font(.subheadline.weight(.bold))
+                                                .arcaFont(.subheadline, weight: .bold)
                                             Text(ArcaStrings.text("field.type." + field.type.rawValue, language: viewModel.language) + (field.isRequired ? " • " + viewModel.language.localized("Required") : ""))
-                                                .font(.caption)
+                                                .arcaFont(.caption)
                                                 .foregroundStyle(.secondary)
                                         }
 
@@ -1460,7 +1460,7 @@ public struct FieldEditorSheetView: View {
                             ) {
                                 HStack {
                                     Text(viewModel.language.localized("Target Type"))
-                                        .font(.footnote.weight(.semibold))
+                                        .arcaFont(.footnote, weight: .semibold)
                                     Spacer()
                                     Picker(viewModel.language.localized("Target Type"), selection: $targetConversionType) {
                                         ForEach(FieldType.allCases, id: \.self) { t in
@@ -1482,11 +1482,11 @@ public struct FieldEditorSheetView: View {
                                             Text(preview.isSafeToApplyWithoutLoss
                                                  ? "All \(preview.totalRecordsExamined) records convert cleanly without data loss."
                                                  : "\(preview.failureCount) of \(preview.totalRecordsExamined) records cannot convert to \(preview.toType.rawValue).")
-                                                .font(.footnote.weight(.semibold))
+                                                .arcaFont(.footnote, weight: .semibold)
                                         }
                                         ForEach(preview.sampleFailureDescriptions, id: \.self) { desc in
                                             Text("• \(desc)")
-                                                .font(.caption)
+                                                .arcaFont(.caption)
                                                 .foregroundStyle(ArcaTheme.dangerRed)
                                         }
                                     }
@@ -1497,7 +1497,7 @@ public struct FieldEditorSheetView: View {
 
                                 if let conversionError {
                                     Text(conversionError)
-                                        .font(.caption)
+                                        .arcaFont(.caption)
                                         .foregroundStyle(ArcaTheme.dangerRed)
                                 }
 
@@ -1536,9 +1536,9 @@ public struct FieldEditorSheetView: View {
                                     HStack {
                                         VStack(alignment: .leading, spacing: 2) {
                                             Text(archived.label)
-                                                .font(.subheadline.weight(.semibold))
+                                                .arcaFont(.subheadline, weight: .semibold)
                                             Text(viewModel.language.localized("Archived • Values preserved"))
-                                                .font(.caption)
+                                                .arcaFont(.caption)
                                                 .foregroundStyle(.secondary)
                                         }
                                         Spacer()
@@ -1554,7 +1554,7 @@ public struct FieldEditorSheetView: View {
                             ArcaStyledTextField(viewModel.language.localized("Field Label"), text: $newFieldLabel, icon: "plus")
                             HStack {
                                 Text(viewModel.language.localized("Field Type"))
-                                    .font(.footnote.weight(.medium))
+                                    .arcaFont(.footnote, weight: .medium)
                                 Spacer()
                                 Picker(viewModel.language.localized("Field Type"), selection: $newFieldType) {
                                     ForEach(FieldType.allCases, id: \.self) { t in
@@ -1870,7 +1870,7 @@ public struct CollectionRecordListView: View {
                     Image(systemName: "chevron.backward")
                         .font(.footnote.weight(.bold))
                     Text(spaceName)
-                        .font(.subheadline.weight(.bold))
+                        .arcaFont(.subheadline, weight: .bold)
                         .lineLimit(1)
                 }
                 .foregroundStyle(ink)
@@ -1890,7 +1890,7 @@ public struct CollectionRecordListView: View {
                     Image(systemName: "square.and.arrow.down")
                         .font(.caption.weight(.bold))
                     Text(viewModel.language.localized("Export"))
-                        .font(.footnote.weight(.semibold))
+                        .arcaFont(.footnote, weight: .semibold)
                 }
                 .foregroundStyle(.primary)
                 .padding(.horizontal, 12)
@@ -1933,7 +1933,7 @@ public struct CollectionRecordListView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     HStack(alignment: .firstTextBaseline, spacing: 6) {
                         Text(liveSchema.name)
-                            .font(.headline.weight(.heavy))
+                            .arcaFont(.headline, weight: .heavy)
                             .fixedSize(horizontal: false, vertical: true)
                             .accessibilityAddTraits(.isHeader)
                         if liveSchema.privacy != nil {
@@ -1943,7 +1943,7 @@ public struct CollectionRecordListView: View {
                         }
                     }
                     Text(viewModel.language.format("count.records", recordCount))
-                        .font(.caption.weight(.medium))
+                        .arcaFont(.caption, weight: .medium)
                 }
                 .foregroundStyle(palette.onFill)
             }
@@ -1953,7 +1953,7 @@ public struct CollectionRecordListView: View {
                 activeRecordSheetCollection = liveSchema
             } label: {
                 Label(viewModel.language.localized("Add"), systemImage: "plus")
-                    .font(.footnote.weight(.heavy))
+                    .arcaFont(.footnote, weight: .heavy)
                     .foregroundStyle(.black)
                     .padding(.horizontal, 14)
                     .padding(.vertical, 9)
@@ -1994,7 +1994,7 @@ public struct CollectionRecordListView: View {
                     presentationStore.setListMode(mode, for: liveSchema.id)
                 } label: {
                     Text(viewModel.language.localized(mode.titleKey))
-                        .font(.caption.weight(.semibold))
+                        .arcaFont(.caption, weight: .semibold)
                         .foregroundStyle(isSelected ? palette.onFill : .secondary)
                         .padding(.horizontal, 11)
                         .frame(minWidth: 44, minHeight: 44)
@@ -2015,10 +2015,10 @@ public struct CollectionRecordListView: View {
         } label: {
             HStack(spacing: 6) {
                 Label(viewModel.language.localized("Filter"), systemImage: "line.3.horizontal.decrease.circle")
-                    .font(.caption.weight(.bold))
+                    .arcaFont(.caption, weight: .bold)
                 if totalActiveFilterCount > 0 {
                     Text(totalActiveFilterCount, format: .number.locale(viewModel.language.locale))
-                        .font(.caption2.weight(.bold))
+                        .arcaFont(.caption2, weight: .bold)
                         .foregroundStyle(palette.onFill)
                         .padding(.horizontal, 6)
                         .padding(.vertical, 2)
@@ -2057,7 +2057,7 @@ public struct CollectionRecordListView: View {
                         Image(systemName: "arrow.up.arrow.down")
                         Text(viewModel.language.localized("Sort"))
                     }
-                    .font(.footnote.weight(.semibold))
+                    .arcaFont(.footnote, weight: .semibold)
                     .padding(.horizontal, 11)
                     .padding(.vertical, 7)
                     .frame(minHeight: 44)
@@ -2110,13 +2110,13 @@ public struct CollectionRecordListView: View {
     private var fieldFilterDrawerCard: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text(viewModel.language.localized("Filter by Field"))
-                .font(.footnote.weight(.bold))
+                .arcaFont(.footnote, weight: .bold)
                 .foregroundStyle(ink)
                 .accessibilityAddTraits(.isHeader)
 
             if filterableFields.isEmpty {
                 Text(viewModel.language.localized("This collection has no fields to filter."))
-                    .font(.caption)
+                    .arcaFont(.caption)
                     .foregroundStyle(.secondary)
             } else {
                 ScrollView(.horizontal, showsIndicators: false) {
@@ -2127,7 +2127,7 @@ public struct CollectionRecordListView: View {
                                 selectDraftFilterField(field)
                             } label: {
                                 Text(field.label)
-                                    .font(.caption.weight(.semibold))
+                                    .arcaFont(.caption, weight: .semibold)
                                     .foregroundStyle(isSelected ? palette.onFill : .primary)
                                     .padding(.horizontal, 11)
                                     .padding(.vertical, 7)
@@ -2147,7 +2147,7 @@ public struct CollectionRecordListView: View {
                     draftFilterInputControls(for: draftField)
                     if filterInputError {
                         Text(viewModel.language.localized("Enter a valid filter value."))
-                            .font(.caption)
+                            .arcaFont(.caption)
                             .foregroundStyle(.primary)
                     }
 
@@ -2165,7 +2165,7 @@ public struct CollectionRecordListView: View {
                                 filterInputError = false
                             } label: {
                                 Text(viewModel.language.localized("Reset"))
-                                    .font(.caption.weight(.semibold))
+                                    .arcaFont(.caption, weight: .semibold)
                                     .foregroundStyle(.primary)
                                     .padding(.horizontal, 12)
                                     .padding(.vertical, 7)
@@ -2182,7 +2182,7 @@ public struct CollectionRecordListView: View {
                             applyCurrentDraftFilter(for: draftField)
                         } label: {
                             Text(viewModel.language.localized("Apply Filter"))
-                                .font(.caption.weight(.bold))
+                                .arcaFont(.caption, weight: .bold)
                                 .foregroundStyle(palette.onFill)
                                 .padding(.horizontal, 14)
                                 .padding(.vertical, 8)
@@ -2227,7 +2227,7 @@ public struct CollectionRecordListView: View {
         _ label: String,
         options: [Option],
         selection: Binding<Option>,
-        titleKey: (Option) -> String
+        titleKey: @escaping (Option) -> String
     ) -> some View {
         let currentTitle = viewModel.language.localized(titleKey(selection.wrappedValue))
         return Menu {
@@ -2323,7 +2323,7 @@ public struct CollectionRecordListView: View {
                             draftSelectOptionId = opt.id
                         } label: {
                             Text(opt.label)
-                                .font(.caption.weight(.semibold))
+                                .arcaFont(.caption, weight: .semibold)
                                 .foregroundStyle(isSelected ? palette.onFill : .primary)
                                 .padding(.horizontal, 11)
                                 .padding(.vertical, 7)
@@ -2346,7 +2346,7 @@ public struct CollectionRecordListView: View {
                         draftBooleanValue = val
                     } label: {
                         Text(viewModel.language.localized(val ? "Yes" : "No"))
-                            .font(.caption.weight(.bold))
+                            .arcaFont(.caption, weight: .bold)
                             .foregroundStyle(isSelected ? palette.onFill : .primary)
                             .frame(maxWidth: .infinity, minHeight: 44)
                             .background(
@@ -2363,7 +2363,7 @@ public struct CollectionRecordListView: View {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 4) {
                     Text(viewModel.language.localized("At least"))
-                        .font(.caption.weight(.semibold))
+                        .arcaFont(.caption, weight: .semibold)
                         .foregroundStyle(.secondary)
                     let selected = min(draftMinimumRating, ratingLimit(for: field))
                     ForEach(1...ratingLimit(for: field), id: \.self) { star in
@@ -2478,7 +2478,7 @@ public struct CollectionRecordListView: View {
                     } label: {
                         HStack(spacing: 5) {
                             Text(item.summary)
-                                .font(.caption.weight(.semibold))
+                                .arcaFont(.caption, weight: .semibold)
                             Image(systemName: "xmark")
                                 .font(.caption2.weight(.bold))
                         }
@@ -2503,7 +2503,7 @@ public struct CollectionRecordListView: View {
             VStack(spacing: 14) {
                 CollectionBadgeView(schema: liveSchema, size: 52, presentationStore: presentationStore)
                 Text(viewModel.language.localized("No Records Match Your View"))
-                    .font(.body.weight(.bold))
+                    .arcaFont(.body, weight: .bold)
                 Button(viewModel.language.format("Add Record to %@", liveSchema.name)) {
                     activeRecordSheetCollection = liveSchema
                 }
@@ -2537,7 +2537,7 @@ public struct CollectionRecordListView: View {
                     HStack(spacing: 10) {
                         HStack(spacing: 6) {
                             Text(record.title(using: liveSchema))
-                                .font(.subheadline.weight(.bold))
+                                .arcaFont(.subheadline, weight: .bold)
                                 .foregroundStyle(.primary)
                                 .lineLimit(1)
                             if record.isFavorite {
@@ -2560,7 +2560,7 @@ public struct CollectionRecordListView: View {
                             let text = val.plainTextSummary(for: secondaryField, locale: viewModel.language.locale)
                             if !text.isEmpty {
                                 Text(text)
-                                    .font(.caption.weight(.semibold))
+                                    .arcaFont(.caption, weight: .semibold)
                                     .foregroundStyle(ink)
                                     .lineLimit(1)
                                     .padding(.horizontal, 8)
@@ -2665,13 +2665,13 @@ public struct CollectionRecordListView: View {
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(record.title(using: liveSchema))
-                    .font(.subheadline.weight(.bold))
+                    .arcaFont(.subheadline, weight: .bold)
                     .foregroundStyle(.primary)
                     .lineLimit(2)
                     .multilineTextAlignment(.leading)
 
                 Text(firstSubtitle)
-                    .font(.caption)
+                    .arcaFont(.caption)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
             }
@@ -2683,14 +2683,14 @@ public struct CollectionRecordListView: View {
 
             HStack {
                 Text(badgeValueText ?? "v\(record.revision)")
-                    .font(.caption.weight(.bold))
+                    .arcaFont(.caption, weight: .bold)
                     .foregroundStyle(ink)
                     .lineLimit(1)
 
                 Spacer()
 
                 Text(dateText)
-                    .font(.caption2)
+                    .arcaFont(.caption2)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
             }
@@ -2741,7 +2741,7 @@ public struct CollectionRecordListView: View {
                 VStack(alignment: .leading, spacing: 3) {
                     HStack(spacing: 6) {
                         Text(record.title(using: liveSchema))
-                            .font(.subheadline.weight(.bold))
+                            .arcaFont(.subheadline, weight: .bold)
                             .foregroundStyle(.primary)
                             .lineLimit(1)
                         if record.isFavorite {
@@ -2758,7 +2758,7 @@ public struct CollectionRecordListView: View {
 
                     if !subtitle.isEmpty {
                         Text(subtitle)
-                            .font(.caption)
+                            .arcaFont(.caption)
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
                     }
@@ -2768,7 +2768,7 @@ public struct CollectionRecordListView: View {
 
                 if let secondaryText {
                     Text(secondaryText)
-                        .font(.caption.weight(.bold))
+                        .arcaFont(.caption, weight: .bold)
                         .foregroundStyle(ink)
                         .padding(.horizontal, 9)
                         .padding(.vertical, 4)
@@ -2785,10 +2785,10 @@ public struct CollectionRecordListView: View {
                     Spacer()
                     HStack(spacing: 4) {
                         Text("\(pair.label):")
-                            .font(.caption)
+                            .arcaFont(.caption)
                             .foregroundStyle(.secondary)
                         Text(pair.value)
-                            .font(.caption.weight(.bold))
+                            .arcaFont(.caption, weight: .bold)
                             .foregroundStyle(.primary)
                     }
                 }
@@ -2814,7 +2814,7 @@ public struct CollectionRecordListView: View {
                         .font(.caption.weight(.semibold))
                 }
                 Text(title)
-                    .font(.footnote.weight(.semibold))
+                    .arcaFont(.footnote, weight: .semibold)
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 7)
@@ -2896,7 +2896,7 @@ public struct AddEditRecordSheetView: View {
                         ArcaSectionCard(title: viewModel.language.localized("Please Check These Fields"), icon: "exclamationmark.triangle.fill", iconTint: ArcaTheme.dangerRed) {
                             ForEach(validationErrors) { err in
                                 Label(err.errorDescription ?? err.reason, systemImage: "xmark.circle.fill")
-                                    .font(.footnote.weight(.semibold))
+                                    .arcaFont(.footnote, weight: .semibold)
                                     .foregroundStyle(ArcaTheme.dangerRed)
                             }
                         }
@@ -2911,7 +2911,7 @@ public struct AddEditRecordSheetView: View {
                                 Image(systemName: isFavorite ? "pin.fill" : "pin")
                                     .foregroundStyle(ArcaTheme.warmAmber)
                                 Text(viewModel.language.localized("Pin Record to Favorites"))
-                                    .font(.subheadline.weight(.semibold))
+                                    .arcaFont(.subheadline, weight: .semibold)
                                     .foregroundStyle(.primary)
                                 Spacer()
                                 Image(systemName: isFavorite ? "checkmark.circle.fill" : "circle")
@@ -2978,10 +2978,10 @@ public struct AddEditRecordSheetView: View {
             CollectionBadgeView(schema: liveSchema, size: 38, presentationStore: presentationStore)
             VStack(alignment: .leading, spacing: 2) {
                 Text(existingRecord == nil ? viewModel.language.format("New %@", liveSchema.name) : viewModel.language.localized("Edit Record"))
-                    .font(.subheadline.weight(.heavy))
+                    .arcaFont(.subheadline, weight: .heavy)
                     .foregroundStyle(palette.onFill)
                 Text(viewModel.language.localized(activeAddMode == .fullScreen ? "Full-Screen Form Mode" : "Popup Card Mode"))
-                    .font(.caption)
+                    .arcaFont(.caption)
                     .foregroundStyle(palette.onFill)
             }
             Spacer()
@@ -3024,11 +3024,11 @@ public struct AddEditRecordSheetView: View {
         VStack(alignment: .leading, spacing: 7) {
             HStack {
                 Label(field.label, systemImage: field.type.iconName)
-                    .font(.footnote.weight(.bold))
+                    .arcaFont(.footnote, weight: .bold)
                     .foregroundStyle(.secondary)
                 if field.isRequired {
                     Text(viewModel.language.localized("Required"))
-                        .font(.caption2.weight(.bold))
+                        .arcaFont(.caption2, weight: .bold)
                         .padding(.horizontal, 6)
                         .padding(.vertical, 2)
                         .background(Capsule().fill(tint.opacity(0.14)))
@@ -3059,7 +3059,7 @@ public struct AddEditRecordSheetView: View {
                     set: { draftValues[field.id] = $0.isEmpty ? .null : .longText($0) }
                 ))
                 .accessibilityLabel(Text(field.label))
-                .font(.body)
+                .arcaFont(.body)
                 .frame(minHeight: 74)
                 .padding(8)
                 .background(
@@ -3087,7 +3087,7 @@ public struct AddEditRecordSheetView: View {
             case .currency:
                 HStack(spacing: 8) {
                     Text(field.validation.defaultCurrencyCode)
-                        .font(.footnote.weight(.bold))
+                        .arcaFont(.footnote, weight: .bold)
                         .foregroundStyle(ink)
                         .padding(.horizontal, 10)
                         .padding(.vertical, 10)
@@ -3121,7 +3121,7 @@ public struct AddEditRecordSheetView: View {
                     displayedComponents: [.date]
                 ) {
                     Text(field.label)
-                        .font(.footnote.weight(.medium))
+                        .arcaFont(.footnote, weight: .medium)
                 }
 
             case .dateTime:
@@ -3136,7 +3136,7 @@ public struct AddEditRecordSheetView: View {
                     displayedComponents: [.date, .hourAndMinute]
                 ) {
                     Text(field.label)
-                        .font(.footnote.weight(.medium))
+                        .arcaFont(.footnote, weight: .medium)
                 }
 
             case .boolean:
@@ -3147,7 +3147,7 @@ public struct AddEditRecordSheetView: View {
                     },
                     set: { draftValues[field.id] = .boolean($0) }
                 ))
-                .font(.subheadline.weight(.medium))
+                .arcaFont(.subheadline, weight: .medium)
 
             case .singleSelect:
                 ScrollView(.horizontal, showsIndicators: false) {
@@ -3162,7 +3162,7 @@ public struct AddEditRecordSheetView: View {
                                 draftValues[field.id] = selected ? .null : .singleSelect(opt.id)
                             } label: {
                                 Text(opt.label)
-                                    .font(.footnote.weight(.semibold))
+                                    .arcaFont(.footnote, weight: .semibold)
                                     .padding(.horizontal, 12)
                                     .padding(.vertical, 7)
                                     .frame(minHeight: 44)
@@ -3190,7 +3190,7 @@ public struct AddEditRecordSheetView: View {
                                 draftValues[field.id] = updated.isEmpty ? .null : .multiSelect(Array(updated).sorted())
                             } label: {
                                 Text(opt.label)
-                                    .font(.footnote.weight(.semibold))
+                                    .arcaFont(.footnote, weight: .semibold)
                                     .padding(.horizontal, 12)
                                     .padding(.vertical, 7)
                                     .frame(minHeight: 44)
@@ -3236,10 +3236,10 @@ public struct AddEditRecordSheetView: View {
                             Image(systemName: "doc.fill")
                                 .foregroundStyle(ink)
                             Text(att.filename)
-                                .font(.footnote.weight(.medium))
+                                .arcaFont(.footnote, weight: .medium)
                             Spacer()
                             Text("\(ByteCountFormatter.string(fromByteCount: att.byteSize, countStyle: .file))")
-                                .font(.caption)
+                                .arcaFont(.caption)
                                 .foregroundStyle(.secondary)
                         }
                         .padding(10)
@@ -3255,7 +3255,7 @@ public struct AddEditRecordSheetView: View {
                     .disabled(viewModel.spaces.first(where: { $0.id == liveSchema.spaceId })?.storageMode != .localOnly)
                     if viewModel.spaces.first(where: { $0.id == liveSchema.spaceId })?.storageMode != .localOnly {
                         Text(viewModel.language.localized("File attachments are available in Local-Only Spaces. Cloud attachment upload is not available yet."))
-                            .font(.footnote).foregroundStyle(.secondary)
+                            .arcaFont(.footnote).foregroundStyle(.secondary)
                     }
                 }
             }
@@ -3350,7 +3350,7 @@ public struct RecordDetailView: View {
                                     Image(systemName: "chevron.backward")
                                         .font(.footnote.weight(.bold))
                                     Text(liveSchema.name)
-                                        .font(.subheadline.weight(.bold))
+                                        .arcaFont(.subheadline, weight: .bold)
                                 }
                                 .foregroundStyle(ink)
                                 .padding(.horizontal, 12)
@@ -3379,7 +3379,7 @@ public struct RecordDetailView: View {
                                 showingEditSheet = true
                             } label: {
                                 Text(viewModel.language.localized("Edit"))
-                                    .font(.subheadline.weight(.bold))
+                                    .arcaFont(.subheadline, weight: .bold)
                                     .foregroundStyle(palette.onFill)
                                     .padding(.horizontal, 16)
                                     .padding(.vertical, 8)
@@ -3412,14 +3412,14 @@ public struct RecordDetailView: View {
                                         }
                                         VStack(alignment: .leading, spacing: 2) {
                                             Text(att.filename)
-                                                .font(.subheadline.weight(.semibold))
+                                                .arcaFont(.subheadline, weight: .semibold)
                                             Text("\(ByteCountFormatter.string(fromByteCount: att.byteSize, countStyle: .file)) • SHA-256 \(att.sha256Hex.prefix(10))…")
-                                                .font(.caption)
+                                                .arcaFont(.caption)
                                                 .foregroundStyle(.secondary)
                                         }
                                         Spacer()
                                         Text(att.uploadState.rawValue.replacingOccurrences(of: "_", with: " ").capitalized)
-                                            .font(.caption2.weight(.bold))
+                                            .arcaFont(.caption2, weight: .bold)
                                             .padding(.horizontal, 8)
                                             .padding(.vertical, 4)
                                             .background(Capsule().fill(ArcaTheme.secondaryEmerald.opacity(0.12)))
@@ -3525,11 +3525,11 @@ public struct RecordDetailView: View {
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(liveSchema.name.uppercased(with: viewModel.language.locale))
-                        .font(.caption.weight(.bold))
+                        .arcaFont(.caption, weight: .bold)
                         .tracking(0.6)
                         .foregroundStyle(ink)
                     Text(viewModel.language.format("%@ • Revision %d • Updated %@", liveSchema.name, rec.revision, rec.updatedAt.formatted(.dateTime.day().month().hour().minute().locale(viewModel.language.locale))))
-                        .font(.caption2)
+                        .arcaFont(.caption2)
                         .foregroundStyle(.secondary)
                 }
 
@@ -3544,7 +3544,7 @@ public struct RecordDetailView: View {
             }
 
             Text(rec.title(using: liveSchema))
-                .font(.title3.weight(.heavy))
+                .arcaFont(.title3, weight: .heavy)
                 .foregroundStyle(.primary)
                 .accessibilityAddTraits(.isHeader)
 
@@ -3558,10 +3558,10 @@ public struct RecordDetailView: View {
                         let summary = (rec.values[field.id] ?? .null).plainTextSummary(for: field, locale: viewModel.language.locale)
                         VStack(alignment: .leading, spacing: 3) {
                             Text(field.label)
-                                .font(.caption.weight(.semibold))
+                                .arcaFont(.caption, weight: .semibold)
                                 .foregroundStyle(.secondary)
                             Text(summary)
-                                .font(.subheadline.weight(.heavy))
+                                .arcaFont(.subheadline, weight: .heavy)
                                 .foregroundStyle(field.type == .currency || field.type == .number ? ink : .primary)
                                 .lineLimit(2)
                         }
@@ -3617,7 +3617,7 @@ public struct RecordDetailView: View {
                                 .font(.caption.weight(.semibold))
                                 .foregroundStyle(ink)
                             Text(field.label.uppercased(with: viewModel.language.locale))
-                                .font(.caption2.weight(.bold))
+                                .arcaFont(.caption2, weight: .bold)
                                 .tracking(0.5)
                                 .foregroundStyle(.secondary)
                             if field.privacy != nil {
@@ -3627,7 +3627,7 @@ public struct RecordDetailView: View {
                             }
                         }
                         Text(val.plainTextSummary(for: field, locale: viewModel.language.locale))
-                            .font(.body.weight(.medium))
+                            .arcaFont(.body, weight: .medium)
                             .foregroundStyle(.primary)
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -3654,10 +3654,10 @@ public struct RecordDetailView: View {
                         let val = rec.values[field.id] ?? .null
                         VStack(alignment: .leading, spacing: 4) {
                             Text(field.label.uppercased(with: viewModel.language.locale))
-                                .font(.caption2.weight(.bold))
+                                .arcaFont(.caption2, weight: .bold)
                                 .foregroundStyle(.secondary)
                             Text(val.plainTextSummary(for: field, locale: viewModel.language.locale))
-                                .font(.subheadline.weight(.medium))
+                                .arcaFont(.subheadline, weight: .medium)
                                 .foregroundStyle(.primary)
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -3695,7 +3695,7 @@ public struct RecordDetailView: View {
                 }
 
                 Text(viewModel.language.localized("Physical Asset Tag Deep Link"))
-                    .font(.headline.weight(.bold))
+                    .arcaFont(.headline, weight: .bold)
 
                 Text(deepLink.absoluteString)
                     .font(.system(size: 11, design: .monospaced))
@@ -3703,7 +3703,7 @@ public struct RecordDetailView: View {
                     .background(RoundedRectangle(cornerRadius: 10).fill(ArcaTheme.subtleFieldBackground(for: colorScheme)))
 
                 Text(viewModel.language.localized("Privacy guarantee: A local QR code only identifies this record by UUID on devices that already have this Space. It never embeds or transmits your record contents."))
-                    .font(.footnote)
+                    .arcaFont(.footnote)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
                     .padding(.horizontal, 20)
@@ -3741,11 +3741,11 @@ public struct RecordDetailView: View {
                                         .font(.headline)
                                         .foregroundStyle(isSelected ? ArcaTheme.accent : .secondary)
                                     Text(field.label)
-                                        .font(.subheadline.weight(.semibold))
+                                        .arcaFont(.subheadline, weight: .semibold)
                                         .foregroundStyle(.primary)
                                     Spacer()
                                     Text((rec.values[field.id] ?? .null).plainTextSummary(for: field))
-                                        .font(.footnote)
+                                        .arcaFont(.footnote)
                                         .foregroundStyle(.secondary)
                                         .lineLimit(1)
                                 }
@@ -3759,11 +3759,11 @@ public struct RecordDetailView: View {
                         ForEach(liveSchema.activeFields.filter { selectedSnapshotFieldIds.contains($0.id) }) { field in
                             HStack {
                                 Text(field.label)
-                                    .font(.footnote.weight(.bold))
+                                    .arcaFont(.footnote, weight: .bold)
                                     .foregroundStyle(.secondary)
                                 Spacer()
                                 Text((rec.values[field.id] ?? .null).plainTextSummary(for: field))
-                                    .font(.footnote.weight(.medium))
+                                    .arcaFont(.footnote, weight: .medium)
                             }
                         }
                     }

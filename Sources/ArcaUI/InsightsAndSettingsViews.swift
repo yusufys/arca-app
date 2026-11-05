@@ -40,11 +40,11 @@ public struct InsightsScreenView: View {
                     // Custom iOS Large Title Header
                     VStack(alignment: .leading, spacing: 3) {
                         Text((viewModel.currentSpace?.name ?? "SPACE").uppercased())
-                            .font(.caption.weight(.bold))
+                            .arcaFont(.caption, weight: .bold)
                             .tracking(0.6)
                             .foregroundStyle(appForegroundTint)
                         Text(ArcaStrings.text("insights.title", language: viewModel.language))
-                            .font(.largeTitle.weight(.bold))
+                            .arcaFont(.largeTitle, weight: .bold)
                     }
 
                     // Summary KPIs
@@ -68,14 +68,14 @@ public struct InsightsScreenView: View {
                                     HStack {
                                         VStack(alignment: .leading, spacing: 2) {
                                             Text(item.itemTitle)
-                                                .font(.subheadline.weight(.bold))
+                                                .arcaFont(.subheadline, weight: .bold)
                                             Text(viewModel.language.format("Expires %@", item.expirationDate.formatted(locale: viewModel.language.locale)))
-                                                .font(.footnote)
+                                                .arcaFont(.footnote)
                                                 .foregroundStyle(.secondary)
                                         }
                                         Spacer()
                                         Text(item.isExpired ? viewModel.language.localized("Expired") : viewModel.language.format("In %d days", item.daysRemaining))
-                                            .font(.caption.weight(.bold))
+                                            .arcaFont(.caption, weight: .bold)
                                             .padding(.horizontal, 10)
                                             .padding(.vertical, 5)
                                             .background(Capsule().fill(badgeTint.opacity(0.14)))
@@ -123,18 +123,18 @@ public struct InsightsScreenView: View {
                                     HStack {
                                         VStack(alignment: .leading, spacing: 2) {
                                             Text(summary.fieldLabel)
-                                                .font(.subheadline.weight(.bold))
+                                                .arcaFont(.subheadline, weight: .bold)
                                             Text(summary.collectionName + " • " + viewModel.language.format("count.records", summary.count))
-                                                .font(.caption)
+                                                .arcaFont(.caption)
                                                 .foregroundStyle(.secondary)
                                         }
                                         Spacer()
                                         VStack(alignment: .trailing, spacing: 2) {
                                             Text(summary.formattedSum)
-                                                .font(.body.weight(.bold))
+                                                .arcaFont(.body, weight: .bold)
                                                 .foregroundStyle(appForegroundTint)
                                             Text(viewModel.language.format("Avg %@", summary.formattedAverage))
-                                                .font(.caption)
+                                                .arcaFont(.caption)
                                                 .foregroundStyle(.secondary)
                                         }
                                     }
@@ -189,9 +189,9 @@ public struct InsightsScreenView: View {
             }
             VStack(alignment: .leading, spacing: 1) {
                 Text(value)
-                    .font(.title2.weight(.bold))
+                    .arcaFont(.title2, weight: .bold)
                 Text(title)
-                    .font(.caption.weight(.medium))
+                    .arcaFont(.caption, weight: .medium)
                     .foregroundStyle(.secondary)
             }
         }
@@ -247,11 +247,11 @@ public struct SettingsHubScreenView: View {
                     // Header
                     VStack(alignment: .leading, spacing: 3) {
                         Text(viewModel.language.localized("ARCA PREFERENCES & STORAGE"))
-                            .font(.caption.weight(.bold))
+                            .arcaFont(.caption, weight: .bold)
                             .tracking(0.6)
                             .foregroundStyle(appForegroundTint)
                         Text(ArcaStrings.text("settings.title", language: viewModel.language))
-                            .font(.largeTitle.weight(.bold))
+                            .arcaFont(.largeTitle, weight: .bold)
                             .accessibilityAddTraits(.isHeader)
                     }
 
@@ -351,7 +351,7 @@ public struct SettingsHubScreenView: View {
                         VStack(alignment: .leading, spacing: 14) {
                             VStack(alignment: .leading, spacing: 6) {
                                 Text(viewModel.language.localized("Appearance"))
-                                    .font(.footnote.weight(.semibold))
+                                    .arcaFont(.footnote, weight: .semibold)
                                     .foregroundStyle(.secondary)
                                 choicesLayout {
                                     appearancePill(.light, label: viewModel.language.localized("Light"), icon: "sun.max.fill")
@@ -362,7 +362,7 @@ public struct SettingsHubScreenView: View {
 
                             VStack(alignment: .leading, spacing: 6) {
                                 Text(viewModel.language.localized("Language & RTL Layout"))
-                                    .font(.footnote.weight(.semibold))
+                                    .arcaFont(.footnote, weight: .semibold)
                                     .foregroundStyle(.secondary)
                                 choicesLayout {
                                     ForEach(AppLanguage.allCases) { lang in
@@ -371,7 +371,7 @@ public struct SettingsHubScreenView: View {
                                             viewModel.language = lang
                                         } label: {
                                             Text(lang == .english ? "English" : (lang == .arabic ? "العربية" : "Türkçe"))
-                                                .font(.footnote.weight(.semibold))
+                                                .arcaFont(.footnote, weight: .semibold)
                                                 .foregroundStyle(selected ? .white : .primary)
                                                 .frame(maxWidth: .infinity, minHeight: 44)
                                                 .background(
@@ -396,9 +396,9 @@ public struct SettingsHubScreenView: View {
                                 set: { value in Task { await viewModel.setAppLockEnabled(value) } }
                             ))
                             .disabled(viewModel.appLock.isAuthenticating)
-                            .font(.subheadline.weight(.semibold))
+                            .arcaFont(.subheadline, weight: .semibold)
                             if let error = viewModel.appLock.errorMessage {
-                                Text(error).font(.footnote).foregroundStyle(ArcaTheme.dangerRed)
+                                Text(error).arcaFont(.footnote).foregroundStyle(ArcaTheme.dangerRed)
                             }
 
                             Divider().opacity(0.45)
@@ -428,7 +428,7 @@ public struct SettingsHubScreenView: View {
                     ) {
                         HStack {
                             Text("Banner State")
-                                .font(.footnote.weight(.semibold))
+                                .arcaFont(.footnote, weight: .semibold)
                             Spacer()
                             Picker("Simulate Operational State", selection: $viewModel.bannerState) {
                                 Text("Normal Online").tag(OperationalBannerState.normal)
@@ -475,11 +475,11 @@ public struct SettingsHubScreenView: View {
         return VStack(alignment: .leading, spacing: 10) {
             VStack(alignment: .leading, spacing: 3) {
                 Text(viewModel.language.localized("App Theme Color"))
-                    .font(.subheadline.weight(.bold))
+                    .arcaFont(.subheadline, weight: .bold)
                     .foregroundStyle(.primary)
                     .accessibilityAddTraits(.isHeader)
                 Text(viewModel.language.localized("Used on Home and Settings. Each Collection uses its own color."))
-                    .font(.caption)
+                    .arcaFont(.caption)
                     .foregroundStyle(ArcaTheme.mutedText(for: colorScheme))
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -505,10 +505,10 @@ public struct SettingsHubScreenView: View {
 
                     VStack(alignment: .leading, spacing: 2) {
                         Text(activeOption.localizedName(in: viewModel.language))
-                            .font(.subheadline.weight(.bold))
+                            .arcaFont(.subheadline, weight: .bold)
                             .foregroundStyle(.primary)
                         Text(activeOption.localizedTag(in: viewModel.language))
-                            .font(.caption)
+                            .arcaFont(.caption)
                             .foregroundStyle(ArcaTheme.mutedText(for: colorScheme))
                     }
                     .fixedSize(horizontal: false, vertical: true)
@@ -561,10 +561,10 @@ public struct SettingsHubScreenView: View {
 
                                 VStack(alignment: .leading, spacing: 1) {
                                     Text(option.localizedName(in: viewModel.language))
-                                        .font(.subheadline.weight(.bold))
+                                        .arcaFont(.subheadline, weight: .bold)
                                         .foregroundStyle(.primary)
                                     Text(option.localizedTag(in: viewModel.language))
-                                        .font(.caption)
+                                        .arcaFont(.caption)
                                         .foregroundStyle(ArcaTheme.mutedText(for: colorScheme))
                                 }
                                 .fixedSize(horizontal: false, vertical: true)
@@ -626,14 +626,14 @@ public struct SettingsHubScreenView: View {
                 if dynamicTypeSize.isAccessibilitySize {
                     VStack(alignment: .leading, spacing: 8) {
                         Text(viewModel.language.localized("Spaces"))
-                            .font(.subheadline.weight(.bold))
+                            .arcaFont(.subheadline, weight: .bold)
                             .accessibilityAddTraits(.isHeader)
                         switchSpaceButton
                     }
                 } else {
                     HStack {
                         Text(viewModel.language.localized("Spaces"))
-                            .font(.subheadline.weight(.bold))
+                            .arcaFont(.subheadline, weight: .bold)
                             .accessibilityAddTraits(.isHeader)
                         Spacer()
                         switchSpaceButton
@@ -662,10 +662,10 @@ public struct SettingsHubScreenView: View {
 
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(space.name)
-                                    .font(.subheadline.weight(.bold))
+                                    .arcaFont(.subheadline, weight: .bold)
                                     .foregroundStyle(.primary)
                                 Text(viewModel.language.format("count.collections", collectionCount))
-                                    .font(.caption)
+                                    .arcaFont(.caption)
                                     .foregroundStyle(ArcaTheme.mutedText(for: colorScheme))
 
                                 if isCurrent && dynamicTypeSize.isAccessibilitySize {
@@ -709,7 +709,7 @@ public struct SettingsHubScreenView: View {
 
     private var currentSpaceLabel: some View {
         Text(viewModel.language.localized("Current"))
-            .font(.caption2.weight(.bold))
+            .arcaFont(.caption2, weight: .bold)
             .foregroundStyle(.white)
             .padding(.horizontal, 10)
             .padding(.vertical, 4)
@@ -722,7 +722,7 @@ public struct SettingsHubScreenView: View {
             showingSpaceManager = true
         } label: {
             Text(viewModel.language.localized("Switch Space"))
-                .font(.caption.weight(.bold))
+                .arcaFont(.caption, weight: .bold)
                 .foregroundStyle(.white)
                 .padding(.horizontal, 12)
                 .padding(.vertical, 7)
@@ -746,7 +746,7 @@ public struct SettingsHubScreenView: View {
                 Image(systemName: icon)
                     .font(.caption.weight(.semibold))
                 Text(label)
-                    .font(.footnote.weight(.semibold))
+                    .arcaFont(.footnote, weight: .semibold)
             }
             .foregroundStyle(selected ? .white : .primary)
             .frame(maxWidth: .infinity, minHeight: 44)
@@ -774,10 +774,10 @@ public struct SettingsHubScreenView: View {
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(title)
-                    .font(.subheadline.weight(.bold))
+                    .arcaFont(.subheadline, weight: .bold)
                     .foregroundStyle(.primary)
                 Text(subtitle)
-                    .font(.caption)
+                    .arcaFont(.caption)
                     .foregroundStyle(.secondary)
             }
 
@@ -785,7 +785,7 @@ public struct SettingsHubScreenView: View {
 
             if let badge {
                 Text(badge)
-                    .font(.caption.weight(.bold))
+                    .arcaFont(.caption, weight: .bold)
                     .padding(.horizontal, 8)
                     .padding(.vertical, 4)
                     .background(Capsule().fill(tint.opacity(0.12)))
@@ -827,7 +827,7 @@ private struct ArcaSubscreenBackHeader: View {
                     Image(systemName: "chevron.backward")
                         .font(.footnote.weight(.bold))
                     Text(language.localized("Settings"))
-                        .font(.subheadline.weight(.semibold))
+                        .arcaFont(.subheadline, weight: .semibold)
                 }
                 .foregroundStyle(appForegroundTint)
                 .padding(.horizontal, 12)
@@ -839,9 +839,9 @@ private struct ArcaSubscreenBackHeader: View {
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(title)
-                    .font(.title.weight(.bold))
+                    .arcaFont(.title, weight: .bold)
                 Text(subtitle)
-                    .font(.footnote)
+                    .arcaFont(.footnote)
                     .foregroundStyle(.secondary)
             }
         }
@@ -891,7 +891,7 @@ public struct BackupExportRestoreScreenView: View {
                 }
                 if isBusy { ProgressView("Preparing backup…") }
                 if let statusMessage {
-                    Text(statusMessage).font(.callout)
+                    Text(statusMessage).arcaFont(.callout)
                         .foregroundStyle(isError ? ArcaTheme.dangerRed : ArcaTheme.secondaryEmerald)
                 }
             }
@@ -974,13 +974,13 @@ public struct SyncStatusAndConflictsScreenView: View {
                 CloudAccountDeletionSection(viewModel: viewModel)
                 ArcaSectionCard(title: viewModel.language.localized("Sync status"), icon: "arrow.triangle.2.circlepath.icloud.fill") {
                     Text(viewModel.language.localized(viewModel.syncStatus))
-                        .font(.subheadline.weight(.medium))
+                        .arcaFont(.subheadline, weight: .medium)
                     HStack {
                         Text(viewModel.language.localized("Durable Local Outbox"))
-                            .font(.subheadline.weight(.medium))
+                            .arcaFont(.subheadline, weight: .medium)
                         Spacer()
                         Text(viewModel.language.format("count.operations", viewModel.pendingOutboxCount))
-                            .font(.footnote.weight(.semibold))
+                            .arcaFont(.footnote, weight: .semibold)
                             .foregroundStyle(.secondary)
                     }
 
@@ -1002,15 +1002,15 @@ public struct SyncStatusAndConflictsScreenView: View {
                 ) {
                     if viewModel.syncConflicts.isEmpty {
                         Text(viewModel.language.localized("No unresolved conflicts."))
-                            .font(.footnote)
+                            .arcaFont(.footnote)
                             .foregroundStyle(.secondary)
                     } else {
                         ForEach(viewModel.syncConflicts) { conflict in
                             VStack(alignment: .leading, spacing: 10) {
                                 Text(conflict.summary)
-                                    .font(.subheadline.weight(.bold))
+                                    .arcaFont(.subheadline, weight: .bold)
                                 Text(viewModel.language.format("Local rev %d vs. Remote rev %d", conflict.localRecord.revision, conflict.remoteRecord.revision))
-                                    .font(.caption)
+                                    .arcaFont(.caption)
                                     .foregroundStyle(.secondary)
                                 HStack(spacing: 8) {
                                     Button(viewModel.language.localized("Keep Local")) {
@@ -1074,9 +1074,9 @@ public struct ActiveDeviceManagementScreenView: View {
                                 }
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text(dev.isCurrentDevice ? viewModel.language.format("%@ (This Device)", dev.deviceName) : dev.deviceName)
-                                        .font(.subheadline.weight(.bold))
+                                        .arcaFont(.subheadline, weight: .bold)
                                     Text(viewModel.language.format("Enrolled %@", dev.enrolledAt.formatted(.dateTime.day().month().year().locale(viewModel.language.locale))))
-                                        .font(.caption)
+                                        .arcaFont(.caption)
                                         .foregroundStyle(.secondary)
                                 }
                                 Spacer()
@@ -1148,38 +1148,38 @@ public struct StorageModeMigrationScreenView: View {
                          : targetMode == .localOnly
                          ? "Local-Only keeps all records and attachments strictly on this device."
                          : "Personal Cloud Backup sends direct encrypted archives to iCloud or Google Drive."))
-                        .font(.caption)
+                        .arcaFont(.caption)
                         .foregroundStyle(.secondary)
                 }
 
                 ArcaSectionCard(title: viewModel.language.localized("Migration Impact Preview"), icon: "info.circle.fill") {
                     HStack {
                         Text(viewModel.language.localized("Records to Upload"))
-                            .font(.footnote)
+                            .arcaFont(.footnote)
                         Spacer()
                         Text("\(preview.recordsToUploadCount)")
-                            .font(.subheadline.weight(.bold))
+                            .arcaFont(.subheadline, weight: .bold)
                     }
                     HStack {
                         Text(viewModel.language.localized("Attachments to Upload"))
-                            .font(.footnote)
+                            .arcaFont(.footnote)
                         Spacer()
                         Text("\(preview.attachmentsToUploadCount)")
-                            .font(.subheadline.weight(.bold))
+                            .arcaFont(.subheadline, weight: .bold)
                     }
                     Divider().opacity(0.45)
                     VStack(alignment: .leading, spacing: 4) {
                         Text(viewModel.language.localized("What Remains Local"))
-                            .font(.footnote.weight(.bold))
+                            .arcaFont(.footnote, weight: .bold)
                         Text(viewModel.language.localized("All records and attachments remain on this device. Reading, searching and editing continue to work locally."))
-                            .font(.footnote)
+                            .arcaFont(.footnote)
                             .foregroundStyle(.secondary)
                     }
                     VStack(alignment: .leading, spacing: 4) {
                         Text(viewModel.language.localized("Existing Remote Copies"))
-                            .font(.footnote.weight(.bold))
+                            .arcaFont(.footnote, weight: .bold)
                         Text(viewModel.language.localized(remoteCopyExplanation))
-                            .font(.footnote)
+                            .arcaFont(.footnote)
                             .foregroundStyle(.secondary)
                     }
                 }
@@ -1187,14 +1187,14 @@ public struct StorageModeMigrationScreenView: View {
                 if space.storageMode == .arcaSync && targetMode == .localOnly {
                     ArcaSectionCard(title: viewModel.language.localized("Remote Cloud Copy Handling"), icon: "trash.slash.fill", iconTint: ArcaTheme.warmAmber) {
                         Toggle(viewModel.language.localized("Request & Verify Deletion of Remote Encrypted Copies"), isOn: $requestRemoteDeletion)
-                            .font(.footnote.weight(.semibold))
+                            .arcaFont(.footnote, weight: .semibold)
                     }
                 }
 
                 if targetMode == .arcaSync && space.storageMode != .arcaSync {
                     ArcaSectionCard(title: viewModel.language.localized("Cloud Upload Consent"), icon: "checkmark.shield.fill") {
                         Toggle(viewModel.language.localized("I consent to uploading end-to-end encrypted records for this Space"), isOn: $acceptCloudUpload)
-                            .font(.footnote.weight(.semibold))
+                            .arcaFont(.footnote, weight: .semibold)
                     }
                 }
 
@@ -1271,13 +1271,13 @@ public struct PrivacyAndEncryptionDetailsView: View {
 
                 ArcaSectionCard(title: viewModel.language.localized("Private sync content"), icon: "eye.slash.fill", iconTint: ArcaTheme.secondaryEmerald) {
                     Text(viewModel.language.localized("Record values, collection schemas and field labels are encrypted on this device before syncing. Forge receives encrypted changes and wrapped recovery keys. File attachments imported into Local-Only Spaces stay on this device unless you export them."))
-                        .font(.body)
+                        .arcaFont(.body)
                         .foregroundStyle(.secondary)
                 }
 
                 ArcaSectionCard(title: viewModel.language.localized("Metadata Visible to Sync Service"), icon: "server.rack") {
                     Text(viewModel.language.localized("• Account identifier and subscription entitlement tier\n• Enrolled device count and device labels\n• Encrypted blob byte sizes and opaque UUIDs\n• Request timestamps and sync cursors"))
-                        .font(.footnote)
+                        .arcaFont(.footnote)
                         .foregroundStyle(.secondary)
                 }
             }

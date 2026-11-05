@@ -107,6 +107,7 @@ struct ArcaPlanView: View {
             }
         }
         .navigationTitle(model.language.localized("Arca Pro"))
+        .arcaDefaultTypography()
         .environment(\.locale, model.language.locale)
         .environment(\.layoutDirection, model.language.layoutDirection)
         .task(id: "\(purchases.ready)-\(retry)-\(model.language.rawValue)") {

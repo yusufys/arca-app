@@ -163,11 +163,12 @@ final class UXFlowsTests: XCTestCase {
 
 // Build 7 redesign acceptance runs in a separate fixture app, never the production workspace.
 extension UXFlowsTests {
-    func redesignLaunch(_ screen: String, _ lang: String = "en", workspace: String = UUID().uuidString, dark: Bool = false, large: Bool = false) -> XCUIApplication {
+    func redesignLaunch(_ screen: String, _ lang: String = "en", workspace: String = UUID().uuidString, dark: Bool? = false, large: Bool = false) -> XCUIApplication {
         let app = XCUIApplication(bundleIdentifier: bundle)
         app.launchArguments = ["-arca.language", lang]
         if large { app.launchArguments += ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"] }
-        app.launchEnvironment = ["ARCA_API_BASE_URL": "http://127.0.0.1:19274", "ARCA_FLOW_SCREEN": screen, "ARCA_FIXTURE_WORKSPACE": workspace, "ARCA_FIXTURE_REDESIGN": "1", "ARCA_FIXTURE_DARK": dark ? "1" : "0"]
+        app.launchEnvironment = ["ARCA_API_BASE_URL": "http://127.0.0.1:19274", "ARCA_FLOW_SCREEN": screen, "ARCA_FIXTURE_WORKSPACE": workspace, "ARCA_FIXTURE_REDESIGN": "1"]
+        if let dark { app.launchEnvironment["ARCA_FIXTURE_DARK"] = dark ? "1" : "0" }
         app.launch()
         let loaded = NSPredicate { _, _ in app.staticTexts.count > 0 && !app.staticTexts["Loading fixture"].exists }
         expectation(for: loaded, evaluatedWith: app); waitForExpectations(timeout: 30)
@@ -257,6 +258,25 @@ extension UXFlowsTests {
 }
 
 extension UXFlowsTests {
+    func testRedesignAppearanceSurvivesRelaunch() {
+        continueAfterFailure = false
+        let workspace = UUID().uuidString
+        let app = redesignLaunch("settings", workspace: workspace, dark: nil)
+        let dark = app.buttons["settings.appearance.dark"]
+        reveal(app, dark); dark.tap()
+        XCTAssertTrue(dark.isSelected)
+        app.terminate()
+        let restored = redesignLaunch("settings", workspace: workspace, dark: nil)
+        let savedDark = restored.buttons["settings.appearance.dark"]
+        reveal(restored, savedDark)
+        XCTAssertTrue(savedDark.isSelected)
+        shot(restored, "redesign-appearance-restored")
+        restored.buttons["settings.appearance.light"].tap()
+        restored.terminate()
+    }
+
+    func testArabicTypographyOnboardingAndKeyboard() { onboarding("ar") }
+
     func testRedesignHomeActionsAndAIFirstCreation() {
         continueAfterFailure = false
         for action in ["add", "view", "edit"] {

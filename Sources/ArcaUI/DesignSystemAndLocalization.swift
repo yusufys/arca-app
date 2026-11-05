@@ -187,7 +187,7 @@ public struct ArcaPrimaryButtonStyle: ButtonStyle {
     public func makeBody(configuration: Configuration) -> some View {
         let activeTint = resolvedTint
         configuration.label
-            .font(.body.weight(.semibold))
+            .arcaFont(.body, weight: .semibold)
             .foregroundStyle(foreground)
             .frame(maxWidth: isFullWidth ? .infinity : nil)
             .padding(.horizontal, 18)
@@ -242,7 +242,7 @@ public struct ArcaSecondaryButtonStyle: ButtonStyle {
     public func makeBody(configuration: Configuration) -> some View {
         let activeTint = resolvedTint
         configuration.label
-            .font(.subheadline.weight(.semibold))
+            .arcaFont(.subheadline, weight: .semibold)
             .foregroundStyle(activeTint)
             .frame(maxWidth: isFullWidth ? .infinity : nil)
             .padding(.horizontal, 16)
@@ -300,7 +300,7 @@ public struct ArcaPillActionButton: View {
                         .font(.footnote.weight(.bold))
                 }
                 Text(language.localized(title))
-                    .font(.footnote.weight(.semibold))
+                    .arcaFont(.footnote, weight: .semibold)
             }
             .foregroundStyle(activeTint)
             .padding(.horizontal, 12)
@@ -363,7 +363,7 @@ public struct ArcaSectionCard<Content: View>: View {
                     }
                     Text(verbatim: title.uppercased(with: locale))
                         .accessibilityAddTraits(.isHeader)
-                        .font(.caption.weight(.bold))
+                        .arcaFont(.caption, weight: .bold)
                         .tracking(0.6)
                         .foregroundStyle(.secondary)
                     Spacer()
@@ -374,7 +374,7 @@ public struct ArcaSectionCard<Content: View>: View {
             VStack(alignment: .leading, spacing: 12) {
                 if let subtitle {
                     Text(verbatim: subtitle)
-                        .font(.caption)
+                        .arcaFont(.caption)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -425,12 +425,12 @@ public struct ArcaStyledTextField: View {
             if isSecure {
                 SecureField(placeholder, text: $text)
                     .textFieldStyle(.plain)
-                    .font(.body)
+                    .arcaFont(.body)
                     .accessibilityLabel(placeholder)
             } else {
                 TextField(placeholder, text: $text)
                     .textFieldStyle(.plain)
-                    .font(.body)
+                    .arcaFont(.body)
                     .accessibilityLabel(placeholder)
             }
             if !text.isEmpty {
@@ -484,7 +484,7 @@ public struct ArcaSearchBar: View {
 
             TextField(placeholder, text: $text)
                 .textFieldStyle(.plain)
-                .font(.body)
+                .arcaFont(.body)
 
             if !text.isEmpty {
                 Button {
@@ -581,10 +581,10 @@ public struct ArcaSheetHeaderBar: View {
 
     private var titleBlock: some View {
         VStack(spacing: 1) {
-            Text(verbatim: title).font(.body.weight(.bold))
+            Text(verbatim: title).arcaFont(.body, weight: .bold)
                 .accessibilityAddTraits(.isHeader)
             if let subtitle {
-                Text(verbatim: subtitle).font(.caption.weight(.medium)).foregroundStyle(.secondary)
+                Text(verbatim: subtitle).arcaFont(.caption, weight: .medium).foregroundStyle(.secondary)
             }
         }
         .fixedSize(horizontal: false, vertical: true)
@@ -594,7 +594,7 @@ public struct ArcaSheetHeaderBar: View {
         if let leadingLabel, let leadingAction {
             Button(action: leadingAction) {
                 Text(language.localized(leadingLabel))
-                    .font(.body.weight(.medium)).foregroundStyle(.secondary)
+                    .arcaFont(.body, weight: .medium).foregroundStyle(.secondary)
                     .padding(.horizontal, 10).padding(.vertical, 6)
                     .background(Capsule().fill(Color.secondary.opacity(0.10)))
                     .frame(minWidth: 44, minHeight: 44).contentShape(Rectangle())
@@ -606,7 +606,7 @@ public struct ArcaSheetHeaderBar: View {
         if let trailingLabel, let trailingAction {
             Button(action: trailingAction) {
                 Text(language.localized(trailingLabel))
-                    .font(.subheadline.weight(.semibold)).foregroundStyle(.white)
+                    .arcaFont(.subheadline, weight: .semibold).foregroundStyle(.white)
                     .padding(.horizontal, 14).padding(.vertical, 6)
                     .background(Capsule().fill(trailingDisabled ? Color.secondary.opacity(0.35) : resolvedAccentColor))
                     .frame(minWidth: 44, minHeight: 44).contentShape(Rectangle())
@@ -738,10 +738,10 @@ public struct OperationalStateBannerView: View {
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(language.localized(title))
-                    .font(.footnote.weight(.bold))
+                    .arcaFont(.footnote, weight: .bold)
                     .foregroundStyle(.primary)
                 Text(language.localized(subtitle))
-                    .font(.footnote)
+                    .arcaFont(.footnote)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -751,7 +751,7 @@ public struct OperationalStateBannerView: View {
             if let actionLabel, let onAction {
                 Button(action: onAction) {
                     Text(language.localized(actionLabel))
-                        .font(.footnote.weight(.bold))
+                        .arcaFont(.footnote, weight: .bold)
                         .foregroundStyle(.white)
                         .padding(.horizontal, 12)
                         .padding(.vertical, 6)

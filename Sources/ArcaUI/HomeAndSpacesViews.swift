@@ -212,7 +212,7 @@ public struct HomeScreenView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     HStack(spacing: 6) {
                         Text(spaceName)
-                            .font(.title2.weight(.bold))
+                            .arcaFont(.title2, weight: .bold)
                             .foregroundStyle(.primary)
                             .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 2)
                             .fixedSize(horizontal: false, vertical: true)
@@ -223,7 +223,7 @@ public struct HomeScreenView: View {
                     }
 
                     Text(subtitleText)
-                        .font(.caption.weight(.semibold))
+                        .arcaFont(.caption, weight: .semibold)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -247,7 +247,7 @@ public struct HomeScreenView: View {
                 Image(systemName: "rectangle.stack")
                     .font(.footnote.weight(.semibold))
                 Text(viewModel.language.localized("Spaces"))
-                    .font(.footnote.weight(.bold))
+                    .arcaFont(.footnote, weight: .bold)
             }
             .foregroundStyle(.primary)
             .padding(.horizontal, 12)
@@ -284,7 +284,7 @@ public struct HomeScreenView: View {
                     Image(systemName: "plus.rectangle.on.folder")
                         .font(.footnote.weight(.semibold))
                     Text(viewModel.language.localized("Manage Spaces…"))
-                        .font(.footnote.weight(.bold))
+                        .arcaFont(.footnote, weight: .bold)
                     Spacer()
                     Image(systemName: "chevron.forward")
                         .font(.caption.weight(.bold))
@@ -334,10 +334,10 @@ public struct HomeScreenView: View {
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(space.name)
-                        .font(.subheadline.weight(.bold))
+                        .arcaFont(.subheadline, weight: .bold)
                         .foregroundStyle(.primary)
                     Text(subtitle)
-                        .font(.caption)
+                        .arcaFont(.caption)
                         .foregroundStyle(.secondary)
 
                     if isSelected && dynamicTypeSize.isAccessibilitySize {
@@ -368,7 +368,7 @@ public struct HomeScreenView: View {
 
     private var currentSpaceBadge: some View {
         Text(viewModel.language.localized("Current"))
-            .font(.caption2.weight(.bold))
+            .arcaFont(.caption2, weight: .bold)
             .foregroundStyle(appForegroundTint)
             .padding(.horizontal, 9)
             .padding(.vertical, 4)
@@ -383,7 +383,7 @@ public struct HomeScreenView: View {
                 : AnyLayout(HStackLayout())
             headingLayout {
                 Text(ArcaStrings.text("home.collections", language: viewModel.language).uppercased(with: viewModel.language.locale))
-                    .font(.caption.weight(.bold))
+                    .arcaFont(.caption, weight: .bold)
                     .tracking(0.6)
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -393,7 +393,7 @@ public struct HomeScreenView: View {
                     creationMenuItems
                 } label: {
                     Label(ArcaStrings.text("home.newCollection", language: viewModel.language), systemImage: "plus")
-                        .font(.footnote.weight(.bold))
+                        .arcaFont(.footnote, weight: .bold)
                         .foregroundStyle(appForegroundTint)
                         .frame(minHeight: 44)
                         .contentShape(Rectangle())
@@ -412,9 +412,9 @@ public struct HomeScreenView: View {
                             .foregroundStyle(appForegroundTint)
                     }
                     Text(creationText("creation.emptyTitle"))
-                        .font(.body.weight(.bold))
+                        .arcaFont(.body, weight: .bold)
                     Text(creationText("creation.emptyBody"))
-                        .font(.footnote)
+                        .arcaFont(.footnote)
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
                     Button { showingAIAssistant = true } label: {
@@ -436,7 +436,7 @@ public struct HomeScreenView: View {
                                 .contentShape(Rectangle())
                         }
                     }
-                    .font(.footnote.weight(.semibold))
+                    .arcaFont(.footnote, weight: .semibold)
                     .foregroundStyle(appForegroundTint)
                     .buttonStyle(.plain)
                 }
@@ -517,7 +517,7 @@ public struct HomeScreenView: View {
                 Spacer()
 
                 Text("\(count)")
-                    .font(.footnote.weight(.bold))
+                    .arcaFont(.footnote, weight: .bold)
                     .foregroundStyle(.secondary)
                     .padding(.horizontal, 9)
                     .padding(.vertical, 4)
@@ -530,14 +530,14 @@ public struct HomeScreenView: View {
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(col.name)
-                    .font(.callout.weight(.bold))
+                    .arcaFont(.callout, weight: .bold)
                     .foregroundStyle(.primary)
                     .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 2)
                     .fixedSize(horizontal: false, vertical: true)
                     .multilineTextAlignment(.leading)
 
                 Text(fieldCountText)
-                    .font(.caption.weight(.medium))
+                    .arcaFont(.caption, weight: .medium)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -642,7 +642,7 @@ public struct HomeScreenView: View {
                     .overlay(Circle().strokeBorder(.white.opacity(0.24), lineWidth: 1))
                     .accessibilityHidden(true)
                 Text(viewModel.language.localized(title))
-                    .font(.caption2.weight(.bold))
+                    .arcaFont(.caption2, weight: .bold)
                     .foregroundStyle(.white)
             }
             .frame(minWidth: 44, minHeight: 62)
@@ -689,11 +689,11 @@ public struct HomeScreenView: View {
 
                 VStack(spacing: 3) {
                     Text(ArcaStrings.text("home.newCollection", language: viewModel.language))
-                        .font(.callout.weight(.bold))
+                        .arcaFont(.callout, weight: .bold)
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
                     Text(viewModel.language.localized("AI, Starter or Custom"))
-                        .font(.caption.weight(.medium))
+                        .arcaFont(.caption, weight: .medium)
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
                 }
@@ -735,7 +735,7 @@ public struct HomeScreenView: View {
                     .font(.caption.weight(.bold))
                     .foregroundStyle(ArcaTheme.warmAmber)
                 Text(ArcaStrings.text("home.favorites", language: viewModel.language).uppercased())
-                    .font(.caption.weight(.bold))
+                    .arcaFont(.caption, weight: .bold)
                     .tracking(0.6)
                     .foregroundStyle(.secondary)
             }
@@ -756,13 +756,13 @@ public struct HomeScreenView: View {
     private var recentRecordsSection: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text(ArcaStrings.text("home.recentRecords", language: viewModel.language).uppercased())
-                .font(.caption.weight(.bold))
+                .arcaFont(.caption, weight: .bold)
                 .tracking(0.6)
                 .foregroundStyle(.secondary)
 
             if viewModel.recentRecordsInCurrentSpace.isEmpty {
                 Text(viewModel.language.localized("Saved records will appear here for instant retrieval."))
-                    .font(.footnote)
+                    .arcaFont(.footnote)
                     .foregroundStyle(.secondary)
                     .padding(.vertical, 8)
             } else {
@@ -784,7 +784,7 @@ public struct HomeScreenView: View {
         let matches = viewModel.searchRecordsInCurrentSpace(queryText: viewModel.globalSearchText)
         return VStack(alignment: .leading, spacing: 12) {
             Text(viewModel.language.format("SEARCH RESULTS (%d)", matches.count))
-                .font(.caption.weight(.bold))
+                .arcaFont(.caption, weight: .bold)
                 .tracking(0.6)
                 .foregroundStyle(.secondary)
 
@@ -794,7 +794,7 @@ public struct HomeScreenView: View {
                         .font(.largeTitle)
                         .foregroundStyle(.secondary)
                     Text(viewModel.language.format("No matching records found for “%@”", viewModel.globalSearchText))
-                        .font(.subheadline.weight(.medium))
+                        .arcaFont(.subheadline, weight: .medium)
                         .foregroundStyle(.secondary)
                 }
                 .frame(maxWidth: .infinity)
@@ -845,7 +845,7 @@ public struct RecordRowCardView: View {
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 6) {
                     Text(record.title(using: schema))
-                        .font(.body.weight(.semibold))
+                        .arcaFont(.body, weight: .semibold)
                         .foregroundStyle(.primary)
                         .lineLimit(1)
                     if record.isFavorite {
@@ -863,7 +863,7 @@ public struct RecordRowCardView: View {
                 let sub = record.subtitle(using: schema, locale: locale)
                 HStack(spacing: 6) {
                     Text(schema.name)
-                        .font(.caption2.weight(.bold))
+                        .arcaFont(.caption2, weight: .bold)
                         .foregroundStyle(tint)
                         .padding(.horizontal, 6)
                         .padding(.vertical, 2)
@@ -871,7 +871,7 @@ public struct RecordRowCardView: View {
 
                     if !sub.isEmpty {
                         Text(sub)
-                            .font(.footnote)
+                            .arcaFont(.footnote)
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
                     }
@@ -971,7 +971,7 @@ public struct ManageSpacesSheetView: View {
 
                         VStack(alignment: .leading, spacing: 6) {
                             Text(viewModel.language.localized("Storage Mode"))
-                                .font(.footnote.weight(.semibold))
+                                .arcaFont(.footnote, weight: .semibold)
                                 .foregroundStyle(.secondary)
 
                             let choiceLayout = dynamicTypeSize.isAccessibilitySize
@@ -985,7 +985,7 @@ public struct ManageSpacesSheetView: View {
 
                         VStack(alignment: .leading, spacing: 6) {
                             Text(viewModel.language.localized("Space Icon"))
-                                .font(.footnote.weight(.semibold))
+                                .arcaFont(.footnote, weight: .semibold)
                                 .foregroundStyle(.secondary)
 
                             HStack(spacing: 8) {
@@ -1067,13 +1067,13 @@ public struct ManageSpacesSheetView: View {
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(space.name)
-                        .font(.body.weight(.bold))
+                        .arcaFont(.body, weight: .bold)
                     Text(subtitle)
-                        .font(.caption)
+                        .arcaFont(.caption)
                         .foregroundStyle(.secondary)
                     if isActive {
                         Text(viewModel.language.localized("Current"))
-                            .font(.caption2.weight(.bold))
+                            .arcaFont(.caption2, weight: .bold)
                             .foregroundStyle(.white)
                             .padding(.horizontal, 7)
                             .padding(.vertical, 2)
@@ -1133,7 +1133,7 @@ public struct ManageSpacesSheetView: View {
                 Image(systemName: icon)
                     .font(.footnote.weight(.semibold))
                 Text(label)
-                    .font(.footnote.weight(.semibold))
+                    .arcaFont(.footnote, weight: .semibold)
             }
             .foregroundStyle(selected ? .white : .primary)
             .padding(.vertical, 10)
@@ -1176,7 +1176,7 @@ public struct TemplateGallerySheetView: View {
 
             if let saveError {
                 Label(saveError, systemImage: "exclamationmark.circle")
-                    .font(.subheadline)
+                    .arcaFont(.subheadline)
                     .foregroundStyle(ArcaTheme.dangerRed)
                     .padding(.horizontal, 18)
                     .padding(.vertical, 10)
@@ -1188,7 +1188,7 @@ public struct TemplateGallerySheetView: View {
                     if let status = viewModel.catalogStatus {
                         ArcaSectionCard(title: creationText("creation.templateLibrary"), icon: "rectangle.stack") {
                             Text(viewModel.language.localized(status))
-                                .font(.subheadline)
+                                .arcaFont(.subheadline)
                                 .foregroundStyle(.secondary)
                             Button(creationText("creation.retry")) {
                                 Task { await viewModel.refreshSuggestedTemplates() }
@@ -1198,7 +1198,7 @@ public struct TemplateGallerySheetView: View {
                     }
                     if viewModel.suggestedTemplates.isEmpty {
                         Text(creationText("creation.noTemplates"))
-                            .font(.subheadline)
+                            .arcaFont(.subheadline)
                             .foregroundStyle(.secondary)
                         if viewModel.catalogStatus == nil {
                             Button(creationText("creation.retry")) {
@@ -1223,10 +1223,10 @@ public struct TemplateGallerySheetView: View {
                                 VStack(alignment: .leading, spacing: 3) {
                                     HStack(spacing: 6) {
                                         Text(template.name)
-                                            .font(.body.weight(.bold))
+                                            .arcaFont(.body, weight: .bold)
                                         if template.sensitivityPosture == .elevatedLocalDefault {
                                             Text(viewModel.language.localized("Sensitive • Local Default"))
-                                                .font(.caption2.weight(.bold))
+                                                .arcaFont(.caption2, weight: .bold)
                                                 .padding(.horizontal, 7)
                                                 .padding(.vertical, 3)
                                                 .background(Capsule().fill(ArcaTheme.plumSensitive.opacity(0.15)))
@@ -1234,7 +1234,7 @@ public struct TemplateGallerySheetView: View {
                                         }
                                     }
                                     Text(template.subtitle)
-                                        .font(.footnote)
+                                        .arcaFont(.footnote)
                                         .foregroundStyle(.secondary)
                                 }
                                 Spacer()
@@ -1242,7 +1242,7 @@ public struct TemplateGallerySheetView: View {
 
                             if let disclosure = template.sensitivityDisclosure {
                                 Text(disclosure)
-                                    .font(.caption)
+                                    .arcaFont(.caption)
                                     .foregroundStyle(.secondary)
                                     .padding(10)
                                     .background(RoundedRectangle(cornerRadius: 10).fill(ArcaTheme.plumSensitive.opacity(0.08)))
@@ -1405,9 +1405,9 @@ public struct ManualCollectionBuilderSheetView: View {
 
                                     VStack(alignment: .leading, spacing: 2) {
                                         Text(field.label)
-                                            .font(.subheadline.weight(.semibold))
+                                            .arcaFont(.subheadline, weight: .semibold)
                                         Text(ArcaStrings.text("field.type." + field.type.rawValue, language: viewModel.language) + (field.isRequired ? " • " + viewModel.language.localized("Required") : ""))
-                                            .font(.caption)
+                                            .arcaFont(.caption)
                                             .foregroundStyle(.secondary)
                                     }
 
@@ -1440,7 +1440,7 @@ public struct ManualCollectionBuilderSheetView: View {
 
                         HStack {
                             Text(viewModel.language.localized("Field Type"))
-                                .font(.footnote.weight(.medium))
+                                .arcaFont(.footnote, weight: .medium)
                             Spacer()
                             Picker(viewModel.language.localized("Field Type"), selection: $newFieldType) {
                                 ForEach(FieldType.allCases, id: \.self) { t in
@@ -1451,7 +1451,7 @@ public struct ManualCollectionBuilderSheetView: View {
                         }
 
                         Toggle(viewModel.language.localized("Required Field"), isOn: $newFieldRequired)
-                            .font(.footnote.weight(.medium))
+                            .arcaFont(.footnote, weight: .medium)
 
                         if newFieldType == .singleSelect || newFieldType == .multiSelect {
                             ArcaStyledTextField(viewModel.language.localized("Choices (comma-separated, e.g., Active, Expired)"), text: $newSelectOptionsComma, icon: "list.bullet")

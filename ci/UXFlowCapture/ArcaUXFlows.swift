@@ -17,14 +17,17 @@ struct ArcaUXFlows: App {
                 else { ProgressView("Loading fixture") }
             }
             .arcaApplyAppAccentEnvironment()
+            .arcaDefaultTypography()
             .environment(\.arcaSubscriptionScreen, AnyView(ArcaPlanView(purchases: purchases, model: model)))
             .environment(\.locale, model.language.locale)
             .environment(\.layoutDirection, model.language.layoutDirection)
-            .preferredColorScheme(ProcessInfo.processInfo.environment["ARCA_FIXTURE_DARK"] == "1" ? .dark : .light)
+            .preferredColorScheme(model.appearanceMode.colorScheme)
             .background(KeyboardDismissal())
             .task {
                 await model.bootstrapIfNeeded()
-                model.appearanceMode = ProcessInfo.processInfo.environment["ARCA_FIXTURE_DARK"] == "1" ? .dark : .light
+                if let dark = ProcessInfo.processInfo.environment["ARCA_FIXTURE_DARK"] {
+                    model.appearanceMode = dark == "1" ? .dark : .light
+                }
                 await model.refreshSuggestedTemplates()
                 if scenario != "onboarding" && !model.hasCompletedOnboarding {
                     await model.finishOnboarding(defaultMode: .localOnly, acceptedCloudTerms: false, selectedTemplates: model.suggestedTemplates)

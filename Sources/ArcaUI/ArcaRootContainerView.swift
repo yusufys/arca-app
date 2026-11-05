@@ -39,6 +39,7 @@ public struct ArcaRootContainerView: View {
         #if os(macOS)
         macStudioContainer
             .arcaApplyAppAccentEnvironment()
+            .arcaDefaultTypography()
             .onChange(of: scenePhase, initial: true) { _, phase in viewModel.handleScenePhase(phase, sceneId: sceneIdentifier) }
             .onDisappear { viewModel.forgetScene(sceneIdentifier) }
             .preferredColorScheme(viewModel.appearanceMode.colorScheme)
@@ -48,6 +49,7 @@ public struct ArcaRootContainerView: View {
         #else
         mobileScreenContent
             .arcaApplyAppAccentEnvironment()
+            .arcaDefaultTypography()
             .preferredColorScheme(viewModel.appearanceMode.colorScheme)
             .transaction { if reduceMotion { $0.animation = nil; $0.disablesAnimations = true } }
             .environment(\.layoutDirection, viewModel.language.layoutDirection)
@@ -70,7 +72,7 @@ public struct ArcaRootContainerView: View {
 
             if let error = viewModel.storageStartupError {
                 VStack(spacing: 12) {
-                    Text(viewModel.language.localized("Your workspace could not be opened")).font(.headline)
+                    Text(viewModel.language.localized("Your workspace could not be opened")).arcaFont(.headline)
                     Text(error)
                     Text(viewModel.language.localized("Unlock the device and reopen Arca to try again."))
                 }.padding()
@@ -155,7 +157,7 @@ public struct ArcaRootContainerView: View {
 
                     if badgeCount > 0 {
                         Text("\(badgeCount)")
-                            .font(.caption2.weight(.bold))
+                            .arcaFont(.caption2, weight: .bold)
                             .foregroundStyle(.white)
                             .padding(.horizontal, 5)
                             .padding(.vertical, 1)
@@ -165,7 +167,7 @@ public struct ArcaRootContainerView: View {
                 }
 
                 Text(title)
-                    .font(.caption.weight(isSelected ? .bold : .semibold))
+                    .arcaFont(.caption, weight: isSelected ? .bold : .semibold)
                     .foregroundStyle(isSelected ? labelTint : .secondary)
                     .multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true)
@@ -202,7 +204,7 @@ public struct ArcaRootContainerView: View {
                         Image(systemName: "iphone.gen3")
                             .foregroundStyle(.white.opacity(0.85))
                         Text("Arca iOS Simulator Viewport")
-                            .font(.footnote.weight(.semibold))
+                            .arcaFont(.footnote, weight: .semibold)
                             .foregroundStyle(.white.opacity(0.85))
                     }
 
@@ -211,7 +213,7 @@ public struct ArcaRootContainerView: View {
                     // Quick Space pill switcher in studio bar
                     if viewModel.hasCompletedOnboarding, let space = viewModel.currentSpace {
                         Text("\(space.name) • \(space.storageMode == .arcaSync ? viewModel.language.localized("Arca Sync") : viewModel.language.localized("Local Only"))")
-                            .font(.caption.weight(.medium))
+                            .arcaFont(.caption, weight: .medium)
                             .foregroundStyle(.white.opacity(0.7))
                             .padding(.horizontal, 10)
                             .padding(.vertical, 4)
@@ -227,7 +229,7 @@ public struct ArcaRootContainerView: View {
                             Image(systemName: useiPhoneBezelOnMac ? "arrow.up.left.and.arrow.down.right" : "iphone")
                                 .font(.caption.weight(.semibold))
                             Text(useiPhoneBezelOnMac ? "Expand Window" : "iPhone Frame")
-                                .font(.caption.weight(.semibold))
+                                .arcaFont(.caption, weight: .semibold)
                         }
                         .foregroundStyle(.white)
                         .padding(.horizontal, 10)
@@ -292,7 +294,7 @@ public struct ArcaRootContainerView: View {
     private var iOSStatusBar: some View {
         HStack {
             Text("9:41")
-                .font(.subheadline.weight(.semibold))
+                .arcaFont(.subheadline, weight: .semibold)
                 .foregroundStyle(effectiveColorScheme == .dark ? .white : .black)
                 .frame(width: 68, alignment: .leading)
 
@@ -342,10 +344,10 @@ public struct ArcaRootContainerView: View {
 
             VStack(spacing: 8) {
                 Text(viewModel.language.localized("Arca is Locked"))
-                    .font(.title2.bold())
+                    .arcaFont(.title2, weight: .bold)
 
                 Text(viewModel.language.localized("Authenticate to open your records."))
-                    .font(.subheadline)
+                    .arcaFont(.subheadline)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
                     .padding(.horizontal, 24)
@@ -360,7 +362,7 @@ public struct ArcaRootContainerView: View {
             .padding(.horizontal, 36)
             .disabled(viewModel.appLock.isAuthenticating)
             if let error = viewModel.appLock.errorMessage {
-                Text(error).font(.footnote).foregroundStyle(.secondary).multilineTextAlignment(.center)
+                Text(error).arcaFont(.footnote).foregroundStyle(.secondary).multilineTextAlignment(.center)
             }
 
             Spacer()

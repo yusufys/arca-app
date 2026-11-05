@@ -34,7 +34,7 @@ public struct OnboardingContainerView: View {
                         }
                         if !dynamicTypeSize.isAccessibilitySize {
                             Text(ArcaStrings.text("app.name", language: viewModel.language))
-                                .font(.headline.weight(.bold))
+                                .arcaFont(.headline, weight: .bold)
                         }
                     }
 
@@ -43,7 +43,7 @@ public struct OnboardingContainerView: View {
                     Text(viewModel.language.format("Step %d of 4", currentStep))
                         .fixedSize(horizontal: false, vertical: true)
                         .multilineTextAlignment(.center)
-                        .font(.footnote.weight(.semibold))
+                        .arcaFont(.footnote, weight: .semibold)
                         .foregroundStyle(.secondary)
 
                     Spacer()
@@ -62,7 +62,7 @@ public struct OnboardingContainerView: View {
                                 .font(.footnote.weight(.semibold))
                             if !dynamicTypeSize.isAccessibilitySize {
                                 Text(viewModel.language.rawValue.uppercased())
-                                    .font(.footnote.weight(.bold))
+                                    .arcaFont(.footnote, weight: .bold)
                             }
                         }
                         .foregroundStyle(ArcaTheme.accent)
@@ -132,11 +132,11 @@ public struct OnboardingContainerView: View {
 
                     VStack(alignment: .leading, spacing: 6) {
                         Text(ArcaStrings.text("app.tagline", language: viewModel.language))
-                            .font(.largeTitle.weight(.bold))
+                            .arcaFont(.largeTitle, weight: .bold)
                             .foregroundStyle(.primary)
 
                         Text(ArcaStrings.text("app.heroPrompt", language: viewModel.language))
-                            .font(.body)
+                            .arcaFont(.body)
                             .foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
                     }
@@ -211,11 +211,11 @@ public struct OnboardingContainerView: View {
             VStack(alignment: .leading, spacing: 18) {
                 VStack(alignment: .leading, spacing: 6) {
                     Text(viewModel.language.localized("Set Up Arca Sync & Recovery Key"))
-                        .font(.title2.weight(.bold))
+                        .arcaFont(.title2, weight: .bold)
                         .accessibilityAddTraits(.isHeader)
 
                     Text(viewModel.language.localized("Your account password signs you in, while your Recovery Key decrypts your records if you ever lose all enrolled devices."))
-                        .font(.subheadline)
+                        .arcaFont(.subheadline)
                         .foregroundStyle(.secondary)
                 }
 
@@ -253,11 +253,11 @@ public struct OnboardingContainerView: View {
             VStack(alignment: .leading, spacing: 16) {
                 VStack(alignment: .leading, spacing: 6) {
                     Text(viewModel.language.localized("Choose Starter Collections"))
-                        .font(.title2.weight(.bold))
+                        .arcaFont(.title2, weight: .bold)
                         .accessibilityAddTraits(.isHeader)
 
                     Text(viewModel.language.localized("Choose the collections to copy into your Space, or start with an empty Space."))
-                        .font(.subheadline)
+                        .arcaFont(.subheadline)
                         .foregroundStyle(.secondary)
                 }
 
@@ -289,10 +289,10 @@ public struct OnboardingContainerView: View {
 
                                 VStack(alignment: .leading, spacing: 3) {
                                     Text(template.name)
-                                        .font(.body.weight(.bold))
+                                        .arcaFont(.body, weight: .bold)
                                         .foregroundStyle(.primary)
                                     Text(template.subtitle)
-                                        .font(.footnote)
+                                        .arcaFont(.footnote)
                                         .foregroundStyle(.secondary)
                                         .multilineTextAlignment(.leading)
                                 }
@@ -306,7 +306,7 @@ public struct OnboardingContainerView: View {
 
                             if let disclosure = template.sensitivityDisclosure {
                                 Text(disclosure)
-                                    .font(.caption)
+                                    .arcaFont(.caption)
                                     .foregroundStyle(.secondary)
                                     .padding(10)
                                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -375,9 +375,9 @@ public struct OnboardingContainerView: View {
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(title)
-                    .font(.subheadline.weight(.bold))
+                    .arcaFont(.subheadline, weight: .bold)
                 Text(subtitle)
-                    .font(.footnote)
+                    .arcaFont(.footnote)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -415,11 +415,11 @@ public struct StorageModeComparisonStepView: View {
             VStack(alignment: .leading, spacing: 16) {
                 VStack(alignment: .leading, spacing: 6) {
                     Text(ArcaStrings.text("storage.title", language: language))
-                        .font(.title2.weight(.bold))
+                        .arcaFont(.title2, weight: .bold)
                         .accessibilityAddTraits(.isHeader)
 
                     Text(language.localized("Arca Sync is the default cloud-synced E2EE mode for new Spaces. Local-Only is always available whenever you want records never to leave this phone."))
-                        .font(.subheadline)
+                        .arcaFont(.subheadline)
                         .foregroundStyle(.secondary)
                 }
 
@@ -460,10 +460,10 @@ public struct StorageModeComparisonStepView: View {
 
                             VStack(alignment: .leading, spacing: 3) {
                                 Text(language.localized("I understand and accept encrypted cloud storage for synced Spaces"))
-                                    .font(.subheadline.weight(.semibold))
+                                    .arcaFont(.subheadline, weight: .semibold)
                                     .foregroundStyle(.primary)
                                 Text(language.localized("The sync service handles your account details, enrolled devices and their public keys, record identifiers, encrypted sizes and sync activity."))
-                                    .font(.caption)
+                                    .arcaFont(.caption)
                                     .foregroundStyle(.secondary)
                                     .multilineTextAlignment(.leading)
                             }
@@ -535,13 +535,13 @@ public struct StorageModeComparisonStepView: View {
                     }
 
                     Text(title)
-                        .font(.body.weight(.bold))
+                        .arcaFont(.body, weight: .bold)
                         .foregroundStyle(.primary)
 
                     Spacer()
 
                     Text(badge)
-                        .font(.caption2.weight(.bold))
+                        .arcaFont(.caption2, weight: .bold)
                         .padding(.horizontal, 8)
                         .padding(.vertical, 4)
                         .background(Capsule().fill(tint.opacity(0.14)))
@@ -555,7 +555,7 @@ public struct StorageModeComparisonStepView: View {
                             .frame(width: 5, height: 5)
                             .padding(.top, 5)
                         Text(bullet)
-                            .font(.footnote)
+                            .arcaFont(.footnote)
                             .foregroundStyle(.secondary)
                             .multilineTextAlignment(.leading)
                     }
