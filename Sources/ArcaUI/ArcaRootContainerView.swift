@@ -13,6 +13,8 @@ public struct ArcaRootContainerView: View {
     @ViewState private var selectedTab: Int = 0
     @ViewState private var useiPhoneBezelOnMac: Bool = true
     @ViewState private var sceneIdentifier = UUID()
+    @AppStorage(AppAppearancePreferencesStore.accentColorDefaultsKey)
+    private var storedAccentHex: String = AppAccentColorOption.defaultOption.rawValue
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.colorScheme) private var systemColorScheme
@@ -25,9 +27,18 @@ public struct ArcaRootContainerView: View {
         viewModel.appearanceMode.colorScheme ?? systemColorScheme
     }
 
+    private var appAccentOption: AppAccentColorOption {
+        AppAccentColorOption.resolve(from: storedAccentHex)
+    }
+
+    private var appAccentColor: Color {
+        appAccentOption.color
+    }
+
     public var body: some View {
         #if os(macOS)
         macStudioContainer
+            .arcaApplyAppAccentEnvironment()
             .onChange(of: scenePhase, initial: true) { _, phase in viewModel.handleScenePhase(phase, sceneId: sceneIdentifier) }
             .onDisappear { viewModel.forgetScene(sceneIdentifier) }
             .preferredColorScheme(viewModel.appearanceMode.colorScheme)
@@ -36,6 +47,7 @@ public struct ArcaRootContainerView: View {
             .environment(\.locale, viewModel.language.locale)
         #else
         mobileScreenContent
+            .arcaApplyAppAccentEnvironment()
             .preferredColorScheme(viewModel.appearanceMode.colorScheme)
             .transaction { if reduceMotion { $0.animation = nil; $0.disablesAnimations = true } }
             .environment(\.layoutDirection, viewModel.language.layoutDirection)
@@ -99,7 +111,7 @@ public struct ArcaRootContainerView: View {
             tabBarButton(
                 index: 1,
                 title: ArcaStrings.text("tab.insights", language: viewModel.language),
-                icon: "chart.bar.xaxis",
+                icon: selectedTab == 1 ? "chart.bar.fill" : "chart.bar.xaxis",
                 badgeCount: 0
             )
             tabBarButton(
@@ -113,8 +125,7 @@ public struct ArcaRootContainerView: View {
         .padding(.top, 8)
         .padding(.bottom, 6)
         .background(
-            ArcaTheme.cardBackground(for: effectiveColorScheme)
-                .opacity(0.96)
+            ArcaTheme.tabBarBackground(for: effectiveColorScheme)
         )
         .overlay(alignment: .top) {
             Rectangle()
@@ -125,20 +136,21 @@ public struct ArcaRootContainerView: View {
 
     private func tabBarButton(index: Int, title: String, icon: String, badgeCount: Int) -> some View {
         let isSelected = selectedTab == index
+        let labelTint = appAccentOption.foregroundTint(for: effectiveColorScheme)
         return Button {
-            withAnimation(.spring(response: 0.26, dampingFraction: 0.82)) {
+            withAnimation(reduceMotion ? nil : .spring(response: 0.26, dampingFraction: 0.82)) {
                 selectedTab = index
             }
         } label: {
             VStack(spacing: 4) {
                 ZStack(alignment: .topTrailing) {
                     Image(systemName: icon)
-                        .font(.system(size: 18, weight: isSelected ? .bold : .medium))
-                        .foregroundStyle(isSelected ? ArcaTheme.accent : .secondary)
-                        .frame(width: 48, height: 28)
+                        .font(.system(size: 16, weight: isSelected ? .bold : .medium))
+                        .foregroundStyle(isSelected ? .white : .secondary)
+                        .frame(width: 48, height: 26)
                         .background(
                             Capsule()
-                                .fill(isSelected ? ArcaTheme.accent.opacity(0.14) : .clear)
+                                .fill(isSelected ? appAccentColor : .clear)
                         )
 
                     if badgeCount > 0 {
@@ -153,10 +165,11 @@ public struct ArcaRootContainerView: View {
                 }
 
                 Text(title)
-                    .font(.caption.weight(isSelected ? .bold : .medium))
-                    .foregroundStyle(isSelected ? ArcaTheme.accent : .secondary)
+                    .font(.caption.weight(isSelected ? .bold : .semibold))
+                    .foregroundStyle(isSelected ? labelTint : .secondary)
+                    .lineLimit(1)
             }
-            .frame(maxWidth: .infinity)
+            .frame(maxWidth: .infinity, minHeight: 44)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -318,11 +331,11 @@ public struct ArcaRootContainerView: View {
 
             ZStack {
                 Circle()
-                    .fill(ArcaTheme.accent.opacity(0.12))
+                    .fill(appAccentColor.opacity(0.12))
                     .frame(width: 96, height: 96)
                 Image(systemName: "faceid")
                     .font(.system(size: 44, weight: .medium))
-                    .foregroundStyle(ArcaTheme.accent)
+                    .foregroundStyle(appAccentOption.foregroundTint(for: effectiveColorScheme))
             }
 
             VStack(spacing: 8) {
@@ -341,7 +354,7 @@ public struct ArcaRootContainerView: View {
             } label: {
                 Label(viewModel.language.localized("Unlock Arca"), systemImage: "lock.open.fill")
             }
-            .buttonStyle(ArcaPrimaryButtonStyle(tint: ArcaTheme.accent, isFullWidth: true))
+            .buttonStyle(ArcaPrimaryButtonStyle(tint: appAccentColor, isFullWidth: true))
             .padding(.horizontal, 36)
             .disabled(viewModel.appLock.isAuthenticating)
             if let error = viewModel.appLock.errorMessage {
