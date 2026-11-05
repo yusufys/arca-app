@@ -8,12 +8,22 @@ public struct HomeScreenView: View {
     @Bindable var viewModel: ArcaAppViewModel
 
     @ViewState private var showingSpaceManager = false
+    @ViewState private var showingSpacePicker = false
     @ViewState private var showingTemplateGallery = false
     @ViewState private var showingAIAssistant = false
     @ViewState private var showingManualBuilder = false
     @ViewState private var activeRecordSheetCollection: CollectionSchema?
+    @ViewState private var viewingCollection: CollectionSchema?
+    @ViewState private var editingSettingsCollection: CollectionSchema?
+    @ViewState private var activeClusterCollectionId: UUID?
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.arcaAppAccentColor) private var appAccentColor
+    @Environment(\.arcaAppAccentOption) private var appAccentOption
+
+    private var appForegroundTint: Color {
+        appAccentOption.foregroundTint(for: colorScheme)
+    }
 
     public init(viewModel: ArcaAppViewModel) {
         self.viewModel = viewModel
@@ -23,16 +33,18 @@ public struct HomeScreenView: View {
         NavigationStack {
             ScrollView(showsIndicators: false) {
                 VStack(alignment: .leading, spacing: 18) {
-                    // Custom iOS Large Title Header + Quick Actions
+                    // Redesigned Space Header + Quick Space Switcher
                     homeHeaderBar
+
+                    if showingSpacePicker {
+                        inlineSpacePickerCard
+                            .transition(.opacity.combined(with: .move(edge: .top)))
+                    }
 
                     // Operational state banner (offline, conflict, quota, etc.)
                     OperationalStateBannerView(state: viewModel.bannerState) {
                         viewModel.handleBannerAction()
                     }
-
-                    // Space Switcher Strip
-                    spaceSwitcherCard
 
                     // Native-feel Embedded Search Bar
                     ArcaSearchBar(
@@ -59,177 +71,289 @@ public struct HomeScreenView: View {
                 .padding(.horizontal, 18)
                 .padding(.top, 14)
                 .padding(.bottom, 28)
+                .contentShape(Rectangle())
+                .simultaneousGesture(
+                    TapGesture().onEnded {
+                        if activeClusterCollectionId != nil {
+                            withAnimation(.spring(response: 0.22, dampingFraction: 0.85)) {
+                                activeClusterCollectionId = nil
+                            }
+                        }
+                    }
+                )
             }
             .background(ArcaTheme.canvasBackground(for: colorScheme))
             #if os(iOS)
             .toolbar(.hidden, for: .navigationBar)
             #endif
+            .navigationDestination(item: $viewingCollection) { col in
+                CollectionRecordListView(
+                    viewModel: viewModel,
+                    schema: viewModel.schema(for: col.id) ?? col
+                )
+            }
+            .navigationDestination(item: $editingSettingsCollection) { col in
+                CollectionSettingsView(
+                    viewModel: viewModel,
+                    schema: viewModel.schema(for: col.id) ?? col
+                )
+            }
             .sheet(isPresented: $showingSpaceManager) {
                 ManageSpacesSheetView(viewModel: viewModel)
+                    .arcaApplyAppAccentEnvironment()
                     .frame(minWidth: 370, idealWidth: 400, minHeight: 580, idealHeight: 680)
             }
             .sheet(isPresented: $showingAIAssistant) {
                 AICollectionAssistantSheetView(viewModel: viewModel)
+                    .arcaApplyAppAccentEnvironment()
                     .frame(minWidth: 370, idealWidth: 400, minHeight: 580, idealHeight: 680)
             }
             .sheet(isPresented: $showingTemplateGallery) {
                 TemplateGallerySheetView(viewModel: viewModel)
+                    .arcaApplyAppAccentEnvironment()
                     .frame(minWidth: 370, idealWidth: 400, minHeight: 580, idealHeight: 680)
             }
             .sheet(isPresented: $showingManualBuilder) {
                 ManualCollectionBuilderSheetView(viewModel: viewModel)
+                    .arcaApplyAppAccentEnvironment()
                     .frame(minWidth: 370, idealWidth: 400, minHeight: 580, idealHeight: 680)
             }
-            .sheet(item: $activeRecordSheetCollection) { col in
-                AddEditRecordSheetView(viewModel: viewModel, schema: col, existingRecord: nil)
-                    .frame(minWidth: 370, idealWidth: 400, minHeight: 580, idealHeight: 680)
+            .modifier(
+                CollectionAddRecordPresenter(
+                    viewModel: viewModel,
+                    schema: $activeRecordSheetCollection
+                )
+            )
+            .onChange(of: viewModel.currentSpaceId) { _, _ in
+                activeClusterCollectionId = nil
+                showingSpacePicker = false
             }
         }
+        .arcaApplyAppAccentEnvironment()
     }
 
     private func creationText(_ key: String) -> String {
         ArcaStrings.text(key, language: viewModel.language)
     }
 
+    private func storageModeSubtitle(for mode: SpaceStorageMode) -> String {
+        switch mode {
+        case .arcaSync:
+            return viewModel.language.localized("Arca Sync (E2EE)")
+        case .localOnly:
+            return viewModel.language.localized("On This Device Only")
+        case .personalCloudBackup:
+            return viewModel.language.localized("Personal Cloud Backup")
+        }
+    }
+
     private var homeHeaderBar: some View {
-        HStack(alignment: .center) {
-            VStack(alignment: .leading, spacing: 3) {
-                if let current = viewModel.currentSpace {
-                    storageModePill(for: current.storageMode)
-                }
-                Text(viewModel.currentSpace?.name ?? ArcaStrings.text("app.name", language: viewModel.language))
-                    .font(.largeTitle.weight(.bold))
-                    .foregroundStyle(.primary)
-            }
+        let current = viewModel.currentSpace
+        let spaceName = current?.name ?? ArcaStrings.text("app.name", language: viewModel.language)
+        let spaceIcon = current?.iconName ?? "house.fill"
+        let collectionCountText = viewModel.language.format("count.collections", viewModel.collectionsInCurrentSpace.count)
+        let storageText = current.map { storageModeSubtitle(for: $0.storageMode) } ?? ""
+        let subtitleText = storageText.isEmpty ? collectionCountText : "\(collectionCountText) · \(storageText)"
 
-            Spacer()
-
-            HStack(spacing: 8) {
-                if let firstCol = viewModel.collectionsInCurrentSpace.first {
-                    Button {
-                        activeRecordSheetCollection = firstCol
-                    } label: {
-                        HStack(spacing: 5) {
-                            Image(systemName: "plus")
-                                .font(.footnote.weight(.bold))
-                            Text(ArcaStrings.text("home.quickAddRecord", language: viewModel.language))
-                                .font(.footnote.weight(.semibold))
-                        }
-                        .foregroundStyle(.white)
-                        .padding(.horizontal, 13)
-                        .padding(.vertical, 8)
-                        .background(Capsule().fill(ArcaTheme.accent))
-                        .shadow(color: ArcaTheme.accent.opacity(0.24), radius: 6, x: 0, y: 3)
-                    }
-                    .buttonStyle(.plain)
-                }
-
-                Menu {
-                    Button {
-                        showingAIAssistant = true
-                    } label: {
-                        Label(creationText("creation.aiMenu"), systemImage: "sparkles")
-                    }
-                    Button {
-                        showingTemplateGallery = true
-                    } label: {
-                        Label(creationText("creation.templatesMenu"), systemImage: "sparkles.rectangle.stack")
-                    }
-                    Button {
-                        showingManualBuilder = true
-                    } label: {
-                        Label(creationText("creation.manualMenu"), systemImage: "slider.horizontal.3")
-                    }
-                    Divider()
-                    Button {
-                        showingSpaceManager = true
-                    } label: {
-                        Label(viewModel.language.localized("Manage Spaces…"), systemImage: "rectangle.stack.fill")
-                    }
-                } label: {
-                    Image(systemName: "ellipsis.circle.fill")
-                        .font(.title)
-                        .foregroundStyle(ArcaTheme.accent)
-                        .frame(width: 34, height: 34)
-                }
-                .buttonStyle(.plain)
-            }
-        }
-    }
-
-    private var spaceSwitcherCard: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
-                ForEach(viewModel.spaces) { space in
-                    let isSelected = space.id == viewModel.currentSpaceId
-                    let spaceTint = ArcaTheme.color(fromHex: space.accentHex)
-                    Button {
-                        Task { await viewModel.selectSpace(space.id) }
-                    } label: {
-                        HStack(spacing: 7) {
-                            Image(systemName: space.iconName)
-                                .font(.footnote.weight(.semibold))
-                            Text(space.name)
-                                .font(.footnote.weight(.semibold))
-                            if space.storageMode == .localOnly {
-                                Image(systemName: "lock.fill")
-                                    .font(.caption2)
-                                    .opacity(0.75)
-                            }
-                        }
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 9)
-                        .background(
-                            Capsule().fill(
-                                isSelected
-                                    ? spaceTint
-                                    : ArcaTheme.cardBackground(for: colorScheme)
-                            )
-                        )
-                        .overlay(
-                            Capsule().strokeBorder(
-                                isSelected ? Color.clear : ArcaTheme.cardBorder(for: colorScheme),
-                                lineWidth: 1
-                            )
-                        )
-                        .foregroundStyle(isSelected ? .white : .primary)
-                        .shadow(color: isSelected ? spaceTint.opacity(0.25) : .clear, radius: 6, x: 0, y: 3)
-                    }
-                    .buttonStyle(.plain)
-                }
-
-                Button {
-                    showingSpaceManager = true
-                } label: {
-                    HStack(spacing: 5) {
-                        Image(systemName: "plus.rectangle.on.folder")
-                            .font(.caption.weight(.semibold))
-                        Text(viewModel.language.localized("Spaces"))
-                            .font(.footnote.weight(.semibold))
-                    }
-                    .foregroundStyle(.secondary)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 9)
-                    .background(
-                        Capsule().strokeBorder(Color.secondary.opacity(0.25), lineWidth: 1)
+        return Group {
+            if dynamicTypeSize.isAccessibilitySize {
+                VStack(alignment: .leading, spacing: 10) {
+                    spaceHeaderSelectorButton(
+                        spaceName: spaceName,
+                        spaceIcon: spaceIcon,
+                        subtitleText: subtitleText
                     )
+                    spacesTrailingButton
                 }
-                .buttonStyle(.plain)
+            } else {
+                HStack(alignment: .center, spacing: 12) {
+                    spaceHeaderSelectorButton(
+                        spaceName: spaceName,
+                        spaceIcon: spaceIcon,
+                        subtitleText: subtitleText
+                    )
+
+                    Spacer(minLength: 8)
+
+                    spacesTrailingButton
+                }
             }
         }
     }
 
-    private func storageModePill(for mode: SpaceStorageMode) -> some View {
-        let isLocal = mode == .localOnly
-        let tint = isLocal ? ArcaTheme.secondaryEmerald : ArcaTheme.accent
-        return HStack(spacing: 5) {
-            Image(systemName: mode == .arcaSync ? "checkmark.icloud.fill" : (isLocal ? "internaldrive.fill" : "externaldrive.fill.badge.icloud"))
-                .font(.caption2.weight(.bold))
-            Text(viewModel.language.localized(mode == .arcaSync ? "Arca Sync (E2EE)" : (isLocal ? "On This Device Only" : "Personal Cloud Backup")))
-                .font(.caption2.weight(.bold))
-                .tracking(0.4)
+    private func spaceHeaderSelectorButton(
+        spaceName: String,
+        spaceIcon: String,
+        subtitleText: String
+    ) -> some View {
+        Button {
+            withAnimation(.spring(response: 0.25, dampingFraction: 0.82)) {
+                activeClusterCollectionId = nil
+                showingSpacePicker.toggle()
+            }
+        } label: {
+            HStack(spacing: 12) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .fill(appAccentColor)
+                        .frame(width: 44, height: 44)
+                        .shadow(color: appAccentColor.opacity(0.24), radius: 7, x: 0, y: 4)
+                    Image(systemName: spaceIcon)
+                        .font(.headline.weight(.semibold))
+                        .foregroundStyle(.white)
+                }
+
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(spacing: 6) {
+                        Text(spaceName)
+                            .font(.title2.weight(.bold))
+                            .foregroundStyle(.primary)
+                            .lineLimit(1)
+                        Image(systemName: showingSpacePicker ? "chevron.up" : "chevron.down")
+                            .font(.caption.weight(.bold))
+                            .foregroundStyle(.secondary)
+                    }
+
+                    Text(subtitleText)
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+            }
+            .contentShape(Rectangle())
         }
-        .foregroundStyle(tint)
+        .buttonStyle(.plain)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(spaceName), \(subtitleText)")
+        .accessibilityHint(viewModel.language.localized("Switch Space"))
+        .accessibilityIdentifier("home.spaceSelector")
+    }
+
+    private var spacesTrailingButton: some View {
+        Button {
+            activeClusterCollectionId = nil
+            showingSpacePicker = false
+            showingSpaceManager = true
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: "rectangle.stack")
+                    .font(.footnote.weight(.semibold))
+                Text(viewModel.language.localized("Spaces"))
+                    .font(.footnote.weight(.bold))
+            }
+            .foregroundStyle(.primary)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 9)
+            .frame(minHeight: 40)
+            .background(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(ArcaTheme.cardBackground(for: colorScheme))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .strokeBorder(ArcaTheme.cardBorder(for: colorScheme), lineWidth: 1)
+            )
+            .shadow(color: Color.black.opacity(colorScheme == .dark ? 0.16 : 0.03), radius: 5, x: 0, y: 2)
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("home.spacesButton")
+    }
+
+    private var inlineSpacePickerCard: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            ForEach(viewModel.spaces) { space in
+                inlineSpacePickerRow(for: space)
+            }
+
+            Divider()
+                .padding(.vertical, 4)
+
+            Button {
+                showingSpacePicker = false
+                showingSpaceManager = true
+            } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: "plus.rectangle.on.folder")
+                        .font(.footnote.weight(.semibold))
+                    Text(viewModel.language.localized("Manage Spaces…"))
+                        .font(.footnote.weight(.bold))
+                    Spacer()
+                    Image(systemName: "chevron.forward")
+                        .font(.caption.weight(.bold))
+                }
+                .foregroundStyle(appForegroundTint)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 8)
+                .frame(minHeight: 40)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(10)
+        .background(
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .fill(ArcaTheme.dropdownBackground(for: colorScheme))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .strokeBorder(ArcaTheme.dropdownBorder(for: colorScheme), lineWidth: 1)
+        )
+        .shadow(color: Color.black.opacity(colorScheme == .dark ? 0.35 : 0.10), radius: 16, x: 0, y: 8)
+    }
+
+    private func inlineSpacePickerRow(for space: SpaceMetadata) -> some View {
+        let isSelected = space.id == viewModel.currentSpaceId
+        let count = (viewModel.collectionsBySpace[space.id] ?? []).filter { !$0.isDeleted }.count
+        let modeLabel = storageModeSubtitle(for: space.storageMode)
+        let subtitle = "\(viewModel.language.format("count.collections", count)) · \(modeLabel)"
+
+        return Button {
+            Task {
+                await viewModel.selectSpace(space.id)
+                showingSpacePicker = false
+            }
+        } label: {
+            HStack(spacing: 12) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .fill(isSelected ? appAccentColor : ArcaTheme.subtleFieldBackground(for: colorScheme))
+                        .frame(width: 38, height: 38)
+                    Image(systemName: space.iconName)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(isSelected ? .white : .primary)
+                }
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(space.name)
+                        .font(.subheadline.weight(.bold))
+                        .foregroundStyle(.primary)
+                    Text(subtitle)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                Spacer()
+
+                if isSelected {
+                    Text(viewModel.language.localized("Current"))
+                        .font(.caption2.weight(.bold))
+                        .foregroundStyle(appForegroundTint)
+                        .padding(.horizontal, 9)
+                        .padding(.vertical, 4)
+                        .background(Capsule().fill(appAccentColor.opacity(colorScheme == .dark ? 0.24 : 0.12)))
+                }
+            }
+            .padding(10)
+            .frame(minHeight: 54)
+            .background(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .fill(isSelected ? appAccentColor.opacity(colorScheme == .dark ? 0.18 : 0.08) : Color.clear)
+            )
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 
     private var collectionsSection: some View {
@@ -253,9 +377,9 @@ public struct HomeScreenView: View {
                         Label(creationText("creation.manualMenu"), systemImage: "slider.horizontal.3")
                     }
                 } label: {
-                    Label(ArcaStrings.text("home.newCollection", language: viewModel.language), systemImage: "plus.circle.fill")
-                        .font(.footnote.weight(.semibold))
-                        .foregroundStyle(ArcaTheme.accent)
+                    Label(ArcaStrings.text("home.newCollection", language: viewModel.language), systemImage: "plus")
+                        .font(.footnote.weight(.bold))
+                        .foregroundStyle(appForegroundTint)
                 }
                 .buttonStyle(.plain)
             }
@@ -264,11 +388,11 @@ public struct HomeScreenView: View {
                 VStack(spacing: 14) {
                     ZStack {
                         Circle()
-                            .fill(ArcaTheme.accent.opacity(0.10))
+                            .fill(appAccentColor.opacity(0.12))
                             .frame(width: 56, height: 56)
                         Image(systemName: "sparkles")
                             .font(.title)
-                            .foregroundStyle(ArcaTheme.accent)
+                            .foregroundStyle(appForegroundTint)
                     }
                     Text(creationText("creation.emptyTitle"))
                         .font(.body.weight(.bold))
@@ -279,86 +403,312 @@ public struct HomeScreenView: View {
                     Button { showingAIAssistant = true } label: {
                         Label(creationText("creation.ai"), systemImage: "sparkles")
                     }
-                    .buttonStyle(ArcaPrimaryButtonStyle())
+                    .buttonStyle(ArcaPrimaryButtonStyle(tint: appAccentColor))
                     HStack(spacing: 18) {
                         Button(creationText("creation.templates")) { showingTemplateGallery = true }
                         Button(creationText("creation.manual")) { showingManualBuilder = true }
                     }
                     .font(.footnote.weight(.semibold))
-                    .foregroundStyle(ArcaTheme.accent)
+                    .foregroundStyle(appForegroundTint)
                     .buttonStyle(.plain)
                 }
                 .padding(24)
                 .frame(maxWidth: .infinity)
                 .background(
-                    RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    RoundedRectangle(cornerRadius: 22, style: .continuous)
                         .fill(ArcaTheme.cardBackground(for: colorScheme))
                 )
                 .overlay(
-                    RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    RoundedRectangle(cornerRadius: 22, style: .continuous)
                         .strokeBorder(ArcaTheme.cardBorder(for: colorScheme), lineWidth: 1)
                 )
             } else {
-                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 12), count: dynamicTypeSize.isAccessibilitySize ? 1 : 2), spacing: 12) {
+                LazyVGrid(
+                    columns: Array(
+                        repeating: GridItem(.flexible(), spacing: 12),
+                        count: dynamicTypeSize.isAccessibilitySize ? 1 : 2
+                    ),
+                    spacing: 12
+                ) {
                     ForEach(viewModel.collectionsInCurrentSpace) { col in
-                        NavigationLink {
-                            CollectionRecordListView(viewModel: viewModel, schema: col)
-                        } label: {
-                            collectionCard(col)
-                        }
-                        .buttonStyle(.plain)
+                        collectionGridCell(col)
                     }
+
+                    newCollectionGridTile
                 }
             }
         }
     }
 
-    private func collectionCard(_ col: CollectionSchema) -> some View {
+    private func collectionGridCell(_ col: CollectionSchema) -> some View {
+        let isClusterOpen = activeClusterCollectionId == col.id
         let count = viewModel.recordCount(for: col.id)
-        let tint = ArcaTheme.color(fromHex: col.colorHex)
-        return VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                ZStack {
-                    RoundedRectangle(cornerRadius: 11, style: .continuous)
-                        .fill(tint)
-                        .frame(width: 38, height: 38)
-                        .shadow(color: tint.opacity(0.28), radius: 6, x: 0, y: 3)
-                    Image(systemName: col.iconName)
-                        .font(.body.weight(.semibold))
-                        .foregroundStyle(.white)
+        let fieldCountText = viewModel.language.format("count.fields", col.activeFields.count)
+
+        return ZStack {
+            if isClusterOpen {
+                collectionCardVisual(col, count: count, fieldCountText: fieldCountText)
+                    .accessibilityHidden(true)
+
+                collectionActionClusterOverlay(col)
+                    .transition(.opacity.combined(with: .scale(scale: 0.96)))
+            } else {
+                Button {
+                    withAnimation(.spring(response: 0.25, dampingFraction: 0.82)) {
+                        showingSpacePicker = false
+                        activeClusterCollectionId = col.id
+                    }
+                } label: {
+                    collectionCardVisual(col, count: count, fieldCountText: fieldCountText)
                 }
+                .buttonStyle(.plain)
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel("\(col.name), \(count), \(fieldCountText)")
+                .accessibilityHint(viewModel.language.localized("Opens Add, View, and Edit actions"))
+                .accessibilityAction(named: Text(viewModel.language.format("View %@", col.name))) {
+                    viewingCollection = col
+                }
+                .accessibilityAction(named: Text(viewModel.language.format("Add Record to %@", col.name))) {
+                    activeRecordSheetCollection = col
+                }
+                .accessibilityAction(named: Text(viewModel.language.format("Edit %@", col.name))) {
+                    editingSettingsCollection = col
+                }
+                .accessibilityIdentifier("home.collection.\(col.id.uuidString)")
+            }
+        }
+    }
+
+    private func collectionCardVisual(_ col: CollectionSchema, count: Int, fieldCountText: String) -> some View {
+        let tint = ArcaTheme.color(fromHex: col.colorHex)
+
+        return VStack(alignment: .leading, spacing: 16) {
+            HStack(alignment: .top) {
+                CollectionBadgeView(schema: col, size: 44)
 
                 Spacer()
 
                 Text("\(count)")
-                    .font(.body.weight(.bold))
-                    .foregroundStyle(tint)
+                    .font(.footnote.weight(.bold))
+                    .foregroundStyle(.secondary)
                     .padding(.horizontal, 9)
                     .padding(.vertical, 4)
-                    .background(Capsule().fill(tint.opacity(0.12)))
+                    .background(
+                        Capsule().fill(ArcaTheme.subtleFieldBackground(for: colorScheme))
+                    )
             }
+
+            Spacer(minLength: 4)
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(col.name)
-                    .font(.body.weight(.bold))
+                    .font(.callout.weight(.bold))
                     .foregroundStyle(.primary)
-                    .lineLimit(1)
+                    .lineLimit(2)
+                    .multilineTextAlignment(.leading)
 
-                Text(viewModel.language.format("count.fields", col.activeFields.count))
+                Text(fieldCountText)
                     .font(.caption.weight(.medium))
                     .foregroundStyle(.secondary)
+                    .lineLimit(1)
             }
         }
         .padding(14)
+        .frame(maxWidth: .infinity, minHeight: 146, alignment: .topLeading)
         .background(
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
                 .fill(ArcaTheme.cardBackground(for: colorScheme))
         )
+        .overlay(alignment: .top) {
+            UnevenRoundedRectangle(
+                topLeadingRadius: 0,
+                bottomLeadingRadius: 4,
+                bottomTrailingRadius: 4,
+                topTrailingRadius: 0,
+                style: .continuous
+            )
+            .fill(tint)
+            .frame(height: 4)
+            .padding(.horizontal, 16)
+        }
         .overlay(
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
                 .strokeBorder(ArcaTheme.cardBorder(for: colorScheme), lineWidth: 1)
         )
         .shadow(color: Color.black.opacity(colorScheme == .dark ? 0.20 : 0.03), radius: 8, x: 0, y: 4)
+    }
+
+    private func collectionActionClusterOverlay(_ col: CollectionSchema) -> some View {
+        let tint = ArcaTheme.color(fromHex: col.colorHex)
+
+        return ZStack {
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
+                .fill(Color(red: 0.055, green: 0.082, blue: 0.071).opacity(colorScheme == .dark ? 0.92 : 0.86))
+                .contentShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+                .onTapGesture {
+                    withAnimation(.spring(response: 0.22, dampingFraction: 0.85)) {
+                        activeClusterCollectionId = nil
+                    }
+                }
+                .accessibilityHidden(true)
+
+            HStack(spacing: 10) {
+                // 1. Add Record Orb
+                Button {
+                    activeClusterCollectionId = nil
+                    activeRecordSheetCollection = col
+                } label: {
+                    VStack(spacing: 5) {
+                        ZStack {
+                            Circle()
+                                .fill(tint)
+                                .frame(width: 44, height: 44)
+                                .shadow(color: Color.black.opacity(0.28), radius: 6, x: 0, y: 3)
+                            Image(systemName: "plus")
+                                .font(.callout.weight(.bold))
+                                .foregroundStyle(.white)
+                        }
+                        Text(viewModel.language.localized("Add"))
+                            .font(.caption2.weight(.bold))
+                            .foregroundStyle(.white)
+                            .lineLimit(1)
+                    }
+                    .frame(minWidth: 44, minHeight: 62)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(viewModel.language.format("Add Record to %@", col.name))
+                .accessibilityIdentifier("home.collection.\(col.id.uuidString).add")
+
+                // 2. View Records Orb
+                Button {
+                    activeClusterCollectionId = nil
+                    viewingCollection = col
+                } label: {
+                    VStack(spacing: 5) {
+                        ZStack {
+                            Circle()
+                                .fill(Color.white.opacity(0.14))
+                                .frame(width: 44, height: 44)
+                                .overlay(
+                                    Circle().strokeBorder(Color.white.opacity(0.24), lineWidth: 1)
+                                )
+                            Image(systemName: "arrow.up.forward")
+                                .font(.callout.weight(.bold))
+                                .foregroundStyle(.white)
+                        }
+                        Text(viewModel.language.localized("View"))
+                            .font(.caption2.weight(.bold))
+                            .foregroundStyle(.white)
+                            .lineLimit(1)
+                    }
+                    .frame(minWidth: 44, minHeight: 62)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(viewModel.language.format("View %@", col.name))
+                .accessibilityIdentifier("home.collection.\(col.id.uuidString).view")
+
+                // 3. Edit Collection Settings Orb
+                Button {
+                    activeClusterCollectionId = nil
+                    editingSettingsCollection = col
+                } label: {
+                    VStack(spacing: 5) {
+                        ZStack {
+                            Circle()
+                                .fill(Color.white.opacity(0.14))
+                                .frame(width: 44, height: 44)
+                                .overlay(
+                                    Circle().strokeBorder(Color.white.opacity(0.24), lineWidth: 1)
+                                )
+                            Image(systemName: "slider.horizontal.3")
+                                .font(.callout.weight(.bold))
+                                .foregroundStyle(.white)
+                        }
+                        Text(viewModel.language.localized("Edit"))
+                            .font(.caption2.weight(.bold))
+                            .foregroundStyle(.white)
+                            .lineLimit(1)
+                    }
+                    .frame(minWidth: 44, minHeight: 62)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(viewModel.language.format("Edit %@", col.name))
+                .accessibilityIdentifier("home.collection.\(col.id.uuidString).edit")
+            }
+            .padding(.horizontal, 8)
+        }
+        .frame(maxWidth: .infinity, minHeight: 146)
+        .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .accessibilityElement(children: .contain)
+        .accessibilityAction(named: Text(ArcaStrings.text("creation.close", language: viewModel.language))) {
+            activeClusterCollectionId = nil
+        }
+    }
+
+    private var newCollectionGridTile: some View {
+        Menu {
+            Button { showingAIAssistant = true } label: {
+                Label(creationText("creation.aiMenu"), systemImage: "sparkles")
+            }
+            Button { showingTemplateGallery = true } label: {
+                Label(creationText("creation.templatesMenu"), systemImage: "rectangle.stack")
+            }
+            Button { showingManualBuilder = true } label: {
+                Label(creationText("creation.manualMenu"), systemImage: "slider.horizontal.3")
+            }
+        } label: {
+            VStack(spacing: 10) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .fill(ArcaTheme.subtleFieldBackground(for: colorScheme))
+                        .frame(width: 44, height: 44)
+                    Image(systemName: "plus")
+                        .font(.headline.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                }
+
+                VStack(spacing: 3) {
+                    Text(ArcaStrings.text("home.newCollection", language: viewModel.language))
+                        .font(.callout.weight(.bold))
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                    Text(viewModel.language.localized("AI, Starter or Custom"))
+                        .font(.caption.weight(.medium))
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                }
+            }
+            .padding(14)
+            .frame(maxWidth: .infinity, minHeight: 146)
+            .background(
+                RoundedRectangle(cornerRadius: 22, style: .continuous)
+                    .fill(Color.clear)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 22, style: .continuous)
+                    .strokeBorder(
+                        style: StrokeStyle(lineWidth: 1.5, dash: [6, 5])
+                    )
+                    .foregroundStyle(ArcaTheme.dropdownBorder(for: colorScheme))
+            )
+            .contentShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(ArcaStrings.text("home.newCollection", language: viewModel.language)), \(viewModel.language.localized("AI, Starter or Custom"))")
+        .accessibilityAction(named: Text(creationText("creation.aiMenu"))) {
+            showingAIAssistant = true
+        }
+        .accessibilityAction(named: Text(creationText("creation.templatesMenu"))) {
+            showingTemplateGallery = true
+        }
+        .accessibilityAction(named: Text(creationText("creation.manualMenu"))) {
+            showingManualBuilder = true
+        }
+        .accessibilityIdentifier("home.newCollectionTile")
     }
 
     private var favoritesSection: some View {
@@ -458,6 +808,11 @@ public struct RecordRowCardView: View {
     public let schema: CollectionSchema
     public let locale: Locale
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.arcaAppAccentOption) private var appAccentOption
+
+    private var appForegroundTint: Color {
+        appAccentOption.foregroundTint(for: colorScheme)
+    }
 
     public init(record: RecordItem, schema: CollectionSchema, locale: Locale = .current) {
         self.record = record
@@ -468,14 +823,7 @@ public struct RecordRowCardView: View {
     public var body: some View {
         let tint = ArcaTheme.color(fromHex: schema.colorHex)
         HStack(spacing: 13) {
-            ZStack {
-                RoundedRectangle(cornerRadius: 11, style: .continuous)
-                    .fill(tint.opacity(0.14))
-                    .frame(width: 40, height: 40)
-                Image(systemName: schema.iconName)
-                    .font(.body.weight(.semibold))
-                    .foregroundStyle(tint)
-            }
+            CollectionBadgeView(schema: schema, size: 40)
 
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 6) {
@@ -491,7 +839,7 @@ public struct RecordRowCardView: View {
                     if !record.allAttachments.isEmpty {
                         Image(systemName: "paperclip")
                             .font(.caption.weight(.semibold))
-                            .foregroundStyle(ArcaTheme.accent)
+                            .foregroundStyle(appForegroundTint)
                     }
                 }
 
@@ -539,6 +887,12 @@ public struct ManageSpacesSheetView: View {
     @Bindable var viewModel: ArcaAppViewModel
     @Environment(\.dismiss) private var dismiss
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.arcaAppAccentColor) private var appAccentColor
+    @Environment(\.arcaAppAccentOption) private var appAccentOption
+
+    private var appForegroundTint: Color {
+        appAccentOption.foregroundTint(for: colorScheme)
+    }
 
     @ViewState private var newSpaceName = ""
     @ViewState private var newSpaceMode: SpaceStorageMode = .arcaSync
@@ -568,70 +922,7 @@ public struct ManageSpacesSheetView: View {
                     ArcaSectionCard(title: viewModel.language.localized("Your Spaces"), icon: "rectangle.stack.fill") {
                         VStack(spacing: 10) {
                             ForEach(viewModel.spaces) { space in
-                                let isActive = space.id == viewModel.currentSpaceId
-                                let tint = ArcaTheme.color(fromHex: space.accentHex)
-
-                                HStack(spacing: 12) {
-                                    ZStack {
-                                        RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                            .fill(tint.opacity(0.15))
-                                            .frame(width: 38, height: 38)
-                                        Image(systemName: space.iconName)
-                                            .font(.body.weight(.semibold))
-                                            .foregroundStyle(tint)
-                                    }
-
-                                    VStack(alignment: .leading, spacing: 2) {
-                                        HStack(spacing: 6) {
-                                            Text(space.name)
-                                                .font(.body.weight(.bold))
-                                            if isActive {
-                                                Text(viewModel.language.localized("ACTIVE"))
-                                                    .font(.caption2.weight(.bold))
-                                                    .foregroundStyle(.white)
-                                                    .padding(.horizontal, 6)
-                                                    .padding(.vertical, 2)
-                                                    .background(Capsule().fill(ArcaTheme.accent))
-                                            }
-                                        }
-                                        Text(space.storageMode == .arcaSync ? viewModel.language.localized("Arca Sync (E2EE)") : (space.storageMode == .localOnly ? viewModel.language.localized("On This Device Only") : viewModel.language.localized("Personal Cloud Backup")))
-                                            .font(.caption)
-                                            .foregroundStyle(.secondary)
-                                    }
-
-                                    Spacer()
-
-                                    if !isActive {
-                                        ArcaPillActionButton(viewModel.language.localized("Switch"), tint: ArcaTheme.accent) {
-                                            Task {
-                                                await viewModel.selectSpace(space.id)
-                                                dismiss()
-                                            }
-                                        }
-                                    }
-
-                                    Menu {
-                                        Button(viewModel.language.localized("Rename Space…")) {
-                                            renamingSpace = space
-                                            renameText = space.name
-                                        }
-                                        if viewModel.spaces.count > 1 {
-                                            Button(viewModel.language.localized("Delete Space"), role: .destructive) {
-                                                pendingSpaceDeletion = space
-                                            }
-                                        }
-                                    } label: {
-                                        Image(systemName: "ellipsis.circle.fill")
-                                            .font(.title3)
-                                            .foregroundStyle(.secondary)
-                                    }
-                                    .buttonStyle(.plain)
-                                }
-                                .padding(10)
-                                .background(
-                                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                        .fill(ArcaTheme.subtleFieldBackground(for: colorScheme))
-                                )
+                                manageSpaceRow(for: space)
                             }
                         }
                     }
@@ -688,7 +979,7 @@ public struct ManageSpacesSheetView: View {
                                             .frame(width: 44, height: 44)
                                             .background(
                                                 RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                                    .fill(selected ? ArcaTheme.accent : ArcaTheme.subtleFieldBackground(for: colorScheme))
+                                                    .fill(selected ? appAccentColor : ArcaTheme.subtleFieldBackground(for: colorScheme))
                                             )
                                     }
                                     .buttonStyle(.plain)
@@ -714,6 +1005,7 @@ public struct ManageSpacesSheetView: View {
             }
             .background(ArcaTheme.canvasBackground(for: colorScheme))
         }
+        .arcaApplyAppAccentEnvironment()
         .alert(item: $pendingSpaceDeletion) { space in
             Alert(
                 title: Text(String(format: ArcaStrings.text("delete.spaceTitle", language: viewModel.language), space.name)),
@@ -724,6 +1016,79 @@ public struct ManageSpacesSheetView: View {
                 secondaryButton: .cancel(Text(ArcaStrings.text("common.cancel", language: viewModel.language)))
             )
         }
+    }
+
+    private func manageSpaceRow(for space: SpaceMetadata) -> some View {
+        let isActive = space.id == viewModel.currentSpaceId
+        let count = (viewModel.collectionsBySpace[space.id] ?? []).filter { !$0.isDeleted }.count
+        let storageLabel = space.storageMode == .arcaSync
+            ? viewModel.language.localized("Arca Sync (E2EE)")
+            : (space.storageMode == .localOnly
+                ? viewModel.language.localized("On This Device Only")
+                : viewModel.language.localized("Personal Cloud Backup"))
+        let subtitle = "\(viewModel.language.format("count.collections", count)) · \(storageLabel)"
+
+        return HStack(spacing: 12) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(isActive ? appAccentColor : ArcaTheme.subtleFieldBackground(for: colorScheme))
+                    .frame(width: 38, height: 38)
+                Image(systemName: space.iconName)
+                    .font(.body.weight(.semibold))
+                    .foregroundStyle(isActive ? .white : .primary)
+            }
+
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 6) {
+                    Text(space.name)
+                        .font(.body.weight(.bold))
+                    if isActive {
+                        Text(viewModel.language.localized("Current"))
+                            .font(.caption2.weight(.bold))
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 7)
+                            .padding(.vertical, 2)
+                            .background(Capsule().fill(appAccentColor))
+                    }
+                }
+                Text(subtitle)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Spacer()
+
+            if !isActive {
+                ArcaPillActionButton(viewModel.language.localized("Switch"), tint: appAccentColor) {
+                    Task {
+                        await viewModel.selectSpace(space.id)
+                        dismiss()
+                    }
+                }
+            }
+
+            Menu {
+                Button(viewModel.language.localized("Rename Space…")) {
+                    renamingSpace = space
+                    renameText = space.name
+                }
+                if viewModel.spaces.count > 1 {
+                    Button(viewModel.language.localized("Delete Space"), role: .destructive) {
+                        pendingSpaceDeletion = space
+                    }
+                }
+            } label: {
+                Image(systemName: "ellipsis.circle.fill")
+                    .font(.title3)
+                    .foregroundStyle(.secondary)
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(10)
+        .background(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(ArcaTheme.subtleFieldBackground(for: colorScheme))
+        )
     }
 
     private func modeChoicePill(_ mode: SpaceStorageMode, label: String, icon: String) -> some View {
@@ -742,7 +1107,7 @@ public struct ManageSpacesSheetView: View {
             .padding(.vertical, 10)
             .background(
                 RoundedRectangle(cornerRadius: 11, style: .continuous)
-                    .fill(selected ? ArcaTheme.accent : ArcaTheme.subtleFieldBackground(for: colorScheme))
+                    .fill(selected ? appAccentColor : ArcaTheme.subtleFieldBackground(for: colorScheme))
             )
         }
         .buttonStyle(.plain)
@@ -923,6 +1288,12 @@ public struct ManualCollectionBuilderSheetView: View {
     @Bindable var viewModel: ArcaAppViewModel
     @Environment(\.dismiss) private var dismiss
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.arcaAppAccentColor) private var appAccentColor
+    @Environment(\.arcaAppAccentOption) private var appAccentOption
+
+    private var appForegroundTint: Color {
+        appAccentOption.foregroundTint(for: colorScheme)
+    }
 
     @ViewState private var name = ""
     @ViewState private var iconName = "list.clipboard"
@@ -978,7 +1349,7 @@ public struct ManualCollectionBuilderSheetView: View {
                                         .frame(width: 44, height: 44)
                                         .background(
                                             RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                                .fill(selected ? ArcaTheme.accent : ArcaTheme.subtleFieldBackground(for: colorScheme))
+                                                .fill(selected ? appAccentColor : ArcaTheme.subtleFieldBackground(for: colorScheme))
                                         )
                                 }
                                 .buttonStyle(.plain)
@@ -994,9 +1365,9 @@ public struct ManualCollectionBuilderSheetView: View {
                                 HStack(spacing: 10) {
                                     Image(systemName: field.type.iconName)
                                         .font(.subheadline.weight(.semibold))
-                                        .foregroundStyle(ArcaTheme.accent)
+                                        .foregroundStyle(appForegroundTint)
                                         .frame(width: 28, height: 28)
-                                        .background(Circle().fill(ArcaTheme.accent.opacity(0.12)))
+                                        .background(Circle().fill(appAccentColor.opacity(0.12)))
 
                                     VStack(alignment: .leading, spacing: 2) {
                                         Text(field.label)
@@ -1079,5 +1450,6 @@ public struct ManualCollectionBuilderSheetView: View {
             }
             .background(ArcaTheme.canvasBackground(for: colorScheme))
         }
+        .arcaApplyAppAccentEnvironment()
     }
 }

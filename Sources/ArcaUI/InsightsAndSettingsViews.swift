@@ -10,9 +10,23 @@ public struct InsightsScreenView: View {
     @Bindable var viewModel: ArcaAppViewModel
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.colorScheme) private var colorScheme
+    @AppStorage(AppAppearancePreferencesStore.accentColorDefaultsKey)
+    private var storedAccentHex: String = AppAccentColorOption.defaultOption.rawValue
 
     public init(viewModel: ArcaAppViewModel) {
         self.viewModel = viewModel
+    }
+
+    private var appAccentOption: AppAccentColorOption {
+        AppAccentColorOption.resolve(from: storedAccentHex)
+    }
+
+    private var appAccentColor: Color {
+        appAccentOption.color
+    }
+
+    private var appForegroundTint: Color {
+        appAccentOption.foregroundTint(for: colorScheme)
     }
 
     private var report: SpaceInsightsReport {
@@ -28,14 +42,14 @@ public struct InsightsScreenView: View {
                         Text((viewModel.currentSpace?.name ?? "SPACE").uppercased())
                             .font(.caption.weight(.bold))
                             .tracking(0.6)
-                            .foregroundStyle(ArcaTheme.accent)
+                            .foregroundStyle(appForegroundTint)
                         Text(ArcaStrings.text("insights.title", language: viewModel.language))
                             .font(.largeTitle.weight(.bold))
                     }
 
                     // Summary KPIs
                     LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 10), count: dynamicTypeSize.isAccessibilitySize ? 1 : 3), spacing: 10) {
-                        kpiCard(title: viewModel.language.localized("Records"), value: "\(report.totalRecords)", icon: "doc.text.fill", tint: ArcaTheme.accent)
+                        kpiCard(title: viewModel.language.localized("Records"), value: "\(report.totalRecords)", icon: "doc.text.fill", tint: appForegroundTint)
                         kpiCard(title: viewModel.language.localized("Pinned"), value: "\(report.favoriteRecords)", icon: "pin.fill", tint: ArcaTheme.warmAmber)
                         kpiCard(title: viewModel.language.localized("Files"), value: "\(report.totalAttachments)", icon: "paperclip", tint: ArcaTheme.secondaryEmerald)
                     }
@@ -82,14 +96,14 @@ public struct InsightsScreenView: View {
                         ArcaSectionCard(
                             title: ArcaStrings.text("insights.spendingOverTime", language: viewModel.language),
                             icon: "chart.bar.fill",
-                            iconTint: ArcaTheme.accent
+                            iconTint: appForegroundTint
                         ) {
                             Chart(report.spendingOverTime) { point in
                                 BarMark(
                                     x: .value("Month", point.yearMonth),
                                     y: .value("Amount", point.totalAmount)
                                 )
-                                .foregroundStyle(ArcaTheme.accent.gradient)
+                                .foregroundStyle(appAccentColor.gradient)
                                 .cornerRadius(7)
                             }
                             .frame(height: 185)
@@ -102,7 +116,7 @@ public struct InsightsScreenView: View {
                         ArcaSectionCard(
                             title: ArcaStrings.text("insights.numericTotals", language: viewModel.language),
                             icon: "sum",
-                            iconTint: ArcaTheme.accent
+                            iconTint: appForegroundTint
                         ) {
                             VStack(spacing: 10) {
                                 ForEach(report.numericSummaries) { summary in
@@ -118,7 +132,7 @@ public struct InsightsScreenView: View {
                                         VStack(alignment: .trailing, spacing: 2) {
                                             Text(summary.formattedSum)
                                                 .font(.body.weight(.bold))
-                                                .foregroundStyle(ArcaTheme.accent)
+                                                .foregroundStyle(appForegroundTint)
                                             Text(viewModel.language.format("Avg %@", summary.formattedAverage))
                                                 .font(.caption)
                                                 .foregroundStyle(.secondary)
@@ -156,6 +170,7 @@ public struct InsightsScreenView: View {
                 .padding(18)
             }
             .background(ArcaTheme.canvasBackground(for: colorScheme))
+            .arcaApplyAppAccentEnvironment()
             #if os(iOS)
             .toolbar(.hidden, for: .navigationBar)
             #endif
@@ -201,9 +216,28 @@ public struct SettingsHubScreenView: View {
     @Environment(\.arcaSubscriptionScreen) private var subscriptionScreen
     @Bindable var viewModel: ArcaAppViewModel
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @AppStorage(AppAppearancePreferencesStore.accentColorDefaultsKey)
+    private var storedAccentHex: String = AppAccentColorOption.defaultOption.rawValue
+
+    @ViewState private var appColorDropdownOpen: Bool = false
+    @ViewState private var showingSpaceManager: Bool = false
 
     public init(viewModel: ArcaAppViewModel) {
         self.viewModel = viewModel
+    }
+
+    private var appAccentOption: AppAccentColorOption {
+        AppAccentColorOption.resolve(from: storedAccentHex)
+    }
+
+    private var appAccentColor: Color {
+        appAccentOption.color
+    }
+
+    private var appForegroundTint: Color {
+        appAccentOption.foregroundTint(for: colorScheme)
     }
 
     public var body: some View {
@@ -215,12 +249,19 @@ public struct SettingsHubScreenView: View {
                         Text(viewModel.language.localized("ARCA PREFERENCES & STORAGE"))
                             .font(.caption.weight(.bold))
                             .tracking(0.6)
-                            .foregroundStyle(ArcaTheme.accent)
+                            .foregroundStyle(appForegroundTint)
                         Text(ArcaStrings.text("settings.title", language: viewModel.language))
                             .font(.largeTitle.weight(.bold))
+                            .accessibilityAddTraits(.isHeader)
                     }
 
-                    // Current Space Storage & Backups
+                    // 1. App Theme Color (6-Color Persistent Accent Picker)
+                    appThemeColorCard
+
+                    // 2. Spaces Selection & Quick Switcher
+                    spacesSelectionCard
+
+                    // 3. Current Space Storage & Backups
                     if let current = viewModel.currentSpace {
                         ArcaSectionCard(title: viewModel.language.format("Current Space: %@", current.name), icon: current.iconName) {
                             VStack(spacing: 10) {
@@ -229,7 +270,7 @@ public struct SettingsHubScreenView: View {
                                 } label: {
                                     settingsRow(
                                         icon: "externaldrive.badge.checkmark",
-                                        tint: ArcaTheme.accent,
+                                        tint: appForegroundTint,
                                         title: viewModel.language.localized("Storage Mode & Migration Preview"),
                                         subtitle: current.storageMode == .arcaSync ? viewModel.language.localized("Arca Sync (E2EE)") : viewModel.language.localized("On This Device Only")
                                     )
@@ -253,7 +294,7 @@ public struct SettingsHubScreenView: View {
                         }
                     }
 
-                    // Sync, Devices & Conflicts
+                    // 4. Sync, Devices & Conflicts
                     ArcaSectionCard(title: ArcaStrings.text("settings.storageAndSync", language: viewModel.language), icon: "icloud.fill") {
                         VStack(spacing: 10) {
                             NavigationLink {
@@ -261,7 +302,7 @@ public struct SettingsHubScreenView: View {
                             } label: {
                                 settingsRow(
                                     icon: "arrow.triangle.2.circlepath.icloud.fill",
-                                    tint: ArcaTheme.accent,
+                                    tint: appForegroundTint,
                                     title: viewModel.language.localized("Sync Status, Outbox & Conflicts"),
                                     subtitle: viewModel.cloudAccountConnected ? viewModel.syncStatus : viewModel.language.localized("Sign in to sync your cloud Spaces"),
                                     badge: viewModel.syncConflicts.isEmpty ? nil : "\(viewModel.syncConflicts.count) conflict"
@@ -286,7 +327,7 @@ public struct SettingsHubScreenView: View {
                         }
                     }
 
-                    // Subscription & Billing
+                    // 5. Subscription & Billing
                     ArcaSectionCard(title: ArcaStrings.text("settings.subscription", language: viewModel.language), icon: "sparkles") {
                         NavigationLink {
                             subscriptionScreen
@@ -302,7 +343,7 @@ public struct SettingsHubScreenView: View {
                         .buttonStyle(.plain)
                     }
 
-                    // Appearance & Language
+                    // 6. Appearance & Language
                     ArcaSectionCard(title: ArcaStrings.text("settings.appearanceAndLanguage", language: viewModel.language), icon: "paintbrush.fill") {
                         VStack(alignment: .leading, spacing: 14) {
                             VStack(alignment: .leading, spacing: 6) {
@@ -329,21 +370,21 @@ public struct SettingsHubScreenView: View {
                                             Text(lang == .english ? "English" : (lang == .arabic ? "العربية" : "Türkçe"))
                                                 .font(.footnote.weight(.semibold))
                                                 .foregroundStyle(selected ? .white : .primary)
-                                                .frame(maxWidth: .infinity)
-                                                .padding(.vertical, 9)
+                                                .frame(maxWidth: .infinity, minHeight: 44)
                                                 .background(
                                                     RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                                        .fill(selected ? ArcaTheme.accent : ArcaTheme.subtleFieldBackground(for: colorScheme))
+                                                        .fill(selected ? appAccentColor : ArcaTheme.subtleFieldBackground(for: colorScheme))
                                                 )
                                         }
                                         .buttonStyle(.plain)
+                                        .accessibilityAddTraits(selected ? .isSelected : [])
                                     }
                                 }
                             }
                         }
                     }
 
-                    // Privacy, Encryption & Biometrics
+                    // 7. Privacy, Encryption & Biometrics
                     ArcaSectionCard(title: ArcaStrings.text("settings.privacyAndSecurity", language: viewModel.language), icon: "lock.shield.fill", iconTint: ArcaTheme.plumSensitive) {
                         VStack(spacing: 12) {
                             Toggle(viewModel.language.localized("App Lock (Device Authentication)"), isOn: Binding(
@@ -412,16 +453,277 @@ public struct SettingsHubScreenView: View {
                 .padding(18)
             }
             .background(ArcaTheme.canvasBackground(for: colorScheme))
+            .arcaApplyAppAccentEnvironment()
             #if os(iOS)
             .toolbar(.hidden, for: .navigationBar)
             #endif
+            .sheet(isPresented: $showingSpaceManager) {
+                ManageSpacesSheetView(viewModel: viewModel)
+                    .frame(minWidth: 370, idealWidth: 400, minHeight: 580, idealHeight: 680)
+            }
         }
+    }
+
+    // MARK: - App Theme Color Card (6-Color Picker from Reference)
+
+    private var appThemeColorCard: some View {
+        let activeOption = appAccentOption
+        return VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(viewModel.language.localized("App Theme Color"))
+                    .font(.subheadline.weight(.bold))
+                    .foregroundStyle(.primary)
+                    .accessibilityAddTraits(.isHeader)
+                Text(viewModel.language.localized("Used on Home and Settings. Each Collection uses its own color."))
+                    .font(.caption)
+                    .foregroundStyle(ArcaTheme.mutedText(for: colorScheme))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Button {
+                withAnimation(reduceMotion ? nil : .spring(response: 0.24, dampingFraction: 0.84)) {
+                    appColorDropdownOpen.toggle()
+                }
+            } label: {
+                HStack(spacing: 10) {
+                    ZStack {
+                        Circle()
+                            .fill(activeOption.color)
+                            .frame(width: 26, height: 26)
+                        Circle()
+                            .strokeBorder(Color.white.opacity(0.32), lineWidth: 1)
+                            .frame(width: 26, height: 26)
+                        Circle()
+                            .fill(Color.white.opacity(0.65))
+                            .frame(width: 8, height: 8)
+                    }
+                    .accessibilityHidden(true)
+
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(activeOption.localizedName(in: viewModel.language))
+                            .font(.subheadline.weight(.bold))
+                            .foregroundStyle(.primary)
+                        Text(activeOption.localizedTag(in: viewModel.language))
+                            .font(.caption)
+                            .foregroundStyle(ArcaTheme.mutedText(for: colorScheme))
+                    }
+
+                    Spacer()
+
+                    ZStack {
+                        Circle()
+                            .fill(ArcaTheme.cardBackground(for: colorScheme))
+                            .frame(width: 28, height: 28)
+                        Image(systemName: appColorDropdownOpen ? "chevron.up" : "chevron.down")
+                            .font(.caption.weight(.bold))
+                            .foregroundStyle(.primary)
+                    }
+                    .accessibilityHidden(true)
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 10)
+                .frame(minHeight: 44)
+                .background(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .fill(ArcaTheme.subtleFieldBackground(for: colorScheme))
+                )
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(viewModel.language.localized("App Theme Color"))
+            .accessibilityValue(activeOption.localizedName(in: viewModel.language))
+            .accessibilityIdentifier("settings.appThemeColor.picker")
+
+            if appColorDropdownOpen {
+                VStack(spacing: 0) {
+                    ForEach(Array(AppAccentColorOption.allCases.enumerated()), id: \.element.id) { index, option in
+                        let isSelected = (option == activeOption)
+                        Button {
+                            withAnimation(reduceMotion ? nil : .easeOut(duration: 0.18)) {
+                                storedAccentHex = option.rawValue
+                                appColorDropdownOpen = false
+                            }
+                        } label: {
+                            HStack(spacing: 10) {
+                                Circle()
+                                    .fill(option.color)
+                                    .frame(width: 20, height: 20)
+                                    .overlay(
+                                        Circle()
+                                            .strokeBorder(Color.white.opacity(0.25), lineWidth: 1)
+                                    )
+                                    .accessibilityHidden(true)
+
+                                VStack(alignment: .leading, spacing: 1) {
+                                    Text(option.localizedName(in: viewModel.language))
+                                        .font(.subheadline.weight(.bold))
+                                        .foregroundStyle(.primary)
+                                    Text(option.localizedTag(in: viewModel.language))
+                                        .font(.caption)
+                                        .foregroundStyle(ArcaTheme.mutedText(for: colorScheme))
+                                }
+
+                                Spacer()
+
+                                if isSelected {
+                                    Image(systemName: "checkmark")
+                                        .font(.footnote.weight(.black))
+                                        .foregroundStyle(option.foregroundTint(for: colorScheme))
+                                        .accessibilityHidden(true)
+                                }
+                            }
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 10)
+                            .frame(minHeight: 44)
+                            .background(isSelected ? ArcaTheme.subtleFieldBackground(for: colorScheme) : Color.clear)
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel(option.localizedName(in: viewModel.language) + ", " + option.localizedTag(in: viewModel.language))
+                        .accessibilityAddTraits(isSelected ? .isSelected : [])
+                        .accessibilityIdentifier("settings.appThemeColor.\(option.rawValue)")
+
+                        if index < AppAccentColorOption.allCases.count - 1 {
+                            Divider().opacity(0.45)
+                        }
+                    }
+                }
+                .background(
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .fill(ArcaTheme.dropdownBackground(for: colorScheme))
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .strokeBorder(ArcaTheme.dropdownBorder(for: colorScheme), lineWidth: 1)
+                )
+                .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                .shadow(color: Color.black.opacity(colorScheme == .dark ? 0.28 : 0.08), radius: 12, x: 0, y: 6)
+            }
+        }
+        .padding(16)
+        .background(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .fill(ArcaTheme.cardBackground(for: colorScheme))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .strokeBorder(ArcaTheme.cardBorder(for: colorScheme), lineWidth: 1)
+        )
+        .shadow(color: Color.black.opacity(colorScheme == .dark ? 0.22 : 0.035), radius: 10, x: 0, y: 4)
+    }
+
+    // MARK: - Spaces Selection Card (from Reference)
+
+    private var spacesSelectionCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Group {
+                if dynamicTypeSize.isAccessibilitySize {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text(viewModel.language.localized("Spaces"))
+                            .font(.subheadline.weight(.bold))
+                            .accessibilityAddTraits(.isHeader)
+                        switchSpaceButton
+                    }
+                } else {
+                    HStack {
+                        Text(viewModel.language.localized("Spaces"))
+                            .font(.subheadline.weight(.bold))
+                            .accessibilityAddTraits(.isHeader)
+                        Spacer()
+                        switchSpaceButton
+                    }
+                }
+            }
+
+            VStack(spacing: 0) {
+                ForEach(Array(viewModel.spaces.enumerated()), id: \.element.id) { index, space in
+                    let isCurrent = (space.id == viewModel.currentSpace?.id)
+                    let collectionCount = (viewModel.collectionsBySpace[space.id] ?? []).filter { !$0.isDeleted }.count
+
+                    Button {
+                        Task { await viewModel.selectSpace(space.id) }
+                    } label: {
+                        HStack(spacing: 12) {
+                            ZStack {
+                                RoundedRectangle(cornerRadius: 11, style: .continuous)
+                                    .fill(ArcaTheme.subtleFieldBackground(for: colorScheme))
+                                    .frame(width: 34, height: 34)
+                                Image(systemName: space.iconName)
+                                    .font(.subheadline.weight(.semibold))
+                                    .foregroundStyle(isCurrent ? appForegroundTint : .primary)
+                            }
+                            .accessibilityHidden(true)
+
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(space.name)
+                                    .font(.subheadline.weight(.bold))
+                                    .foregroundStyle(.primary)
+                                Text(viewModel.language.format("count.collections", collectionCount))
+                                    .font(.caption)
+                                    .foregroundStyle(ArcaTheme.mutedText(for: colorScheme))
+                            }
+
+                            Spacer()
+
+                            if isCurrent {
+                                Text(viewModel.language.localized("Current"))
+                                    .font(.caption2.weight(.bold))
+                                    .foregroundStyle(.white)
+                                    .padding(.horizontal, 10)
+                                    .padding(.vertical, 4)
+                                    .background(Capsule().fill(appAccentColor))
+                            }
+                        }
+                        .padding(.vertical, 10)
+                        .frame(minHeight: 44)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityElement(children: .combine)
+                    .accessibilityAddTraits(isCurrent ? .isSelected : [])
+
+                    if index < viewModel.spaces.count - 1 {
+                        Divider().opacity(0.45)
+                    }
+                }
+            }
+        }
+        .padding(16)
+        .background(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .fill(ArcaTheme.cardBackground(for: colorScheme))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .strokeBorder(ArcaTheme.cardBorder(for: colorScheme), lineWidth: 1)
+        )
+        .shadow(color: Color.black.opacity(colorScheme == .dark ? 0.22 : 0.035), radius: 10, x: 0, y: 4)
+    }
+
+    private var switchSpaceButton: some View {
+        Button {
+            showingSpaceManager = true
+        } label: {
+            Text(viewModel.language.localized("Switch Space"))
+                .font(.caption.weight(.bold))
+                .foregroundStyle(.white)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 7)
+                .background(
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .fill(appAccentColor)
+                )
+                .frame(minHeight: 44)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("settings.switchSpace")
     }
 
     private func appearancePill(_ mode: AppAppearanceMode, label: String, icon: String) -> some View {
         let selected = viewModel.appearanceMode == mode
         return Button {
             viewModel.appearanceMode = mode
+            AppAppearancePreferencesStore().saveAppearanceMode(mode)
         } label: {
             HStack(spacing: 5) {
                 Image(systemName: icon)
@@ -430,14 +732,14 @@ public struct SettingsHubScreenView: View {
                     .font(.footnote.weight(.semibold))
             }
             .foregroundStyle(selected ? .white : .primary)
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 9)
+            .frame(maxWidth: .infinity, minHeight: 44)
             .background(
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(selected ? ArcaTheme.accent : ArcaTheme.subtleFieldBackground(for: colorScheme))
+                    .fill(selected ? appAccentColor : ArcaTheme.subtleFieldBackground(for: colorScheme))
             )
         }
         .buttonStyle(.plain)
+        .accessibilityAddTraits(selected ? .isSelected : [])
     }
 
     private func settingsRow(icon: String, tint: Color, title: String, subtitle: String, badge: String? = nil) -> some View {
@@ -486,8 +788,15 @@ private struct ArcaSubscreenBackHeader: View {
     let title: String
     let subtitle: String
     @Environment(\.locale) private var locale
+    @Environment(\.colorScheme) private var colorScheme
+    @AppStorage(AppAppearancePreferencesStore.accentColorDefaultsKey)
+    private var storedAccentHex: String = AppAccentColorOption.defaultOption.rawValue
     private var language: AppLanguage { AppLanguage(rawValue: locale.language.languageCode?.identifier ?? "en") ?? .english }
     @Environment(\.dismiss) private var dismiss
+
+    private var appForegroundTint: Color {
+        AppAccentColorOption.resolve(from: storedAccentHex).foregroundTint(for: colorScheme)
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -500,10 +809,11 @@ private struct ArcaSubscreenBackHeader: View {
                     Text(language.localized("Settings"))
                         .font(.subheadline.weight(.semibold))
                 }
-                .foregroundStyle(ArcaTheme.accent)
+                .foregroundStyle(appForegroundTint)
                 .padding(.horizontal, 12)
                 .padding(.vertical, 7)
-                .background(Capsule().fill(ArcaTheme.accent.opacity(0.10)))
+                .background(Capsule().fill(appForegroundTint.opacity(0.12)))
+                .frame(minHeight: 44)
             }
             .buttonStyle(.plain)
 
@@ -716,7 +1026,12 @@ public struct SyncStatusAndConflictsScreenView: View {
 public struct ActiveDeviceManagementScreenView: View {
     @Bindable var viewModel: ArcaAppViewModel
     @Environment(\.colorScheme) private var colorScheme
+    @AppStorage(AppAppearancePreferencesStore.accentColorDefaultsKey)
+    private var storedAccentHex: String = AppAccentColorOption.defaultOption.rawValue
 
+    private var appForegroundTint: Color {
+        AppAccentColorOption.resolve(from: storedAccentHex).foregroundTint(for: colorScheme)
+    }
 
     public var body: some View {
         ScrollView(showsIndicators: false) {
@@ -732,10 +1047,10 @@ public struct ActiveDeviceManagementScreenView: View {
                             HStack(spacing: 12) {
                                 ZStack {
                                     RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                        .fill(ArcaTheme.accent.opacity(0.14))
+                                        .fill(appForegroundTint.opacity(0.14))
                                         .frame(width: 38, height: 38)
                                     Image(systemName: dev.isCurrentDevice ? "iphone.gen3.radiowaves.left.and.right" : "iphone")
-                                        .foregroundStyle(ArcaTheme.accent)
+                                        .foregroundStyle(appForegroundTint)
                                 }
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text(dev.isCurrentDevice ? viewModel.language.format("%@ (This Device)", dev.deviceName) : dev.deviceName)
