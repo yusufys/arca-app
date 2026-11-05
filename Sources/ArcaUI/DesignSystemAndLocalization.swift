@@ -5,6 +5,16 @@ import ArcaCore
 /// when building with Command Line Tools where `libSwiftUIMacros.dylib` is not bundled.
 public typealias ViewState<Value> = SwiftUI.State<Value>
 
+extension View {
+    func arcaDesktopSheetSize() -> some View {
+        #if os(macOS)
+        frame(minWidth: 370, idealWidth: 400, minHeight: 580, idealHeight: 680)
+        #else
+        self
+        #endif
+    }
+}
+
 // MARK: - Localization Support (English, Arabic RTL, Turkish)
 
 public enum AppLanguage: String, CaseIterable, Codable, Sendable, Identifiable {
@@ -80,36 +90,60 @@ public enum ArcaStrings {
 // MARK: - Arca archive palette (see BRAND.md)
 
 public enum ArcaTheme {
-    /// Forest ink, sampled for readable white action labels.
-    public static let accent = Color(red: 0.122, green: 0.365, blue: 0.247)
+    /// Forest ink (#1F5D3F), sampled for readable white action labels.
+    public static let accent = Color(red: 31.0 / 255.0, green: 93.0 / 255.0, blue: 63.0 / 255.0)
     public static let accentSoft = accent.opacity(0.11)
     public static let secondaryEmerald = Color(red: 0.165, green: 0.482, blue: 0.388)
-    public static let warmAmber = Color(red: 0.725, green: 0.431, blue: 0.129)
+    public static let warmAmber = Color(red: 180.0 / 255.0, green: 83.0 / 255.0, blue: 9.0 / 255.0)
     public static let plumSensitive = Color(red: 0.525, green: 0.235, blue: 0.376)
     public static let dangerRed = Color(red: 0.765, green: 0.212, blue: 0.212)
 
     public static func canvasBackground(for scheme: ColorScheme) -> Color {
         scheme == .dark
-            ? Color(red: 0.055, green: 0.102, blue: 0.078) // #0E1A14
-            : Color(red: 0.976, green: 0.961, blue: 0.914) // #F9F5E9
+            ? Color(red: 13.0 / 255.0, green: 19.0 / 255.0, blue: 17.0 / 255.0) // #0D1311
+            : Color(red: 247.0 / 255.0, green: 244.0 / 255.0, blue: 235.0 / 255.0) // #F7F4EB
     }
 
     public static func cardBackground(for scheme: ColorScheme) -> Color {
         scheme == .dark
-            ? Color(red: 0.090, green: 0.157, blue: 0.122) // #17281F
-            : Color(red: 1, green: 0.992, blue: 0.961) // #FFFDF5
+            ? Color(red: 22.0 / 255.0, green: 31.0 / 255.0, blue: 28.0 / 255.0) // #161F1C
+            : Color(red: 255.0 / 255.0, green: 253.0 / 255.0, blue: 247.0 / 255.0) // #FFFDF7
     }
 
     public static func subtleFieldBackground(for scheme: ColorScheme) -> Color {
         scheme == .dark
-            ? Color(red: 0.137, green: 0.208, blue: 0.165) // #23352A
-            : Color(red: 0.941, green: 0.922, blue: 0.863) // #F0EBDC
+            ? Color(red: 33.0 / 255.0, green: 46.0 / 255.0, blue: 41.0 / 255.0) // #212E29
+            : Color(red: 237.0 / 255.0, green: 232.0 / 255.0, blue: 218.0 / 255.0) // #EDE8DA
     }
 
     public static func cardBorder(for scheme: ColorScheme) -> Color {
         scheme == .dark
-            ? Color.white.opacity(0.08)
-            : Color.black.opacity(0.06)
+            ? Color.white.opacity(0.10)
+            : Color.black.opacity(0.08)
+    }
+
+    public static func dropdownBackground(for scheme: ColorScheme) -> Color {
+        scheme == .dark
+            ? Color(red: 27.0 / 255.0, green: 38.0 / 255.0, blue: 34.0 / 255.0) // #1B2622
+            : Color(red: 255.0 / 255.0, green: 253.0 / 255.0, blue: 249.0 / 255.0) // #FFFDF9
+    }
+
+    public static func dropdownBorder(for scheme: ColorScheme) -> Color {
+        scheme == .dark
+            ? Color.white.opacity(0.15)
+            : Color.black.opacity(0.12)
+    }
+
+    public static func tabBarBackground(for scheme: ColorScheme) -> Color {
+        scheme == .dark
+            ? Color(red: 13.0 / 255.0, green: 19.0 / 255.0, blue: 17.0 / 255.0).opacity(0.95)
+            : Color(red: 255.0 / 255.0, green: 253.0 / 255.0, blue: 247.0 / 255.0).opacity(0.95)
+    }
+
+    public static func mutedText(for scheme: ColorScheme) -> Color {
+        scheme == .dark
+            ? Color(red: 150.0 / 255.0, green: 167.0 / 255.0, blue: 158.0 / 255.0) // #96A79E
+            : Color(red: 90.0 / 255.0, green: 107.0 / 255.0, blue: 97.0 / 255.0) // #5A6B61
     }
 
     public static func color(fromHex hex: String) -> Color {
@@ -128,28 +162,43 @@ public enum ArcaTheme {
 
 @available(macOS 14.0, iOS 17.0, *)
 public struct ArcaPrimaryButtonStyle: ButtonStyle {
-    public var tint: Color
+    public var tint: Color?
+    public var foreground: Color
     public var isFullWidth: Bool
     @Environment(\.isEnabled) private var isEnabled
+    @Environment(\.arcaAppAccentOption) private var envAccentOption
+    @AppStorage(AppAppearancePreferencesStore.accentColorDefaultsKey)
+    private var storedAccentHex: String = AppAccentColorOption.defaultOption.rawValue
 
-    public init(tint: Color = ArcaTheme.accent, isFullWidth: Bool = true) {
+    public init(tint: Color? = nil, foreground: Color = .white, isFullWidth: Bool = true) {
         self.tint = tint
+        self.foreground = foreground
         self.isFullWidth = isFullWidth
     }
 
+    private var resolvedTint: Color {
+        if let tint { return tint }
+        let option = envAccentOption != .defaultOption
+            ? envAccentOption
+            : AppAccentColorOption.resolve(from: storedAccentHex)
+        return option.color
+    }
+
     public func makeBody(configuration: Configuration) -> some View {
+        let activeTint = resolvedTint
         configuration.label
-            .font(.body.weight(.semibold))
-            .foregroundStyle(.white)
+            .arcaFont(.body, weight: .semibold)
+            .foregroundStyle(foreground)
             .frame(maxWidth: isFullWidth ? .infinity : nil)
             .padding(.horizontal, 18)
             .padding(.vertical, 13)
+            .frame(minHeight: 44)
             .background(
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
                     .fill(
                         isEnabled
                             ? LinearGradient(
-                                colors: [tint.opacity(0.95), tint],
+                                colors: [activeTint.opacity(0.95), activeTint],
                                 startPoint: .topLeading,
                                 endPoint: .bottomTrailing
                               )
@@ -160,7 +209,7 @@ public struct ArcaPrimaryButtonStyle: ButtonStyle {
                               )
                     )
             )
-            .shadow(color: isEnabled ? tint.opacity(0.22) : .clear, radius: 8, x: 0, y: 4)
+            .shadow(color: isEnabled ? activeTint.opacity(0.22) : .clear, radius: 8, x: 0, y: 4)
             .scaleEffect(configuration.isPressed ? 0.98 : 1.0)
             .opacity(configuration.isPressed ? 0.9 : 1.0)
             .animation(.easeOut(duration: 0.14), value: configuration.isPressed)
@@ -170,28 +219,42 @@ public struct ArcaPrimaryButtonStyle: ButtonStyle {
 
 @available(macOS 14.0, iOS 17.0, *)
 public struct ArcaSecondaryButtonStyle: ButtonStyle {
-    public var tint: Color
+    public var tint: Color?
     public var isFullWidth: Bool
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.arcaAppAccentOption) private var envAccentOption
+    @AppStorage(AppAppearancePreferencesStore.accentColorDefaultsKey)
+    private var storedAccentHex: String = AppAccentColorOption.defaultOption.rawValue
 
-    public init(tint: Color = ArcaTheme.accent, isFullWidth: Bool = false) {
+    public init(tint: Color? = nil, isFullWidth: Bool = false) {
         self.tint = tint
         self.isFullWidth = isFullWidth
     }
 
+    private var resolvedTint: Color {
+        if let tint { return tint }
+        let option = envAccentOption != .defaultOption
+            ? envAccentOption
+            : AppAccentColorOption.resolve(from: storedAccentHex)
+        return option.foregroundTint(for: colorScheme)
+    }
+
     public func makeBody(configuration: Configuration) -> some View {
+        let activeTint = resolvedTint
         configuration.label
-            .font(.subheadline.weight(.semibold))
-            .foregroundStyle(tint)
+            .arcaFont(.subheadline, weight: .semibold)
+            .foregroundStyle(activeTint)
             .frame(maxWidth: isFullWidth ? .infinity : nil)
             .padding(.horizontal, 16)
             .padding(.vertical, 11)
+            .frame(minHeight: 44)
             .background(
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(tint.opacity(configuration.isPressed ? 0.18 : 0.10))
+                    .fill(activeTint.opacity(configuration.isPressed ? 0.18 : 0.10))
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .strokeBorder(tint.opacity(0.24), lineWidth: 1)
+                    .strokeBorder(activeTint.opacity(0.24), lineWidth: 1)
             )
             .scaleEffect(configuration.isPressed ? 0.98 : 1.0)
             .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
@@ -202,21 +265,34 @@ public struct ArcaSecondaryButtonStyle: ButtonStyle {
 @available(macOS 14.0, iOS 17.0, *)
 public struct ArcaPillActionButton: View {
     @Environment(\.locale) private var locale
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.arcaAppAccentOption) private var envAccentOption
+    @AppStorage(AppAppearancePreferencesStore.accentColorDefaultsKey)
+    private var storedAccentHex: String = AppAccentColorOption.defaultOption.rawValue
     private var language: AppLanguage { AppLanguage(rawValue: locale.language.languageCode?.identifier ?? "en") ?? .english }
 
     public let title: String
     public let icon: String?
-    public var tint: Color = ArcaTheme.accent
+    public var tint: Color?
     public let action: () -> Void
 
-    public init(_ title: String, icon: String? = nil, tint: Color = ArcaTheme.accent, action: @escaping () -> Void) {
+    public init(_ title: String, icon: String? = nil, tint: Color? = nil, action: @escaping () -> Void) {
         self.title = title
         self.icon = icon
         self.tint = tint
         self.action = action
     }
 
+    private var resolvedTint: Color {
+        if let tint { return tint }
+        let option = envAccentOption != .defaultOption
+            ? envAccentOption
+            : AppAccentColorOption.resolve(from: storedAccentHex)
+        return option.foregroundTint(for: colorScheme)
+    }
+
     public var body: some View {
+        let activeTint = resolvedTint
         Button(action: action) {
             HStack(spacing: 5) {
                 if let icon {
@@ -224,12 +300,14 @@ public struct ArcaPillActionButton: View {
                         .font(.footnote.weight(.bold))
                 }
                 Text(language.localized(title))
-                    .font(.footnote.weight(.semibold))
+                    .arcaFont(.footnote, weight: .semibold)
             }
-            .foregroundStyle(tint)
+            .foregroundStyle(activeTint)
             .padding(.horizontal, 12)
             .padding(.vertical, 7)
-            .background(Capsule().fill(tint.opacity(0.12)))
+            .frame(minWidth: 44, minHeight: 44)
+            .background(Capsule().fill(activeTint.opacity(0.12)))
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
     }
@@ -239,12 +317,15 @@ public struct ArcaPillActionButton: View {
 @available(macOS 14.0, iOS 17.0, *)
 public struct ArcaSectionCard<Content: View>: View {
     @Environment(\.locale) private var locale
+    @Environment(\.arcaAppAccentOption) private var envAccentOption
+    @AppStorage(AppAppearancePreferencesStore.accentColorDefaultsKey)
+    private var storedAccentHex: String = AppAccentColorOption.defaultOption.rawValue
     private var language: AppLanguage { AppLanguage(rawValue: locale.language.languageCode?.identifier ?? "en") ?? .english }
 
     public let title: String?
     public let subtitle: String?
     public let icon: String?
-    public let iconTint: Color
+    public let iconTint: Color?
     @ViewBuilder public let content: () -> Content
     @Environment(\.colorScheme) private var colorScheme
 
@@ -252,7 +333,7 @@ public struct ArcaSectionCard<Content: View>: View {
         title: String? = nil,
         subtitle: String? = nil,
         icon: String? = nil,
-        iconTint: Color = ArcaTheme.accent,
+        iconTint: Color? = nil,
         @ViewBuilder content: @escaping () -> Content
     ) {
         self.title = title
@@ -262,6 +343,14 @@ public struct ArcaSectionCard<Content: View>: View {
         self.content = content
     }
 
+    private var resolvedIconTint: Color {
+        if let iconTint { return iconTint }
+        let option = envAccentOption != .defaultOption
+            ? envAccentOption
+            : AppAccentColorOption.resolve(from: storedAccentHex)
+        return option.foregroundTint(for: colorScheme)
+    }
+
     public var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             if let title {
@@ -269,11 +358,12 @@ public struct ArcaSectionCard<Content: View>: View {
                     if let icon {
                         Image(systemName: icon)
                             .font(.footnote.weight(.bold))
-                            .foregroundStyle(iconTint)
+                            .foregroundStyle(resolvedIconTint)
+                            .accessibilityHidden(true)
                     }
                     Text(verbatim: title.uppercased(with: locale))
                         .accessibilityAddTraits(.isHeader)
-                        .font(.caption.weight(.bold))
+                        .arcaFont(.caption, weight: .bold)
                         .tracking(0.6)
                         .foregroundStyle(.secondary)
                     Spacer()
@@ -284,7 +374,7 @@ public struct ArcaSectionCard<Content: View>: View {
             VStack(alignment: .leading, spacing: 12) {
                 if let subtitle {
                     Text(verbatim: subtitle)
-                        .font(.caption)
+                        .arcaFont(.caption)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -335,12 +425,12 @@ public struct ArcaStyledTextField: View {
             if isSecure {
                 SecureField(placeholder, text: $text)
                     .textFieldStyle(.plain)
-                    .font(.body)
+                    .arcaFont(.body)
                     .accessibilityLabel(placeholder)
             } else {
                 TextField(placeholder, text: $text)
                     .textFieldStyle(.plain)
-                    .font(.body)
+                    .arcaFont(.body)
                     .accessibilityLabel(placeholder)
             }
             if !text.isEmpty {
@@ -350,9 +440,10 @@ public struct ArcaStyledTextField: View {
                     Image(systemName: "xmark.circle.fill")
                         .font(.subheadline)
                         .foregroundStyle(.tertiary)
+                        .frame(minWidth: 44, minHeight: 44)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .frame(minWidth: 44, minHeight: 44)
                 .accessibilityLabel(language.format("Clear %@", placeholder))
             }
         }
@@ -389,10 +480,11 @@ public struct ArcaSearchBar: View {
             Image(systemName: "magnifyingglass")
                 .font(.body.weight(.medium))
                 .foregroundStyle(.secondary)
+                .accessibilityHidden(true)
 
             TextField(placeholder, text: $text)
                 .textFieldStyle(.plain)
-                .font(.body)
+                .arcaFont(.body)
 
             if !text.isEmpty {
                 Button {
@@ -401,8 +493,11 @@ public struct ArcaSearchBar: View {
                     Image(systemName: "xmark.circle.fill")
                         .font(.body)
                         .foregroundStyle(.secondary)
+                        .frame(minWidth: 44, minHeight: 44)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel(language.format("Clear %@", placeholder))
             }
         }
         .padding(.horizontal, 14)
@@ -451,6 +546,16 @@ public struct ArcaSheetHeaderBar: View {
     }
 
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.arcaAppAccentOption) private var envAccentOption
+    @AppStorage(AppAppearancePreferencesStore.accentColorDefaultsKey)
+    private var storedAccentHex: String = AppAccentColorOption.defaultOption.rawValue
+
+    private var resolvedAccentColor: Color {
+        let option = envAccentOption != .defaultOption
+            ? envAccentOption
+            : AppAccentColorOption.resolve(from: storedAccentHex)
+        return option.color
+    }
 
     public var body: some View {
         VStack(spacing: 6) {
@@ -476,10 +581,10 @@ public struct ArcaSheetHeaderBar: View {
 
     private var titleBlock: some View {
         VStack(spacing: 1) {
-            Text(verbatim: title).font(.body.weight(.bold))
+            Text(verbatim: title).arcaFont(.body, weight: .bold)
                 .accessibilityAddTraits(.isHeader)
             if let subtitle {
-                Text(verbatim: subtitle).font(.caption.weight(.medium)).foregroundStyle(.secondary)
+                Text(verbatim: subtitle).arcaFont(.caption, weight: .medium).foregroundStyle(.secondary)
             }
         }
         .fixedSize(horizontal: false, vertical: true)
@@ -489,7 +594,7 @@ public struct ArcaSheetHeaderBar: View {
         if let leadingLabel, let leadingAction {
             Button(action: leadingAction) {
                 Text(language.localized(leadingLabel))
-                    .font(.body.weight(.medium)).foregroundStyle(.secondary)
+                    .arcaFont(.body, weight: .medium).foregroundStyle(.secondary)
                     .padding(.horizontal, 10).padding(.vertical, 6)
                     .background(Capsule().fill(Color.secondary.opacity(0.10)))
                     .frame(minWidth: 44, minHeight: 44).contentShape(Rectangle())
@@ -501,9 +606,9 @@ public struct ArcaSheetHeaderBar: View {
         if let trailingLabel, let trailingAction {
             Button(action: trailingAction) {
                 Text(language.localized(trailingLabel))
-                    .font(.subheadline.weight(.semibold)).foregroundStyle(.white)
+                    .arcaFont(.subheadline, weight: .semibold).foregroundStyle(.white)
                     .padding(.horizontal, 14).padding(.vertical, 6)
-                    .background(Capsule().fill(trailingDisabled ? Color.secondary.opacity(0.35) : ArcaTheme.accent))
+                    .background(Capsule().fill(trailingDisabled ? Color.secondary.opacity(0.35) : resolvedAccentColor))
                     .frame(minWidth: 44, minHeight: 44).contentShape(Rectangle())
             }.buttonStyle(.plain).disabled(trailingDisabled)
         } else { Color.clear.frame(width: 64, height: 1).accessibilityHidden(true) }
@@ -633,10 +738,10 @@ public struct OperationalStateBannerView: View {
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(language.localized(title))
-                    .font(.footnote.weight(.bold))
+                    .arcaFont(.footnote, weight: .bold)
                     .foregroundStyle(.primary)
                 Text(language.localized(subtitle))
-                    .font(.footnote)
+                    .arcaFont(.footnote)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -646,7 +751,7 @@ public struct OperationalStateBannerView: View {
             if let actionLabel, let onAction {
                 Button(action: onAction) {
                     Text(language.localized(actionLabel))
-                        .font(.footnote.weight(.bold))
+                        .arcaFont(.footnote, weight: .bold)
                         .foregroundStyle(.white)
                         .padding(.horizontal, 12)
                         .padding(.vertical, 6)

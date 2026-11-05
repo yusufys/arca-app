@@ -48,7 +48,10 @@ public final class ArcaAppViewModel {
             }
         }
     }
-    public var appearanceMode: AppAppearanceMode = .light
+    private let appearancePreferences: AppAppearancePreferencesStore
+    public var appearanceMode: AppAppearanceMode {
+        didSet { appearancePreferences.saveAppearanceMode(appearanceMode) }
+    }
     public let appLock: LocalAppLock
     public var biometricLockEnabled: Bool { appLock.enabled }
     public var isAppLocked: Bool { appLock.isLocked }
@@ -94,6 +97,7 @@ public final class ArcaAppViewModel {
     public let rootDirectoryURL: URL
     public let catalogStore: CatalogStore
     private var spaceStores: [UUID: SpaceStore] = [:]
+    private var spaceReloadTokens: [UUID: UUID] = [:]
     public private(set) var syncBackend: LaravelArcaSyncBackend
     private var identityStore: WorkspaceIdentityStore?
     public private(set) var storageStartupError: String?
@@ -102,7 +106,13 @@ public final class ArcaAppViewModel {
     private var accountId: String = "acct-local-default"
     private var isBootstrapped: Bool = false
 
-    public init(rootDirectoryURL: URL? = nil, startWithCompletedOnboarding: Bool = false) {
+    public init(
+        rootDirectoryURL: URL? = nil,
+        startWithCompletedOnboarding: Bool = false,
+        appearancePreferences: AppAppearancePreferencesStore = .init()
+    ) {
+        self.appearancePreferences = appearancePreferences
+        self.appearanceMode = appearancePreferences.loadAppearanceMode()
         let baseDir = rootDirectoryURL ?? CatalogStore.defaultBaseDirectoryURL()
         self.rootDirectoryURL = baseDir
         // iOS may relocate the data container on update. The default vault keeps stable identifiers.
@@ -442,10 +452,14 @@ public final class ArcaAppViewModel {
     }
 
     private func reloadSpaceFromDisk(_ spaceId: UUID) async {
+        let token = UUID()
+        spaceReloadTokens[spaceId] = token
         let store = await spaceStore(for: spaceId)
-        pendingPrivacyDeletionBySpace[spaceId] = (try? await store.pendingPrivacyRules()).map { Set($0.map(\.collectionId)) } ?? []
+        let pending = (try? await store.pendingPrivacyRules()).map { Set($0.map(\.collectionId)) } ?? []
         let cols = await store.listCollections(includeDeleted: false)
         let recs = await store.listRecords(includeDeleted: false)
+        guard spaceReloadTokens[spaceId] == token else { return }
+        pendingPrivacyDeletionBySpace[spaceId] = pending
         collectionsBySpace[spaceId] = cols
         recordsBySpace[spaceId] = recs
         await refreshOutboxCount()
@@ -458,6 +472,7 @@ public final class ArcaAppViewModel {
         }
         let store = await spaceStore(for: spaceId)
         let items = await store.pendingOutboxItems()
+        guard currentSpace?.id == spaceId else { return }
         pendingOutboxCount = items.count
         if isOfflineSimulated {
             bannerState = .offlineQueued(pendingCount: pendingOutboxCount)
@@ -500,6 +515,7 @@ public final class ArcaAppViewModel {
         guard spaces.count > 1 else { return }
         await catalogStore.deleteSpace(id: id)
         spaceStores.removeValue(forKey: id)
+        spaceReloadTokens.removeValue(forKey: id)
         collectionsBySpace.removeValue(forKey: id)
         recordsBySpace.removeValue(forKey: id)
         spaces = await catalogStore.listSpaces()
@@ -535,69 +551,115 @@ public final class ArcaAppViewModel {
         await reloadSpaceFromDisk(spaceId)
     }
 
+    public func updateCollectionMetadata(
+        collectionId: UUID,
+        name: String? = nil,
+        iconName: String? = nil,
+        colorHex: String? = nil
+    ) async throws {
+        guard let current = schema(for: collectionId) else {
+            throw PersistenceError.collectionNotFound(collectionId)
+        }
+        let name = name?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let iconName = iconName?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let colorHex = colorHex.flatMap(Self.normalizedColorHex)
+
+        try await editCollection(current) { schema in
+            let original = schema
+            if let name, !name.isEmpty { schema.name = name }
+            if let iconName, !iconName.isEmpty { schema.iconName = iconName }
+            if let colorHex, colorHex.caseInsensitiveCompare(schema.colorHex) != .orderedSame {
+                schema.colorHex = colorHex
+            }
+            guard original != schema else { return }
+            schema.schemaVersion += 1
+            schema.revision += 1
+            schema.updatedAt = Date()
+        }
+    }
+
+    private func editCollection(
+        _ current: CollectionSchema,
+        update: @Sendable (inout CollectionSchema) throws -> Void
+    ) async throws {
+        let store = await spaceStore(for: current.spaceId)
+        guard let space = spaces.first(where: { $0.id == current.spaceId }) else {
+            throw PersistenceError.spaceNotFound(current.spaceId)
+        }
+        try await store.updateCollectionStrict(id: current.id, enqueueSync: space.storageMode == .arcaSync, update: update)
+        await reloadSpaceFromDisk(current.spaceId)
+    }
+
+    private static func normalizedColorHex(_ rawHex: String) -> String? {
+        let cleaned = rawHex
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .trimmingCharacters(in: CharacterSet(charactersIn: "#"))
+            .uppercased()
+        guard cleaned.count == 6, UInt64(cleaned, radix: 16) != nil else {
+            return nil
+        }
+        return "#" + cleaned
+    }
+
     public func renameField(in collectionId: UUID, fieldId: UUID, newLabel: String) async {
-        guard let currentSchema = schema(for: collectionId) else { return }
-        let updated = SchemaEngine.renameField(in: currentSchema, fieldId: fieldId, newLabel: newLabel)
-        let store = await spaceStore(for: updated.spaceId)
-        await store.saveCollection(updated, enqueueSync: currentSpace?.storageMode == .arcaSync)
-        await reloadSpaceFromDisk(updated.spaceId)
+        guard let current = schema(for: collectionId) else { return }
+        try? await editCollection(current) {
+            $0 = SchemaEngine.renameField(in: $0, fieldId: fieldId, newLabel: newLabel)
+        }
     }
 
     public func moveField(in collectionId: UUID, fromIndex: Int, direction: Int) async {
-        guard let currentSchema = schema(for: collectionId) else { return }
-        var ids = currentSchema.activeFields.map(\.id)
-        let targetIndex = fromIndex + direction
-        guard ids.indices.contains(fromIndex), ids.indices.contains(targetIndex) else { return }
-        ids.swapAt(fromIndex, targetIndex)
-        let updated = SchemaEngine.reorderFields(in: currentSchema, orderedFieldIds: ids)
-        let store = await spaceStore(for: updated.spaceId)
-        await store.saveCollection(updated, enqueueSync: currentSpace?.storageMode == .arcaSync)
-        await reloadSpaceFromDisk(updated.spaceId)
+        guard let current = schema(for: collectionId),
+              current.activeFields.indices.contains(fromIndex) else { return }
+        let fieldId = current.activeFields[fromIndex].id
+        try? await editCollection(current) {
+            var ids = $0.activeFields.map(\.id)
+            guard let index = ids.firstIndex(of: fieldId),
+                  ids.indices.contains(index + direction) else { return }
+            ids.swapAt(index, index + direction)
+            $0 = SchemaEngine.reorderFields(in: $0, orderedFieldIds: ids)
+        }
     }
 
     public func removeField(in collectionId: UUID, fieldId: UUID, policy: FieldRetentionPolicy) async {
-        guard let currentSchema = schema(for: collectionId) else { return }
-        let store = await spaceStore(for: currentSchema.spaceId)
+        guard let current = schema(for: collectionId) else { return }
+        let store = await spaceStore(for: current.spaceId)
         let existingRecords = await store.listRecords(collectionId: collectionId)
-        let (updatedSchema, updatedRecords) = SchemaEngine.removeField(
-            in: currentSchema,
-            fieldId: fieldId,
-            policy: policy,
-            records: existingRecords
-        )
-        let enqueue = currentSpace?.storageMode == .arcaSync
-        await store.saveCollection(updatedSchema, enqueueSync: enqueue)
+        let enqueue = spaces.first(where: { $0.id == current.spaceId })?.storageMode == .arcaSync
+        guard let (updatedSchema, updatedRecords) = try? await store.updateCollectionStrict(
+            id: collectionId, enqueueSync: enqueue, update: { schema in
+                let (updated, records) = SchemaEngine.removeField(
+                    in: schema, fieldId: fieldId, policy: policy, records: existingRecords
+                )
+                schema = updated
+                return (updated, records)
+            }
+        ) else { return }
         if policy == .permanentlyPurgeValues {
-            for r in updatedRecords {
-                try? await store.saveRecord(r, schema: updatedSchema, enqueueSync: enqueue)
+            for record in updatedRecords {
+                try? await store.saveRecord(record, schema: updatedSchema, enqueueSync: enqueue)
             }
         }
-        await reloadSpaceFromDisk(currentSchema.spaceId)
+        await reloadSpaceFromDisk(current.spaceId)
     }
 
     public func restoreArchivedField(in collectionId: UUID, fieldId: UUID) async {
-        guard let currentSchema = schema(for: collectionId) else { return }
-        let updated = SchemaEngine.restoreArchivedField(in: currentSchema, fieldId: fieldId)
-        let store = await spaceStore(for: updated.spaceId)
-        await store.saveCollection(updated, enqueueSync: currentSpace?.storageMode == .arcaSync)
-        await reloadSpaceFromDisk(updated.spaceId)
+        guard let current = schema(for: collectionId) else { return }
+        try? await editCollection(current) {
+            $0 = SchemaEngine.restoreArchivedField(in: $0, fieldId: fieldId)
+        }
     }
 
     public func addField(to collectionId: UUID, label: String, type: FieldType) async {
-        guard var currentSchema = schema(for: collectionId) else { return }
+        guard let current = schema(for: collectionId) else { return }
         let trimmed = label.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
-        currentSchema.fields.append(FieldDefinition(
-            label: trimmed,
-            type: type,
-            sortOrder: currentSchema.fields.count
-        ))
-        currentSchema.schemaVersion += 1
-        currentSchema.revision += 1
-        currentSchema.updatedAt = Date()
-        let store = await spaceStore(for: currentSchema.spaceId)
-        await store.saveCollection(currentSchema, enqueueSync: currentSpace?.storageMode == .arcaSync)
-        await reloadSpaceFromDisk(currentSchema.spaceId)
+        try? await editCollection(current) { schema in
+            schema.fields.append(FieldDefinition(label: trimmed, type: type, sortOrder: schema.fields.count))
+            schema.schemaVersion += 1
+            schema.revision += 1
+            schema.updatedAt = Date()
+        }
     }
 
     public func previewFieldConversion(collectionId: UUID, field: FieldDefinition, targetType: FieldType) -> FieldConversionPreview {
@@ -606,21 +668,21 @@ public final class ArcaAppViewModel {
     }
 
     public func applyFieldConversion(collectionId: UUID, fieldId: UUID, targetType: FieldType) async throws {
-        guard let currentSchema = schema(for: collectionId) else { return }
-        let store = await spaceStore(for: currentSchema.spaceId)
-        let recs = await store.listRecords(collectionId: collectionId)
-        let (updatedSchema, updatedRecords) = try SchemaEngine.applyFieldTypeConversion(
-            in: currentSchema,
-            fieldId: fieldId,
-            targetType: targetType,
-            records: recs
-        )
-        let enqueue = currentSpace?.storageMode == .arcaSync
-        await store.saveCollection(updatedSchema, enqueueSync: enqueue)
-        for r in updatedRecords {
-            try await store.saveRecord(r, schema: updatedSchema, enqueueSync: enqueue)
+        guard let current = schema(for: collectionId) else { return }
+        let store = await spaceStore(for: current.spaceId)
+        let existingRecords = await store.listRecords(collectionId: collectionId)
+        let enqueue = spaces.first(where: { $0.id == current.spaceId })?.storageMode == .arcaSync
+        let (updatedSchema, updatedRecords) = try await store.updateCollectionStrict(id: collectionId, enqueueSync: enqueue) { schema in
+            let (updated, records) = try SchemaEngine.applyFieldTypeConversion(
+                in: schema, fieldId: fieldId, targetType: targetType, records: existingRecords
+            )
+            schema = updated
+            return (updated, records)
         }
-        await reloadSpaceFromDisk(currentSchema.spaceId)
+        for record in updatedRecords {
+            try await store.saveRecord(record, schema: updatedSchema, enqueueSync: enqueue)
+        }
+        await reloadSpaceFromDisk(current.spaceId)
     }
 
     // MARK: - Record CRUD, Attachments & Search
@@ -1099,18 +1161,18 @@ public final class ArcaAppViewModel {
 
     private func updateSensitivePrivacy(collectionId: UUID, fieldId: UUID?, choice: SensitiveDataPrivacy) async throws {
         guard !isSyncing else { throw PersistenceError.ioError("Wait for the active sync to finish before changing privacy.") }
-        guard var schema = schema(for: collectionId) else { throw PersistenceError.ioError("Collection not found.") }
-        if let fieldId {
-            guard let index = schema.fields.firstIndex(where: { $0.id == fieldId }) else { throw PersistenceError.ioError("Field not found.") }
-            schema.fields[index].privacy = choice
-        } else { schema.privacy = choice }
-        schema.revision += 1; schema.schemaVersion += 1; schema.updatedAt = Date()
-        let store = await spaceStore(for: schema.spaceId)
+        guard let current = schema(for: collectionId) else { throw PersistenceError.ioError("Collection not found.") }
+        let store = await spaceStore(for: current.spaceId)
         // Persist even in a Local-Only Space: pending remote removal must survive later mode changes.
-        try await store.saveCollectionStrict(schema, enqueueSync: true)
-        guard await store.fetchCollection(id: schema.id) == schema else { throw PersistenceError.ioError("Privacy choice could not be saved. Please retry.") }
-        publicSnapshots.removeAll { snapshot in (recordsBySpace[schema.spaceId] ?? []).contains { $0.collectionId == collectionId && $0.id == snapshot.sourceRecordId } }
-        await reloadSpaceFromDisk(schema.spaceId)
+        try await store.updateCollectionStrict(id: collectionId, enqueueSync: true) { schema in
+            if let fieldId {
+                guard let index = schema.fields.firstIndex(where: { $0.id == fieldId }) else { throw PersistenceError.ioError("Field not found.") }
+                schema.fields[index].privacy = choice
+            } else { schema.privacy = choice }
+            schema.revision += 1; schema.schemaVersion += 1; schema.updatedAt = Date()
+        }
+        publicSnapshots.removeAll { snapshot in (recordsBySpace[current.spaceId] ?? []).contains { $0.collectionId == collectionId && $0.id == snapshot.sourceRecordId } }
+        await reloadSpaceFromDisk(current.spaceId)
     }
 
     // MARK: - Public Snapshot & Biometrics

@@ -12,4 +12,4 @@ The canonical artwork is [the opaque 1024 × 1024 app icon](iOSApp/Assets.xcasse
 | Index gold | `#E4A943` | The single tab, small highlights and illustrations; use dark ink for text on gold |
 | Night pine | `#0E1A14` | Dark canvas; use `#17281F` for raised cards |
 
-Use system typography and restrained surfaces. Preserve distinct, labeled error and privacy states. The source icon contains subtle variations in these colors from paper texture and lighting. For UI controls use the flat palette and test contrast at the point of use.
+Use native system typography for English and Turkish, and IBM Plex Sans Arabic for Arabic app text. Use semantic SwiftUI text styles and Dynamic Type in every language; the bundled Arabic faces also support accessibility Bold Text. Keep technical monospaced content and platform-controlled UI native. Use restrained surfaces and distinct, labeled error and privacy states. The source icon contains subtle variations in these colors from paper texture and lighting. For UI controls use the flat palette and test contrast at the point of use.

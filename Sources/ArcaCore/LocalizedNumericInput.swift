@@ -8,6 +8,13 @@ public enum LocalizedNumericInput {
         return value
     }
 
+    public static func decimal(_ input: String, locale: Locale) -> Decimal? {
+        guard let normalized = normalizedDecimal(input, locale: locale),
+              let value = Decimal(string: normalized, locale: Locale(identifier: "en_US_POSIX")),
+              !value.isNaN else { return nil }
+        return value
+    }
+
     public static func money(_ input: String, currencyCode: String, locale: Locale, fractionDigits: Int = 2) -> MoneyValue? {
         guard (0...8).contains(fractionDigits) else { return nil }
         guard let normalized = normalizedDecimal(input, locale: locale),

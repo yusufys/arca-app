@@ -58,7 +58,7 @@ public struct AICollectionAssistantSheetView: View {
 
                     if let errorMessage {
                         Label(errorMessage, systemImage: "exclamationmark.circle")
-                            .font(.subheadline)
+                            .arcaFont(.subheadline)
                             .foregroundStyle(ArcaTheme.dangerRed)
                             .accessibilityIdentifier("aiCollection.error")
                     }
@@ -96,7 +96,7 @@ public struct AICollectionAssistantSheetView: View {
             .accessibilityIdentifier("aiCollection.intent")
 
             Text(text("creation.intentPrivacy"))
-                .font(.caption)
+                .arcaFont(.caption)
                 .foregroundStyle(.secondary)
 
             Button {
@@ -126,7 +126,7 @@ public struct AICollectionAssistantSheetView: View {
             Image(systemName: "sparkles")
                 .foregroundStyle(ArcaTheme.accent)
             Text(intent.trimmingCharacters(in: .whitespacesAndNewlines))
-                .font(.subheadline)
+                .arcaFont(.subheadline)
                 .frame(maxWidth: .infinity, alignment: .leading)
             Button(text("creation.edit")) {
                 preparedPrompt = nil
@@ -136,7 +136,7 @@ public struct AICollectionAssistantSheetView: View {
                 errorMessage = nil
                 clipboardMessage = nil
             }
-            .font(.subheadline.weight(.semibold))
+            .arcaFont(.subheadline, weight: .semibold)
             .disabled(isCreating)
         }
     }
@@ -178,12 +178,12 @@ public struct AICollectionAssistantSheetView: View {
             }
 
             Text(text("creation.openHint"))
-                .font(.caption)
+                .arcaFont(.caption)
                 .foregroundStyle(.secondary)
 
             if let clipboardMessage {
                 Label(clipboardMessage, systemImage: "checkmark.circle.fill")
-                    .font(.caption)
+                    .arcaFont(.caption)
                     .foregroundStyle(ArcaTheme.secondaryEmerald)
                     .accessibilityIdentifier("aiCollection.clipboardStatus")
             }
@@ -268,26 +268,26 @@ public struct AICollectionAssistantSheetView: View {
                             .frame(width: 22)
                         VStack(alignment: .leading, spacing: 2) {
                             Text(field.label)
-                                .font(.subheadline.weight(.semibold))
+                                .arcaFont(.subheadline, weight: .semibold)
                             Text(ArcaStrings.text(field.type.displayNameKey, language: viewModel.language))
-                                .font(.caption)
+                                .arcaFont(.caption)
                                 .foregroundStyle(.secondary)
                         }
                         Spacer()
                         if field.isPrimaryTitle {
                             Text(text("creation.titleField"))
-                                .font(.caption)
+                                .arcaFont(.caption)
                                 .foregroundStyle(.secondary)
                         }
                         if field.isRequired {
                             Text(text("creation.required"))
-                                .font(.caption)
+                                .arcaFont(.caption)
                                 .foregroundStyle(.secondary)
                         }
                     }
                     if !field.options.isEmpty {
                         Text(field.options.map(\.label).joined(separator: " • "))
-                            .font(.caption)
+                            .arcaFont(.caption)
                             .foregroundStyle(.secondary)
                             .padding(.leading, 32)
                     }
@@ -297,7 +297,7 @@ public struct AICollectionAssistantSheetView: View {
 
             if let space = viewModel.currentSpace {
                 Label(text("creation.space", space.name), systemImage: space.iconName)
-                    .font(.caption)
+                    .arcaFont(.caption)
                     .foregroundStyle(.secondary)
             }
 

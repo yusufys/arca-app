@@ -10,6 +10,11 @@ final class LocalizationTests: XCTestCase {
         XCTAssertEqual(AppLanguage.arabic.format("count.fields", 1), "حقل واحد")
         XCTAssertEqual(AppLanguage.arabic.format("count.fields", 2), "حقلان")
         XCTAssertTrue(AppLanguage.arabic.format("count.fields", 11).contains("حقلاً"))
+        XCTAssertEqual(AppLanguage.english.format("count.collections", 1), "1 Collection")
+        XCTAssertEqual(AppLanguage.english.format("count.collections", 4), "4 Collections")
+        XCTAssertEqual(AppLanguage.arabic.format("count.collections", 1), "مجموعة واحدة")
+        XCTAssertEqual(AppLanguage.arabic.format("count.collections", 2), "مجموعتان")
+        XCTAssertEqual(AppLanguage.turkish.format("count.collections", 4), "4 Koleksiyon")
         XCTAssertEqual(ArcaStrings.text("tab.home", language: .turkish), "Ana Sayfa")
     }
 

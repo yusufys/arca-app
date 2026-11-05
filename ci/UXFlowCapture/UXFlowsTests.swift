@@ -159,3 +159,155 @@ final class UXFlowsTests: XCTestCase {
     }
 
 }
+
+
+// Build 7 redesign acceptance runs in a separate fixture app, never the production workspace.
+extension UXFlowsTests {
+    func redesignLaunch(_ screen: String, _ lang: String = "en", workspace: String = UUID().uuidString, dark: Bool? = false, large: Bool = false) -> XCUIApplication {
+        let app = XCUIApplication(bundleIdentifier: bundle)
+        app.launchArguments = ["-arca.language", lang]
+        if large { app.launchArguments += ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"] }
+        app.launchEnvironment = ["ARCA_API_BASE_URL": "http://127.0.0.1:19274", "ARCA_FLOW_SCREEN": screen, "ARCA_FIXTURE_WORKSPACE": workspace, "ARCA_FIXTURE_REDESIGN": "1"]
+        if let dark { app.launchEnvironment["ARCA_FIXTURE_DARK"] = dark ? "1" : "0" }
+        app.launch()
+        let loaded = NSPredicate { _, _ in app.staticTexts.count > 0 && !app.staticTexts["Loading fixture"].exists }
+        expectation(for: loaded, evaluatedWith: app); waitForExpectations(timeout: 30)
+        XCTAssertFalse(app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", "Fixture failed:")).firstMatch.exists)
+        return app
+    }
+
+    func testRedesignLocalizedScreens() throws {
+        continueAfterFailure = false
+        for language in ["en", "ar", "tr"] {
+            for screen in ["home", "collection", "collection-settings", "record-new", "record-detail", "settings"] {
+                let app = redesignLaunch(screen, language)
+                shot(app, "redesign-\(language)-\(screen)")
+                if screen == "collection-settings" { app.swipeUp(); shot(app, "redesign-\(language)-collection-settings-bottom") }
+                app.terminate()
+            }
+        }
+    }
+
+    func testRedesignDarkAndLargeText() throws {
+        continueAfterFailure = false
+        for screen in ["home", "collection", "collection-settings", "settings"] {
+            let app = redesignLaunch(screen, "ar", dark: true, large: true)
+            shot(app, "redesign-dark-large-ar-\(screen)")
+            // Focused audit: readable names for interactive elements. Device VoiceOver review remains manual.
+            try app.performAccessibilityAudit(for: [.elementDetection])
+            app.swipeUp(); shot(app, "redesign-dark-large-ar-\(screen)-bottom")
+            app.terminate()
+        }
+    }
+}
+
+
+extension UXFlowsTests {
+    func testRedesignRecordModesAndRelaunch() {
+        continueAfterFailure = false
+        let workspace = UUID().uuidString
+        let app = redesignLaunch("collection", workspace: workspace)
+        XCTAssertTrue(app.buttons["Compact"].waitForExistence(timeout: 8))
+        app.buttons["Compact"].tap()
+        XCTAssertTrue(app.buttons["Compact"].isSelected)
+        XCTAssertTrue(app.staticTexts["Beta tool"].exists)
+        shot(app, "redesign-compact-records")
+        app.buttons["Box"].tap()
+        XCTAssertTrue(app.buttons["Box"].isSelected)
+        shot(app, "redesign-box-records")
+        app.terminate()
+        let restored = redesignLaunch("collection", workspace: workspace)
+        XCTAssertTrue(restored.buttons["Box"].isSelected, "Per-collection layout survives process termination")
+        XCTAssertTrue(restored.staticTexts["Beta tool"].exists, "Existing encrypted records survive relaunch")
+        restored.buttons["Normal"].tap()
+        XCTAssertTrue(restored.buttons["Normal"].isSelected)
+        restored.terminate()
+    }
+
+    func testRedesignSettingsAndFullScreenAddPersist() {
+        continueAfterFailure = false
+        let workspace = UUID().uuidString
+        let app = redesignLaunch("collection-settings", workspace: workspace)
+        let name = app.textFields["Collection Name"]
+        XCTAssertTrue(name.waitForExistence(timeout: 8))
+        let original = name.value as? String ?? ""
+        XCTAssertFalse(original.isEmpty)
+        name.coordinate(withNormalizedOffset: CGVector(dx: 0.98, dy: 0.5)).tap()
+        name.typeText(" QA")
+        let save = app.buttons["Save"]
+        XCTAssertTrue(save.waitForExistence(timeout: 5)); save.tap()
+        let mode = app.buttons["“Add Record” Form Style"]
+        reveal(app, mode); mode.tap()
+        let fullScreen = app.buttons["Complete New Screen"]
+        reveal(app, fullScreen); fullScreen.tap()
+        XCTAssertEqual(mode.value as? String, "Complete New Screen")
+        app.terminate()
+        let restored = redesignLaunch("collection-settings", workspace: workspace)
+        XCTAssertEqual(restored.textFields["Collection Name"].value as? String, original + " QA")
+        let restoredMode = restored.buttons["“Add Record” Form Style"]
+        reveal(restored, restoredMode)
+        XCTAssertEqual(restoredMode.value as? String, "Complete New Screen")
+        let testForm = restored.buttons["Test"]
+        reveal(restored, testForm); testForm.tap()
+        XCTAssertTrue(restored.buttons["Cancel"].waitForExistence(timeout: 5))
+        shot(restored, "redesign-fullscreen-add")
+        restored.buttons["Cancel"].tap()
+        XCTAssertTrue(restoredMode.waitForExistence(timeout: 5))
+        restored.terminate()
+    }
+}
+
+extension UXFlowsTests {
+    func testRedesignAppearanceSurvivesRelaunch() {
+        continueAfterFailure = false
+        let workspace = UUID().uuidString
+        let app = redesignLaunch("settings", workspace: workspace, dark: nil)
+        let dark = app.buttons["settings.appearance.dark"]
+        reveal(app, dark); dark.tap()
+        XCTAssertTrue(dark.isSelected)
+        app.terminate()
+        let restored = redesignLaunch("settings", workspace: workspace, dark: nil)
+        let savedDark = restored.buttons["settings.appearance.dark"]
+        reveal(restored, savedDark)
+        XCTAssertTrue(savedDark.isSelected)
+        shot(restored, "redesign-appearance-restored")
+        restored.buttons["settings.appearance.light"].tap()
+        restored.terminate()
+    }
+
+    func testArabicTypographyOnboardingAndKeyboard() { onboarding("ar") }
+
+    func testRedesignHomeActionsAndAIFirstCreation() {
+        continueAfterFailure = false
+        for action in ["add", "view", "edit"] {
+            let app = redesignLaunch("home")
+            let card = app.buttons.matching(NSPredicate(format: "identifier MATCHES %@", "home\\.collection\\.[A-Fa-f0-9-]+$")).firstMatch
+            XCTAssertTrue(card.waitForExistence(timeout: 8))
+            card.tap()
+            let button = app.buttons.matching(NSPredicate(format: "identifier ENDSWITH %@", "." + action)).firstMatch
+            XCTAssertTrue(button.waitForExistence(timeout: 5), "Card actions remain open after the initial tap")
+            if action == "add" { shot(app, "redesign-home-actions") }
+            button.tap()
+            switch action {
+            case "add":
+                XCTAssertTrue(app.buttons["Cancel"].waitForExistence(timeout: 5))
+                shot(app, "redesign-popup-add")
+                app.buttons["Cancel"].tap()
+            case "view": XCTAssertTrue(app.buttons["Compact"].waitForExistence(timeout: 5))
+            default: XCTAssertTrue(app.textFields["Collection Name"].waitForExistence(timeout: 5))
+            }
+            app.terminate()
+        }
+        let app = redesignLaunch("home")
+        let newCollection = app.buttons["home.newCollectionTile"]
+        reveal(app, newCollection); newCollection.tap()
+        let ai = app.buttons["Create with AI…"]
+        XCTAssertTrue(ai.waitForExistence(timeout: 5)); ai.tap()
+        let intent = app.descendants(matching: .any)["aiCollection.intent"].firstMatch
+        XCTAssertTrue(intent.waitForExistence(timeout: 5))
+        intent.tap(); intent.typeText("Track household equipment")
+        XCTAssertTrue(app.buttons["aiCollection.prepare"].isEnabled)
+        shot(app, "redesign-ai-creation-retained")
+        app.terminate()
+    }
+}

@@ -4,11 +4,15 @@ import ArcaCore
 
 @main
 struct ArcaUXFlows: App {
-    @State private var model = ArcaAppViewModel(rootDirectoryURL: FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0].appendingPathComponent(UUID().uuidString))
+    @State private var model = ArcaAppViewModel(rootDirectoryURL: FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0].appendingPathComponent(ProcessInfo.processInfo.environment["ARCA_FIXTURE_WORKSPACE"] ?? UUID().uuidString))
     @State private var fixtureError: String?
     @State private var ready = false
     @StateObject private var purchases = ArcaPurchases()
     private var scenario: String { ProcessInfo.processInfo.environment["ARCA_FLOW_SCREEN"] ?? "onboarding" }
+    // A rename changes collection display order; relaunch tests must reopen the same UUID.
+    private var captureSchema: CollectionSchema? {
+        model.collectionsInCurrentSpace.min { $0.id.uuidString < $1.id.uuidString }
+    }
     var body: some Scene {
         WindowGroup {
             Group {
@@ -16,17 +20,22 @@ struct ArcaUXFlows: App {
                 else if ready { screen }
                 else { ProgressView("Loading fixture") }
             }
+            .arcaApplyAppAccentEnvironment()
+            .arcaDefaultTypography()
             .environment(\.arcaSubscriptionScreen, AnyView(ArcaPlanView(purchases: purchases, model: model)))
             .environment(\.locale, model.language.locale)
             .environment(\.layoutDirection, model.language.layoutDirection)
-            .preferredColorScheme(.light)
+            .preferredColorScheme(model.appearanceMode.colorScheme)
             .background(KeyboardDismissal())
             .task {
                 await model.bootstrapIfNeeded()
+                if let dark = ProcessInfo.processInfo.environment["ARCA_FIXTURE_DARK"] {
+                    model.appearanceMode = dark == "1" ? .dark : .light
+                }
                 await model.refreshSuggestedTemplates()
-                if scenario != "onboarding" {
+                if scenario != "onboarding" && !model.hasCompletedOnboarding {
                     await model.finishOnboarding(defaultMode: .localOnly, acceptedCloudTerms: false, selectedTemplates: model.suggestedTemplates)
-                    if let schema = model.collectionsInCurrentSpace.first {
+                    if let schema = captureSchema {
                         var values: [UUID: FieldValue] = [:]
                         for field in schema.fields {
                             switch field.type {
@@ -44,6 +53,13 @@ struct ArcaUXFlows: App {
                             }
                         }
                         try? await model.saveRecord(existingRecord: nil, schema: schema, values: values, isFavorite: true)
+                        if ProcessInfo.processInfo.environment["ARCA_FIXTURE_REDESIGN"] == "1", let title = schema.primaryTitleField {
+                            for name in ["Beta tool", "Gamma tool"] {
+                                var otherValues = values
+                                otherValues[title.id] = .shortText(name)
+                                try? await model.saveRecord(existingRecord: nil, schema: schema, values: otherValues, isFavorite: false)
+                            }
+                        }
                     }
                 }
                 if scenario == "connected-sync" || scenario == "connected-devices" {
@@ -73,12 +89,13 @@ struct ArcaUXFlows: App {
                 case "devices", "connected-devices": ActiveDeviceManagementScreenView(viewModel: model)
                 case "privacy": PrivacyAndEncryptionDetailsView(viewModel: model)
                 case "migration": if let space = model.currentSpace { StorageModeMigrationScreenView(viewModel: model, space: space) }
-                case "sensitive": if let schema = model.collectionsInCurrentSpace.first { SensitivePrivacyConsentView(viewModel: model, collectionId: schema.id) }
-                case "fields": if let schema = model.collectionsInCurrentSpace.first { FieldEditorSheetView(viewModel: model, collectionId: schema.id) }
-                case "collection": if let schema = model.collectionsInCurrentSpace.first { CollectionRecordListView(viewModel: model, schema: schema) }
-                case "record-new": if let schema = model.collectionsInCurrentSpace.first { AddEditRecordSheetView(viewModel: model, schema: schema, existingRecord: nil) }
-                case "record-edit": if let schema = model.collectionsInCurrentSpace.first, let record = model.recordsInCurrentSpace.first { AddEditRecordSheetView(viewModel: model, schema: schema, existingRecord: record) }
-                case "record-detail": if let schema = model.collectionsInCurrentSpace.first, let record = model.recordsInCurrentSpace.first { RecordDetailView(viewModel: model, recordId: record.id, schema: schema) }
+                case "sensitive": if let schema = captureSchema { SensitivePrivacyConsentView(viewModel: model, collectionId: schema.id) }
+                case "fields": if let schema = captureSchema { FieldEditorSheetView(viewModel: model, collectionId: schema.id) }
+                case "collection-settings": if let schema = captureSchema { CollectionSettingsView(viewModel: model, schema: schema) }
+                case "collection": if let schema = captureSchema { CollectionRecordListView(viewModel: model, schema: schema) }
+                case "record-new": if let schema = captureSchema { AddEditRecordSheetView(viewModel: model, schema: schema, existingRecord: nil) }
+                case "record-edit": if let schema = captureSchema, let record = model.recordsInCurrentSpace.first { AddEditRecordSheetView(viewModel: model, schema: schema, existingRecord: record) }
+                case "record-detail": if let schema = captureSchema, let record = model.recordsInCurrentSpace.first { RecordDetailView(viewModel: model, recordId: record.id, schema: schema) }
                 default: Text("Unknown test route")
                 }
             }

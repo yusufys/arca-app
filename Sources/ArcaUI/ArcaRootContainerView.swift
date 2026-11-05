@@ -13,7 +13,10 @@ public struct ArcaRootContainerView: View {
     @ViewState private var selectedTab: Int = 0
     @ViewState private var useiPhoneBezelOnMac: Bool = true
     @ViewState private var sceneIdentifier = UUID()
+    @AppStorage(AppAppearancePreferencesStore.accentColorDefaultsKey)
+    private var storedAccentHex: String = AppAccentColorOption.defaultOption.rawValue
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.colorScheme) private var systemColorScheme
 
@@ -25,9 +28,19 @@ public struct ArcaRootContainerView: View {
         viewModel.appearanceMode.colorScheme ?? systemColorScheme
     }
 
+    private var appAccentOption: AppAccentColorOption {
+        AppAccentColorOption.resolve(from: storedAccentHex)
+    }
+
+    private var appAccentColor: Color {
+        appAccentOption.color
+    }
+
     public var body: some View {
         #if os(macOS)
         macStudioContainer
+            .arcaApplyAppAccentEnvironment()
+            .arcaDefaultTypography()
             .onChange(of: scenePhase, initial: true) { _, phase in viewModel.handleScenePhase(phase, sceneId: sceneIdentifier) }
             .onDisappear { viewModel.forgetScene(sceneIdentifier) }
             .preferredColorScheme(viewModel.appearanceMode.colorScheme)
@@ -36,6 +49,8 @@ public struct ArcaRootContainerView: View {
             .environment(\.locale, viewModel.language.locale)
         #else
         mobileScreenContent
+            .arcaApplyAppAccentEnvironment()
+            .arcaDefaultTypography()
             .preferredColorScheme(viewModel.appearanceMode.colorScheme)
             .transaction { if reduceMotion { $0.animation = nil; $0.disablesAnimations = true } }
             .environment(\.layoutDirection, viewModel.language.layoutDirection)
@@ -58,7 +73,7 @@ public struct ArcaRootContainerView: View {
 
             if let error = viewModel.storageStartupError {
                 VStack(spacing: 12) {
-                    Text(viewModel.language.localized("Your workspace could not be opened")).font(.headline)
+                    Text(viewModel.language.localized("Your workspace could not be opened")).arcaFont(.headline)
                     Text(error)
                     Text(viewModel.language.localized("Unlock the device and reopen Arca to try again."))
                 }.padding()
@@ -99,7 +114,7 @@ public struct ArcaRootContainerView: View {
             tabBarButton(
                 index: 1,
                 title: ArcaStrings.text("tab.insights", language: viewModel.language),
-                icon: "chart.bar.xaxis",
+                icon: selectedTab == 1 ? "chart.bar.fill" : "chart.bar.xaxis",
                 badgeCount: 0
             )
             tabBarButton(
@@ -113,8 +128,7 @@ public struct ArcaRootContainerView: View {
         .padding(.top, 8)
         .padding(.bottom, 6)
         .background(
-            ArcaTheme.cardBackground(for: effectiveColorScheme)
-                .opacity(0.96)
+            ArcaTheme.tabBarBackground(for: effectiveColorScheme)
         )
         .overlay(alignment: .top) {
             Rectangle()
@@ -125,43 +139,56 @@ public struct ArcaRootContainerView: View {
 
     private func tabBarButton(index: Int, title: String, icon: String, badgeCount: Int) -> some View {
         let isSelected = selectedTab == index
+        let labelTint = appAccentOption.foregroundTint(for: effectiveColorScheme)
         return Button {
-            withAnimation(.spring(response: 0.26, dampingFraction: 0.82)) {
+            withAnimation(reduceMotion ? nil : .spring(response: 0.26, dampingFraction: 0.82)) {
                 selectedTab = index
             }
         } label: {
             VStack(spacing: 4) {
                 ZStack(alignment: .topTrailing) {
                     Image(systemName: icon)
-                        .font(.system(size: 18, weight: isSelected ? .bold : .medium))
-                        .foregroundStyle(isSelected ? ArcaTheme.accent : .secondary)
-                        .frame(width: 48, height: 28)
+                        .font(.system(size: dynamicTypeSize.isAccessibilitySize ? 24 : 18, weight: isSelected ? .bold : .medium))
+                        .foregroundStyle(isSelected ? .white : .secondary)
+                        .frame(minWidth: 48, minHeight: 26)
                         .background(
                             Capsule()
-                                .fill(isSelected ? ArcaTheme.accent.opacity(0.14) : .clear)
+                                .fill(isSelected ? appAccentColor : .clear)
                         )
 
-                    if badgeCount > 0 {
+                    if badgeCount > 0 && dynamicTypeSize.isAccessibilitySize {
+                        Circle().fill(ArcaTheme.plumSensitive).frame(width: 8, height: 8)
+                    } else if badgeCount > 0 {
                         Text("\(badgeCount)")
-                            .font(.caption2.weight(.bold))
+                            .arcaFont(.caption2, weight: .bold)
                             .foregroundStyle(.white)
                             .padding(.horizontal, 5)
                             .padding(.vertical, 1)
                             .background(Capsule().fill(ArcaTheme.plumSensitive))
-                            .offset(x: 6, y: -3)
+                            .offset(y: -3)
                     }
                 }
 
-                Text(title)
-                    .font(.caption.weight(isSelected ? .bold : .medium))
-                    .foregroundStyle(isSelected ? ArcaTheme.accent : .secondary)
+                if !dynamicTypeSize.isAccessibilitySize {
+                    Text(title)
+                        .arcaFont(.caption, weight: isSelected ? .bold : .semibold)
+                        .foregroundStyle(isSelected ? labelTint : .secondary)
+                        .multilineTextAlignment(.center)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
-            .frame(maxWidth: .infinity)
+            .frame(maxWidth: .infinity, minHeight: 44)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .accessibilityLabel(Text(title))
+        .accessibilityValue(badgeCount > 0 ? viewModel.language.format("count.conflicts", badgeCount) : "")
         .accessibilityAddTraits(isSelected ? .isSelected : [])
+        #if os(iOS)
+        .accessibilityShowsLargeContentViewer {
+            Label(title, systemImage: icon)
+        }
+        #endif
     }
 
     // MARK: - macOS Studio iPhone 16 Pro Viewport Wrapper
@@ -187,7 +214,7 @@ public struct ArcaRootContainerView: View {
                         Image(systemName: "iphone.gen3")
                             .foregroundStyle(.white.opacity(0.85))
                         Text("Arca iOS Simulator Viewport")
-                            .font(.footnote.weight(.semibold))
+                            .arcaFont(.footnote, weight: .semibold)
                             .foregroundStyle(.white.opacity(0.85))
                     }
 
@@ -196,7 +223,7 @@ public struct ArcaRootContainerView: View {
                     // Quick Space pill switcher in studio bar
                     if viewModel.hasCompletedOnboarding, let space = viewModel.currentSpace {
                         Text("\(space.name) • \(space.storageMode == .arcaSync ? viewModel.language.localized("Arca Sync") : viewModel.language.localized("Local Only"))")
-                            .font(.caption.weight(.medium))
+                            .arcaFont(.caption, weight: .medium)
                             .foregroundStyle(.white.opacity(0.7))
                             .padding(.horizontal, 10)
                             .padding(.vertical, 4)
@@ -212,7 +239,7 @@ public struct ArcaRootContainerView: View {
                             Image(systemName: useiPhoneBezelOnMac ? "arrow.up.left.and.arrow.down.right" : "iphone")
                                 .font(.caption.weight(.semibold))
                             Text(useiPhoneBezelOnMac ? "Expand Window" : "iPhone Frame")
-                                .font(.caption.weight(.semibold))
+                                .arcaFont(.caption, weight: .semibold)
                         }
                         .foregroundStyle(.white)
                         .padding(.horizontal, 10)
@@ -277,7 +304,7 @@ public struct ArcaRootContainerView: View {
     private var iOSStatusBar: some View {
         HStack {
             Text("9:41")
-                .font(.subheadline.weight(.semibold))
+                .arcaFont(.subheadline, weight: .semibold)
                 .foregroundStyle(effectiveColorScheme == .dark ? .white : .black)
                 .frame(width: 68, alignment: .leading)
 
@@ -318,19 +345,19 @@ public struct ArcaRootContainerView: View {
 
             ZStack {
                 Circle()
-                    .fill(ArcaTheme.accent.opacity(0.12))
+                    .fill(appAccentColor.opacity(0.12))
                     .frame(width: 96, height: 96)
                 Image(systemName: "faceid")
                     .font(.system(size: 44, weight: .medium))
-                    .foregroundStyle(ArcaTheme.accent)
+                    .foregroundStyle(appAccentOption.foregroundTint(for: effectiveColorScheme))
             }
 
             VStack(spacing: 8) {
                 Text(viewModel.language.localized("Arca is Locked"))
-                    .font(.title2.bold())
+                    .arcaFont(.title2, weight: .bold)
 
                 Text(viewModel.language.localized("Authenticate to open your records."))
-                    .font(.subheadline)
+                    .arcaFont(.subheadline)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
                     .padding(.horizontal, 24)
@@ -341,11 +368,11 @@ public struct ArcaRootContainerView: View {
             } label: {
                 Label(viewModel.language.localized("Unlock Arca"), systemImage: "lock.open.fill")
             }
-            .buttonStyle(ArcaPrimaryButtonStyle(tint: ArcaTheme.accent, isFullWidth: true))
+            .buttonStyle(ArcaPrimaryButtonStyle(tint: appAccentColor, isFullWidth: true))
             .padding(.horizontal, 36)
             .disabled(viewModel.appLock.isAuthenticating)
             if let error = viewModel.appLock.errorMessage {
-                Text(error).font(.footnote).foregroundStyle(.secondary).multilineTextAlignment(.center)
+                Text(error).arcaFont(.footnote).foregroundStyle(.secondary).multilineTextAlignment(.center)
             }
 
             Spacer()
