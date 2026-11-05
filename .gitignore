@@ -36,3 +36,5 @@ backend/storage/*.key
 # Generated designer screenshot exports (reproducible from ci/UXFlowCapture)
 /artifacts/ux-handoff-*/
 /artifacts/Arca-UX-Handoff-*.zip
+
+/artifacts/record-images/
