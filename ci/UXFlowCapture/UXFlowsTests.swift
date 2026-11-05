@@ -159,3 +159,43 @@ final class UXFlowsTests: XCTestCase {
     }
 
 }
+
+
+// Build 7 redesign acceptance runs in a separate fixture app, never the production workspace.
+extension UXFlowsTests {
+    func redesignLaunch(_ screen: String, _ lang: String = "en", workspace: String = UUID().uuidString, dark: Bool = false, large: Bool = false) -> XCUIApplication {
+        let app = XCUIApplication(bundleIdentifier: bundle)
+        app.launchArguments = ["-arca.language", lang]
+        if large { app.launchArguments += ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"] }
+        app.launchEnvironment = ["ARCA_API_BASE_URL": "http://127.0.0.1:19274", "ARCA_FLOW_SCREEN": screen, "ARCA_FIXTURE_WORKSPACE": workspace, "ARCA_FIXTURE_REDESIGN": "1", "ARCA_FIXTURE_DARK": dark ? "1" : "0"]
+        app.launch()
+        let loaded = NSPredicate { _, _ in app.staticTexts.count > 0 && !app.staticTexts["Loading fixture"].exists }
+        expectation(for: loaded, evaluatedWith: app); waitForExpectations(timeout: 30)
+        XCTAssertFalse(app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", "Fixture failed:")).firstMatch.exists)
+        return app
+    }
+
+    func testRedesignLocalizedScreens() throws {
+        continueAfterFailure = false
+        for language in ["en", "ar", "tr"] {
+            for screen in ["home", "collection", "collection-settings", "record-new", "record-detail", "settings"] {
+                let app = redesignLaunch(screen, language)
+                shot(app, "redesign-\(language)-\(screen)")
+                if screen == "collection-settings" { app.swipeUp(); shot(app, "redesign-\(language)-collection-settings-bottom") }
+                app.terminate()
+            }
+        }
+    }
+
+    func testRedesignDarkAndLargeText() throws {
+        continueAfterFailure = false
+        for screen in ["home", "collection", "collection-settings", "settings"] {
+            let app = redesignLaunch(screen, "ar", dark: true, large: true)
+            shot(app, "redesign-dark-large-ar-\(screen)")
+            // Focused audit: readable names for interactive elements. Device VoiceOver review remains manual.
+            try app.performAccessibilityAudit(for: [.elementDetection])
+            app.swipeUp(); shot(app, "redesign-dark-large-ar-\(screen)-bottom")
+            app.terminate()
+        }
+    }
+}

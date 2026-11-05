@@ -16,6 +16,7 @@ struct ArcaUXFlows: App {
                 else if ready { screen }
                 else { ProgressView("Loading fixture") }
             }
+            .arcaApplyAppAccentEnvironment()
             .environment(\.arcaSubscriptionScreen, AnyView(ArcaPlanView(purchases: purchases, model: model)))
             .environment(\.locale, model.language.locale)
             .environment(\.layoutDirection, model.language.layoutDirection)
@@ -23,6 +24,7 @@ struct ArcaUXFlows: App {
             .background(KeyboardDismissal())
             .task {
                 await model.bootstrapIfNeeded()
+                model.appearanceMode = ProcessInfo.processInfo.environment["ARCA_FIXTURE_DARK"] == "1" ? .dark : .light
                 await model.refreshSuggestedTemplates()
                 if scenario != "onboarding" && !model.hasCompletedOnboarding {
                     await model.finishOnboarding(defaultMode: .localOnly, acceptedCloudTerms: false, selectedTemplates: model.suggestedTemplates)
@@ -44,6 +46,13 @@ struct ArcaUXFlows: App {
                             }
                         }
                         try? await model.saveRecord(existingRecord: nil, schema: schema, values: values, isFavorite: true)
+                        if ProcessInfo.processInfo.environment["ARCA_FIXTURE_REDESIGN"] == "1", let title = schema.primaryTitleField {
+                            for name in ["Beta tool", "Gamma tool"] {
+                                var otherValues = values
+                                otherValues[title.id] = .shortText(name)
+                                try? await model.saveRecord(existingRecord: nil, schema: schema, values: otherValues, isFavorite: false)
+                            }
+                        }
                     }
                 }
                 if scenario == "connected-sync" || scenario == "connected-devices" {
