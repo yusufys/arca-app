@@ -269,6 +269,24 @@ public actor SpaceStore {
         try? saveCollectionStrict(schema, enqueueSync: enqueueSync)
     }
 
+    /// Applies a local change to the latest schema without an actor hop between read and write.
+    public func updateCollectionStrict<Result: Sendable>(
+        id: UUID,
+        enqueueSync: Bool,
+        update: @Sendable (inout CollectionSchema) throws -> Result
+    ) throws -> Result {
+        guard db != nil else { throw PersistenceError.databaseOpenFailed("Space database unavailable.") }
+        guard let current = fetchCollection(id: id), !current.isDeleted else {
+            throw PersistenceError.collectionNotFound(id)
+        }
+        var updated = current
+        let result = try update(&updated)
+        if updated != current {
+            try saveCollectionStrict(updated, enqueueSync: enqueueSync)
+        }
+        return result
+    }
+
     /// Privacy changes and their deletion requests commit together or both roll back.
     public func saveCollectionStrict(_ schema: CollectionSchema, enqueueSync: Bool = true) throws {
         guard schema.spaceId == spaceId, let db else { throw PersistenceError.databaseOpenFailed("Space database unavailable.") }

@@ -2,6 +2,7 @@ import XCTest
 import ImageIO
 import UniformTypeIdentifiers
 @testable import ArcaCore
+@testable import ArcaPersistence
 @testable import ArcaUI
 
 @available(macOS 14.0, iOS 17.0, *)
@@ -205,6 +206,10 @@ final class CollectionPresentationAndFilterTests: XCTestCase {
         XCTAssertLessThanOrEqual(cgImage.width, CollectionPresentationStore.maxIconPixelDimension)
         XCTAssertLessThanOrEqual(cgImage.height, CollectionPresentationStore.maxIconPixelDimension)
 
+        let otherCollectionId = UUID()
+        store.setIcon(.customImage(filename: filename), for: otherCollectionId)
+        XCTAssertNil(store.customImageData(for: otherCollectionId))
+
         // 4. Switching to library icon removes the custom image file from disk
         store.setIcon(.library(symbol: "shield.lefthalf.filled"), for: collectionId)
         XCTAssertNil(store.customImageData(for: collectionId))
@@ -262,7 +267,7 @@ final class CollectionPresentationAndFilterTests: XCTestCase {
         let originalFieldIds = originalSchema.fields.map(\.id)
 
         // Update collection name, iconName, and colorHex
-        await vm.updateCollectionMetadata(
+        try await vm.updateCollectionMetadata(
             collectionId: originalSchema.id,
             name: "Updated Garage Log",
             iconName: "car.fill",
@@ -310,6 +315,91 @@ final class CollectionPresentationAndFilterTests: XCTestCase {
         )
         XCTAssertEqual(recentServiceRecords.count, 1)
         XCTAssertEqual(recentServiceRecords.first?.title(using: persistedSchema), "60,000-Mile Major Service")
+    }
+
+    @MainActor
+    func testConcurrentMetadataFieldAndPrivacyEditsPreserveAllChanges() async throws {
+        let vm = ArcaAppViewModel(rootDirectoryURL: tempDirectory, startWithCompletedOnboarding: false)
+        await vm.finishOnboarding(
+            defaultMode: .localOnly, acceptedCloudTerms: false, selectedTemplates: [StarterTemplateCatalog.vehicleMaintenance]
+        )
+        let original = try XCTUnwrap(vm.collectionsInCurrentSpace.first)
+        let id = original.id
+
+        async let rename: Void = vm.updateCollectionMetadata(collectionId: id, name: "Updated collection")
+        async let addField: Void = vm.addField(to: id, label: "New field", type: .shortText)
+        async let keepLocal: Void = vm.keepSensitiveDataOnDevice(collectionId: id)
+        _ = try await (rename, addField, keepLocal)
+
+        let store = SpaceStore(spaceId: original.spaceId, baseDirectoryURL: tempDirectory)
+        let saved = await store.fetchCollection(id: id)
+        let current = try XCTUnwrap(saved)
+        XCTAssertEqual(current.name, "Updated collection")
+        XCTAssertEqual(current.fields.map(\.label), original.fields.map(\.label) + ["New field"])
+        XCTAssertEqual(current.privacy, .localOnly)
+        XCTAssertEqual(current.revision, original.revision + 3)
+        XCTAssertEqual(vm.schema(for: id), current)
+        let pending = try await store.pendingPrivacyRules()
+        XCTAssertTrue(pending.contains { $0.collectionId == id })
+    }
+
+    @MainActor
+    func testMetadataWriteReportsFailureForCollectionDeletedOnDisk() async throws {
+        let vm = ArcaAppViewModel(rootDirectoryURL: tempDirectory, startWithCompletedOnboarding: false)
+        await vm.finishOnboarding(
+            defaultMode: .localOnly, acceptedCloudTerms: false, selectedTemplates: [StarterTemplateCatalog.vehicleMaintenance]
+        )
+        var deleted = try XCTUnwrap(vm.collectionsInCurrentSpace.first)
+        let store = SpaceStore(spaceId: deleted.spaceId, baseDirectoryURL: tempDirectory)
+        deleted.isDeleted = true
+        try await store.saveCollectionStrict(deleted, enqueueSync: false)
+
+        do {
+            try await vm.updateCollectionMetadata(collectionId: deleted.id, name: "Must not resurrect")
+            XCTFail("A failed update must reach the caller")
+        } catch let error as PersistenceError {
+            XCTAssertEqual(error, .collectionNotFound(deleted.id))
+        }
+        let saved = await store.fetchCollection(id: deleted.id)
+        XCTAssertEqual(saved, deleted)
+    }
+
+    func testTextPredicatesUseFieldValuesAndSelectedLocale() {
+        let locale = Locale(identifier: "tr_TR")
+        let text = FieldValue.shortText("Işık Pro")
+        XCTAssertTrue(CollectionFieldPredicate.text(.contains, "pro").matches(text, locale: locale))
+        XCTAssertTrue(CollectionFieldPredicate.text(.startsWith, "ışık").matches(text, locale: locale))
+        XCTAssertFalse(CollectionFieldPredicate.text(.startsWith, "pro").matches(text, locale: locale))
+        XCTAssertFalse(CollectionFieldPredicate.text(.equals, "pro").matches(text, locale: locale))
+        XCTAssertTrue(CollectionFieldPredicate.text(.equals, "ışık pro").matches(.longText("Işık Pro"), locale: locale))
+        XCTAssertFalse(CollectionFieldPredicate.text(.contains, "42").matches(.number(42), locale: locale))
+    }
+
+    func testNumericAndDatePredicatesRespectStrictAndInclusiveBoundaries() throws {
+        let locale = Locale(identifier: "ar")
+        let boundary = try XCTUnwrap(LocalizedNumericInput.number("١٢٫٥", locale: locale))
+        XCTAssertFalse(CollectionFieldPredicate.number(.greaterThan, boundary, nil).matches(.number(12.5), locale: locale))
+        XCTAssertTrue(CollectionFieldPredicate.number(.greaterThan, boundary, nil).matches(.number(12.6), locale: locale))
+        XCTAssertFalse(CollectionFieldPredicate.number(.lessThan, boundary, nil).matches(.number(12.5), locale: locale))
+        XCTAssertTrue(CollectionFieldPredicate.number(.between, 15, boundary).matches(.number(12.5), locale: locale))
+
+        let date = CalendarDate(year: 2026, month: 6, day: 15)
+        let earlier = CalendarDate(year: 2026, month: 6, day: 14)
+        XCTAssertFalse(CollectionFieldPredicate.date(.after, date, date).matches(.date(date), locale: locale))
+        XCTAssertFalse(CollectionFieldPredicate.date(.before, date, date).matches(.date(date), locale: locale))
+        XCTAssertTrue(CollectionFieldPredicate.date(.before, date, date).matches(.date(earlier), locale: locale))
+        XCTAssertTrue(CollectionFieldPredicate.date(.between, date, earlier).matches(.date(date), locale: locale))
+    }
+
+    func testCurrencyFilterComparesExactAmountsAtLargeValues() throws {
+        let locale = Locale(identifier: "tr_TR")
+        let threshold = try XCTUnwrap(LocalizedNumericInput.decimal("90.071.992.547.409,93", locale: locale))
+        let expected = FieldValue.currency(MoneyValue(minorUnits: 9_007_199_254_740_993, currencyCode: "TRY"))
+        let oneCentHigher = FieldValue.currency(MoneyValue(minorUnits: 9_007_199_254_740_994, currencyCode: "TRY"))
+        let equals = CollectionFieldPredicate.currency(.equals, threshold, nil)
+        XCTAssertTrue(equals.matches(expected, locale: locale))
+        XCTAssertFalse(equals.matches(oneCentHigher, locale: locale))
+        XCTAssertNil(LocalizedNumericInput.decimal("90,07x", locale: locale))
     }
 
     // MARK: - Helpers
