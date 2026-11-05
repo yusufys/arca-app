@@ -349,9 +349,7 @@ public struct AICollectionAssistantSheetView: View {
     }
 
     private func pasteReply() {
-        #if os(iOS)
-        let pastedText = UIPasteboard.general.string
-        #elseif os(macOS)
+        #if os(macOS)
         let pastedText = NSPasteboard.general.string(forType: .string)
         #else
         let pastedText: String? = nil
