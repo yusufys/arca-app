@@ -73,6 +73,8 @@ public struct AICollectionAssistantSheetView: View {
             errorMessage = nil
         }
         .accessibilityIdentifier("aiCollection.sheet")
+        .environment(\.layoutDirection, viewModel.language.layoutDirection)
+        .environment(\.locale, viewModel.language.locale)
     }
 
     private var intentSection: some View {
@@ -194,6 +196,18 @@ public struct AICollectionAssistantSheetView: View {
             subtitle: text("creation.replyBody"),
             icon: "doc.on.clipboard"
         ) {
+            #if os(iOS)
+            PasteButton(payloadType: String.self) { values in
+                guard let text = values.first else { return }
+                reply = text
+                preview = nil
+                errorMessage = nil
+            }
+            .tint(ArcaTheme.accent)
+            .controlSize(.large)
+            .accessibilityLabel(text("creation.paste"))
+            .accessibilityIdentifier("aiCollection.pasteReply")
+            #else
             Button {
                 pasteReply()
             } label: {
@@ -201,8 +215,13 @@ public struct AICollectionAssistantSheetView: View {
             }
             .buttonStyle(ArcaSecondaryButtonStyle(isFullWidth: true))
             .accessibilityIdentifier("aiCollection.pasteReply")
+            #endif
 
             TextEditor(text: $reply)
+                .autocorrectionDisabled()
+                #if os(iOS)
+                .textInputAutocapitalization(.never)
+                #endif
                 .font(.system(size: 13, design: .monospaced))
                 .frame(minHeight: 150)
                 .scrollContentBackground(.hidden)
@@ -298,7 +317,6 @@ public struct AICollectionAssistantSheetView: View {
                 .buttonStyle(ArcaSecondaryButtonStyle(isFullWidth: true))
                 .disabled(isCreating)
         }
-        .accessibilityIdentifier("aiCollection.validatedPreview")
     }
 
     private func text(_ key: String, _ arguments: CVarArg...) -> String {

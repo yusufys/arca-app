@@ -879,6 +879,8 @@ public struct TemplateGallerySheetView: View {
             }
             .background(ArcaTheme.canvasBackground(for: colorScheme))
         }
+        .environment(\.layoutDirection, viewModel.language.layoutDirection)
+        .environment(\.locale, viewModel.language.locale)
         .interactiveDismissDisabled(isSaving)
         .task { await viewModel.refreshSuggestedTemplates() }
         .alert("Sensitive Collection Storage Choice", isPresented: $showingMedicalDisclosureAlert, presenting: pendingTemplate) { template in
