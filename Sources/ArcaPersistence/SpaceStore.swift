@@ -728,6 +728,26 @@ public actor SpaceStore {
         return data
     }
 
+    /// Restores only an authenticated, size-bounded image under the attachment directory.
+    public func restoreAttachment(data: Data, reference: AttachmentReference) throws {
+        let parts = reference.localRelativePath.split(separator: "/", omittingEmptySubsequences: false)
+        guard parts.count == 2, parts[0] == "Attachments", !parts[1].isEmpty,
+              !parts[1].contains(".."), !parts[1].contains("\\"),
+              reference.localRelativePath.rangeOfCharacter(from: .controlCharacters) == nil,
+              reference.mimeType.hasPrefix("image/"), data.count <= 5 * 1024 * 1024,
+              Int64(data.count) == reference.byteSize,
+              ClientCryptoEngine.sha256Hex(of: data) == reference.sha256Hex.lowercased() else {
+            throw PersistenceError.ioError("Invalid image attachment.")
+        }
+        let destination = spaceDirectoryURL.appendingPathComponent(reference.localRelativePath)
+        guard destination.resolvingSymlinksInPath().deletingLastPathComponent() == attachmentsDirectoryURL.resolvingSymlinksInPath() else {
+            throw PersistenceError.ioError("Invalid image attachment path.")
+        }
+        try data.write(to: destination, options: .atomic)
+        DataProtectionConfigurator.applyProtection(at: destination, isSensitiveLocalOnly: isSensitiveLocal,
+            excludeFromUnencryptedBackup: isSensitiveLocal)
+    }
+
     // MARK: - Outbox Accessors for ArcaSync
 
     /// Rebuilds the first publication snapshot from live local data, including legacy Spaces whose queue was drained.

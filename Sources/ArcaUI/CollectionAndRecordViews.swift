@@ -83,6 +83,7 @@ public struct CollectionSettingsView: View {
                 VStack(alignment: .leading, spacing: 16) {
                     identityPreviewCard
                     themeColorDropdownCard
+                    thumbnailFieldCard
                     compactSecondaryFieldDropdownCard
                     addRecordFormStyleDropdownCard
                     iconPickerCard
@@ -469,6 +470,28 @@ public struct CollectionSettingsView: View {
             RoundedRectangle(cornerRadius: 18, style: .continuous)
                 .strokeBorder(ArcaTheme.cardBorder(for: colorScheme), lineWidth: 1)
         )
+    }
+
+    private var thumbnailFieldCard: some View {
+        Group {
+            if !liveSchema.imageFields.isEmpty {
+                ArcaSectionCard(title: viewModel.language.localized("Record thumbnail"), icon: "photo") {
+                    Picker(viewModel.language.localized("Image field"), selection: Binding<UUID?>(
+                        get: { presentationStore.preferences(for: liveSchema.id).thumbnailFieldId },
+                        set: { presentationStore.setThumbnailField($0, for: liveSchema.id) }
+                    )) {
+                        Text(viewModel.language.localized("Automatic (one image field)")).tag(UUID?.none)
+                        ForEach(liveSchema.imageFields) { field in
+                            Text(field.label).tag(Optional(field.id))
+                        }
+                    }
+                    .frame(minHeight: 44)
+                    .accessibilityIdentifier("collection.thumbnailField")
+                    Text(viewModel.language.localized("With several image fields, choose which one appears on record cards. This view setting is saved on this device."))
+                        .arcaFont(.footnote).foregroundStyle(.secondary)
+                }
+            }
+        }
     }
 
     // MARK: - 2. Compact Secondary Field Dropdown (Strictly Inside Settings)
@@ -1751,7 +1774,7 @@ public struct CollectionRecordListView: View {
             switch field.type {
             case .shortText, .longText, .number, .currency, .date, .singleSelect, .multiSelect, .boolean, .rating:
                 return true
-            case .dateTime, .attachment:
+            case .dateTime, .attachment, .image:
                 return false
             }
         }
@@ -2450,7 +2473,7 @@ public struct CollectionRecordListView: View {
             let minimum = min(draftMinimumRating, ratingLimit(for: field))
             return (.query(.minimumRating(fieldId: field.id, minimum)), "≥ \(minimum.formatted(.number.locale(locale)))★")
 
-        case .dateTime, .attachment:
+        case .dateTime, .attachment, .image:
             return nil
         }
     }
@@ -2535,6 +2558,7 @@ public struct CollectionRecordListView: View {
                     RecordDetailView(viewModel: viewModel, recordId: record.id, schema: liveSchema)
                 } label: {
                     HStack(spacing: 10) {
+                        RecordThumbnail(viewModel: viewModel, record: record, schema: liveSchema, size: 36)
                         HStack(spacing: 6) {
                             Text(record.title(using: liveSchema))
                                 .arcaFont(.subheadline, weight: .bold)
@@ -2638,6 +2662,7 @@ public struct CollectionRecordListView: View {
         }()
 
         return VStack(alignment: .leading, spacing: 8) {
+            RecordThumbnail(viewModel: viewModel, record: record, schema: liveSchema, size: 96)
             HStack {
                 Text("#\(String(record.id.uuidString.prefix(5)).uppercased())")
                     .font(.system(.caption2, design: .monospaced).weight(.semibold))
@@ -2738,6 +2763,7 @@ public struct CollectionRecordListView: View {
 
         return VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .top, spacing: 10) {
+                RecordThumbnail(viewModel: viewModel, record: record, schema: liveSchema, size: 56)
                 VStack(alignment: .leading, spacing: 3) {
                     HStack(spacing: 6) {
                         Text(record.title(using: liveSchema))
@@ -2850,6 +2876,7 @@ public struct AddEditRecordSheetView: View {
     @ViewState private var saving = false
     @ViewState private var showAttachmentPicker = false
     @ViewState private var attachmentFieldId: UUID?
+    @ViewState private var importingImageFields: Set<UUID> = []
     @ViewState private var validationErrors: [RecordValidationError] = []
     @ViewState private var currencyTextInputs: [UUID: String] = [:]
     @ViewState private var numberTextInputs: [UUID: String] = [:]
@@ -2886,6 +2913,7 @@ public struct AddEditRecordSheetView: View {
                 trailingLabel: "Save",
                 trailingAction: { saveDraft() }
             )
+            .disabled(!importingImageFields.isEmpty)
 
             ScrollView(showsIndicators: false) {
                 VStack(alignment: .leading, spacing: 16) {
@@ -2941,6 +2969,7 @@ public struct AddEditRecordSheetView: View {
                     } label: {
                         Label(viewModel.language.localized(existingRecord == nil ? "Save Record" : "Save Changes"), systemImage: "checkmark.circle.fill")
                     }
+                    .disabled(saving || !importingImageFields.isEmpty)
                     .buttonStyle(ArcaPrimaryButtonStyle(tint: tint, foreground: palette.onFill))
                 }
                 .padding(18)
@@ -2950,15 +2979,18 @@ public struct AddEditRecordSheetView: View {
         .onAppear {
             populateInitialDraft()
         }
-        .fileImporter(isPresented: $showAttachmentPicker, allowedContentTypes: [.item]) { result in
+        .fileImporter(isPresented: $showAttachmentPicker, allowedContentTypes: attachmentFieldId.flatMap { id in liveSchema.fields.first { $0.id == id } }?.type == .image ? [.image] : [.item]) { result in
             switch result {
             case .success(let url):
                 guard let fieldId = attachmentFieldId else { return }
+                importingImageFields.insert(fieldId)
                 Task {
+                    defer { importingImageFields.remove(fieldId) }
                     do {
-                        let ref = try await viewModel.attachFile(from: url, to: liveSchema.spaceId)
+                        let isImage = liveSchema.fields.first(where: { $0.id == fieldId })?.type == .image
+                        let ref = try await (isImage ? viewModel.attachImage(from: url, to: liveSchema.spaceId) : viewModel.attachFile(from: url, to: liveSchema.spaceId))
                         var refs: [AttachmentReference] = []
-                        if case .attachments(let current) = draftValues[fieldId] { refs = current }
+                        if !isImage, case .attachments(let current) = draftValues[fieldId] { refs = current }
                         refs.append(ref)
                         draftValues[fieldId] = .attachments(refs)
                     } catch { saveError = error.localizedDescription }
@@ -3225,6 +3257,15 @@ public struct AddEditRecordSheetView: View {
                 }
                 .padding(.vertical, 4)
 
+            case .image:
+                ImageFieldEditor(viewModel: viewModel, spaceId: liveSchema.spaceId, field: field,
+                    value: Binding(get: { draftValues[field.id] ?? .null }, set: { draftValues[field.id] = $0 }),
+                    chooseFile: { attachmentFieldId = field.id; showAttachmentPicker = true },
+                    importingChanged: { busy in
+                        if busy { importingImageFields.insert(field.id) } else { importingImageFields.remove(field.id) }
+                    })
+                    .disabled(importingImageFields.contains(field.id))
+
             case .attachment:
                 let currentAttachments: [AttachmentReference] = {
                     if case .attachments(let refs) = draftValues[field.id] { return refs }
@@ -3263,7 +3304,7 @@ public struct AddEditRecordSheetView: View {
     }
 
     private func saveDraft() {
-        guard !saving else { return }
+        guard !saving, importingImageFields.isEmpty else { return }
         for field in liveSchema.activeFields {
             if field.type == .number, let text = numberTextInputs[field.id],
                !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
@@ -3313,6 +3354,7 @@ public struct RecordDetailView: View {
     private let presentationStore: CollectionPresentationStore = .shared
 
     @ViewState private var showingEditSheet = false
+    @ViewState private var duplicateError: String?
     @ViewState private var showingLocalQRSheet = false
     @ViewState private var showingPublicSnapshotSheet = false
     @ViewState private var selectedSnapshotFieldIds: Set<UUID> = []
@@ -3392,6 +3434,14 @@ public struct RecordDetailView: View {
                         // Record Color Header Hero Card
                         recordColorHeroHeaderCard(for: rec, tint: tint)
 
+                        ForEach(liveSchema.imageFields) { field in
+                            if case .attachments(let images) = rec.values[field.id], let image = images.first {
+                                ArcaSectionCard(title: field.label, icon: "photo") {
+                                    StoredRecordImage(viewModel: viewModel, spaceId: rec.spaceId, reference: image, size: 240)
+                                }
+                            }
+                        }
+
                         // Clean Structured Details Card
                         savedFieldsDetailCard(for: rec, tint: tint)
 
@@ -3399,9 +3449,12 @@ public struct RecordDetailView: View {
                         archivedFieldsDetailCard(for: rec)
 
                         // Attachments Card
-                        if !rec.allAttachments.isEmpty {
+                        let fileAttachments = liveSchema.fields.filter { $0.type == .attachment }.flatMap { field -> [AttachmentReference] in
+                            if case .attachments(let refs) = rec.values[field.id] { return refs }; return []
+                        }
+                        if !fileAttachments.isEmpty {
                             ArcaSectionCard(title: viewModel.language.localized("Attachments (SHA-256 Verified)"), icon: "paperclip", iconTint: ArcaTheme.secondaryEmerald) {
-                                ForEach(rec.allAttachments) { att in
+                                ForEach(fileAttachments) { att in
                                     HStack(spacing: 12) {
                                         ZStack {
                                             RoundedRectangle(cornerRadius: 10, style: .continuous)
@@ -3434,7 +3487,7 @@ public struct RecordDetailView: View {
                             VStack(spacing: 10) {
                                 HStack(spacing: 10) {
                                     Button {
-                                        Task { await viewModel.duplicateRecord(rec) }
+                                        Task { do { try await viewModel.duplicateRecord(rec) } catch { duplicateError = viewModel.language.localized(error.localizedDescription) } }
                                     } label: {
                                         Label(viewModel.language.localized("Duplicate"), systemImage: "plus.square.on.square")
                                     }
@@ -3492,6 +3545,9 @@ public struct RecordDetailView: View {
                     .foregroundStyle(.secondary)
             }
         }
+        .alert(viewModel.language.localized("Could not duplicate record"), isPresented: Binding(get: { duplicateError != nil }, set: { if !$0 { duplicateError = nil } })) {
+            Button(viewModel.language.localized("OK")) { duplicateError = nil }
+        } message: { Text(duplicateError ?? "") }
         .alert(item: $pendingRecordDeletion) { target in
             Alert(
                 title: Text(String(format: ArcaStrings.text("delete.recordTitle", language: viewModel.language), target.title)),
@@ -3515,7 +3571,7 @@ public struct RecordDetailView: View {
             guard field.id != primaryId,
                   let val = rec.values[field.id],
                   !val.isNullOrEmpty else { return false }
-            return field.type != .attachment && field.type != .longText
+            return field.type != .attachment && field.type != .image && field.type != .longText
         }
         let topHighlights = Array(highlightFields.prefix(2))
 
@@ -3603,7 +3659,7 @@ public struct RecordDetailView: View {
 
     private func savedFieldsDetailCard(for rec: RecordItem, tint: Color) -> some View {
         let populatedFields = liveSchema.activeFields.filter { field in
-            guard let val = rec.values[field.id] else { return false }
+            guard field.type != .image, let val = rec.values[field.id] else { return false }
             return !val.isNullOrEmpty
         }
 

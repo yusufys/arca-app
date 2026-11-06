@@ -311,3 +311,63 @@ extension UXFlowsTests {
         app.terminate()
     }
 }
+
+
+extension UXFlowsTests {
+    func imagesLaunch(_ screen: String, workspace: String, language: String = "en") -> XCUIApplication {
+        let app = XCUIApplication(bundleIdentifier: bundle)
+        app.launchArguments = ["-arca.language", language]
+        app.launchEnvironment = ["ARCA_API_BASE_URL": "http://127.0.0.1:19410", "ARCA_FLOW_SCREEN": screen,
+            "ARCA_FIXTURE_WORKSPACE": workspace, "ARCA_FIXTURE_IMAGES": "1"]
+        app.launch()
+        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label != %@", "Loading fixture")).firstMatch.waitForExistence(timeout: 30))
+        return app
+    }
+
+    func testMultipleImagesAndThumbnailChoiceSurviveRelaunch() {
+        continueAfterFailure = false
+        let workspace = UUID().uuidString
+        var app = imagesLaunch("record-detail", workspace: workspace)
+        reveal(app, app.staticTexts["COVER"])
+        shot(app, "images-two-fields-cover")
+        reveal(app, app.staticTexts["INGREDIENTS"])
+        shot(app, "images-two-fields-ingredients")
+        app.terminate()
+        app = imagesLaunch("collection-settings", workspace: workspace)
+        let picker = app.buttons["collection.thumbnailField"]
+        reveal(app, picker); picker.tap()
+        app.buttons["Ingredients"].tap()
+        shot(app, "images-thumbnail-choice")
+        app.terminate()
+        app = imagesLaunch("collection-settings", workspace: workspace)
+        let restored = app.buttons["collection.thumbnailField"]
+        reveal(app, restored)
+        shot(app, "images-restored-thumbnail-choice")
+        XCTAssertTrue(restored.label.contains("Ingredients"))
+        app.terminate()
+        app = imagesLaunch("collection", workspace: workspace)
+        shot(app, "images-record-thumbnail-normal")
+        app.buttons["Box"].tap()
+        shot(app, "images-record-thumbnail-box")
+        app.terminate()
+        app = imagesLaunch("record-edit", workspace: workspace)
+        let remove = app.buttons["Remove image from Cover"]
+        reveal(app, remove); remove.tap()
+        XCTAssertFalse(app.buttons["Remove image from Cover"].exists)
+        XCTAssertTrue(app.buttons["Remove image from Ingredients"].exists)
+        let save = app.buttons["Save Changes"]
+        reveal(app, save); save.tap()
+        app.terminate()
+        app = imagesLaunch("record-detail", workspace: workspace)
+        XCTAssertFalse(app.staticTexts["COVER"].exists)
+        reveal(app, app.staticTexts["INGREDIENTS"])
+        shot(app, "images-retained-after-relaunch")
+        app.terminate()
+        app = imagesLaunch("record-edit", workspace: workspace, language: "ar")
+        shot(app, "images-arabic-editor-before-scroll")
+        let arabicRemove = app.buttons.matching(NSPredicate(format: "label CONTAINS %@ AND label CONTAINS %@", "إزالة", "Ingredients")).firstMatch
+        reveal(app, arabicRemove)
+        shot(app, "images-arabic-editor")
+        app.terminate()
+    }
+}

@@ -63,10 +63,8 @@ Route::prefix('v1')->middleware('throttle:120,1')->group(function () {
         Route::post('/spaces/{spaceId}/migrate-mode', [SyncController::class, 'migrateMode']);
 
         // Encrypted Attachments
-        if (! app()->environment('production')) {
-            Route::post('/spaces/{spaceId}/attachments', [AttachmentController::class, 'store']);
-            Route::get('/spaces/{spaceId}/attachments/{attachmentId}', [AttachmentController::class, 'show']);
-        }
+        Route::post('/spaces/{spaceId}/attachments', [AttachmentController::class, 'store']);
+        Route::get('/spaces/{spaceId}/attachments/{attachmentId}', [AttachmentController::class, 'show']);
 
         // Public Snapshots Management
         Route::post('/snapshots', [PublicSnapshotController::class, 'store']);

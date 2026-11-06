@@ -504,6 +504,7 @@ public struct EncryptedSyncOperation: Identifiable, Codable, Sendable, Equatable
 /// + plaintext digest inside authenticated metadata for client verification).
 public struct EncryptedAttachmentBlob: Identifiable, Codable, Sendable, Equatable, Hashable {
     public var id: UUID { attachmentId }
+    public let collectionId: UUID?
     public let attachmentId: UUID
     public let spaceId: UUID
     public let recordId: UUID
@@ -515,6 +516,7 @@ public struct EncryptedAttachmentBlob: Identifiable, Codable, Sendable, Equatabl
     public let uploadedAt: Date
 
     public init(
+        collectionId: UUID? = nil,
         attachmentId: UUID,
         spaceId: UUID,
         recordId: UUID,
@@ -525,6 +527,7 @@ public struct EncryptedAttachmentBlob: Identifiable, Codable, Sendable, Equatabl
         encryptedDataEnvelope: EncryptedEnvelope,
         uploadedAt: Date = Date()
     ) {
+        self.collectionId = collectionId
         self.attachmentId = attachmentId
         self.spaceId = spaceId
         self.recordId = recordId
@@ -551,6 +554,7 @@ public struct EncryptedAttachmentBlob: Identifiable, Codable, Sendable, Equatabl
     /// Encrypts an `AttachmentReference` and its raw binary data client-side, verifying SHA-256 integrity before encryption.
     public static func encryptAttachment(
         reference: AttachmentReference,
+        collectionId: UUID? = nil,
         rawData: Data,
         spaceId: UUID,
         recordId: UUID,
@@ -589,6 +593,7 @@ public struct EncryptedAttachmentBlob: Identifiable, Codable, Sendable, Equatabl
         let ciphertextHash = ClientCryptoEngine.sha256Hex(of: ciphertextBytes)
 
         return EncryptedAttachmentBlob(
+            collectionId: collectionId,
             attachmentId: reference.id,
             spaceId: spaceId,
             recordId: recordId,
@@ -1348,7 +1353,10 @@ public actor InMemoryArcaSyncBackend: ArcaSyncBackendProtocol {
               var state = accounts[accountId] else { throw SyncServiceError.unauthenticated }
         let operations = state.operationsBySpace[spaceId] ?? []
         guard (operations.compactMap(\.serverSequenceNumber).max() ?? 0) <= expectedCursor else { throw SyncServiceError.invalidOperationEnvelope("Pull the latest changes before privacy deletion.") }
-        guard (state.attachmentsBySpace[spaceId] ?? [:]).isEmpty else { throw SyncServiceError.invalidOperationEnvelope("Attachment removal cannot be verified.") }
+        guard !(state.attachmentsBySpace[spaceId] ?? [:]).values.contains(where: { $0.collectionId == nil }) else {
+            throw SyncServiceError.invalidOperationEnvelope("Attachment removal cannot be verified.")
+        }
+        state.attachmentsBySpace[spaceId] = (state.attachmentsBySpace[spaceId] ?? [:]).filter { $0.value.collectionId != rule.collectionId }
         let removed = operations.filter { $0.collectionId == rule.collectionId }
         state.operationsBySpace[spaceId] = operations.filter { $0.collectionId != rule.collectionId }
         for op in removed { state.operationSequenceByOperationId.removeValue(forKey: op.operationId) }
@@ -2191,6 +2199,7 @@ public actor SyncCoordinator {
                     if CloudPrivacyPolicy.isCollectionLocalOnly(privacySchema) { continue }
                     let remoteRecord = CloudPrivacyPolicy.preservingLocalValues(in: incomingRecord,
                         local: await spaceStore.fetchRecord(id: incomingRecord.id), schema: privacySchema)
+                    try await downloadRecordImages(remoteRecord, schema: privacySchema, store: spaceStore)
                     let localRecord = await spaceStore.fetchRecord(id: remoteRecord.id)
                     let matchingOutbox = await spaceStore.pendingOutboxItems().filter {
                         ($0.parsedEntityType == .recordUpsert || $0.parsedEntityType == .recordTombstone) &&
@@ -2294,6 +2303,19 @@ public actor SyncCoordinator {
                    let schema = await spaceStore.fetchCollection(id: queued.collectionId),
                    let current = await spaceStore.fetchRecord(id: queued.id),
                    let record = CloudPrivacyPolicy.recordForCloud(current, schema: schema) {
+                    if !record.isDeleted {
+                        for field in schema.fields where field.type == .image {
+                            guard case .attachments(let refs) = record.values[field.id] else { continue }
+                            for reference in refs {
+                                let data = try await spaceStore.loadAttachmentData(for: reference)
+                                let blob = try EncryptedAttachmentBlob.encryptAttachment(reference: reference,
+                                    collectionId: record.collectionId, rawData: data, spaceId: spaceId,
+                                    recordId: record.id, authorDeviceId: deviceIdentity.deviceId, spaceKeyRing: keyRing)
+                                try await backend.uploadEncryptedAttachment(accountId: accountId,
+                                    deviceId: deviceIdentity.deviceId, blob: blob)
+                            }
+                        }
+                    }
                     let op = try EncryptedSyncOperation.encryptRecordOperation(
                         operationId: item.operationId,
                         record: record,
@@ -2347,6 +2369,29 @@ public actor SyncCoordinator {
             newlyDetectedConflicts: newConflicts,
             updatedCursor: finalCursor
         )
+    }
+
+    private func downloadRecordImages(_ record: RecordItem, schema: CollectionSchema, store: SpaceStore) async throws {
+        guard !record.isDeleted, let cloud = CloudPrivacyPolicy.recordForCloud(record, schema: schema) else { return }
+        for field in schema.fields where field.type == .image {
+            guard case .attachments(let refs) = cloud.values[field.id] else { continue }
+            for reference in refs {
+                if (try? await store.loadAttachmentData(for: reference)) != nil { continue }
+                let blob = try await backend.downloadEncryptedAttachment(accountId: accountId, spaceId: record.spaceId,
+                    attachmentId: reference.id, deviceId: deviceIdentity.deviceId)
+                guard blob.spaceId == record.spaceId, blob.recordId == record.id, blob.attachmentId == reference.id,
+                      blob.collectionId == record.collectionId else {
+                    throw SyncServiceError.invalidOperationEnvelope("Image identity mismatch.")
+                }
+                let ring = try resolveKeyRing(for: record.spaceId, keyGeneration: blob.keyGeneration, keyId: blob.encryptedDataEnvelope.keyId)
+                let decoded = try blob.decryptAndVerify(using: ring)
+                guard decoded.reference.id == reference.id, decoded.reference.sha256Hex == reference.sha256Hex,
+                      decoded.reference.byteSize == reference.byteSize else {
+                    throw SyncServiceError.invalidOperationEnvelope("Image reference mismatch.")
+                }
+                try await store.restoreAttachment(data: decoded.data, reference: reference)
+            }
+        }
     }
 
     /// Resolves a `SyncConflict` in a SQLite-backed `SpaceStore`, persisting the resolved record and queuing it for sync.

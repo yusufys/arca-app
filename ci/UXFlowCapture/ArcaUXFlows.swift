@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 import ArcaCore
 @testable import ArcaUI
 
@@ -35,7 +36,12 @@ struct ArcaUXFlows: App {
                 await model.refreshSuggestedTemplates()
                 if scenario != "onboarding" && !model.hasCompletedOnboarding {
                     await model.finishOnboarding(defaultMode: .localOnly, acceptedCloudTerms: false, selectedTemplates: model.suggestedTemplates)
-                    if let schema = captureSchema {
+                    if let initialSchema = captureSchema {
+                        if ProcessInfo.processInfo.environment["ARCA_FIXTURE_IMAGES"] == "1" {
+                            await model.addField(to: initialSchema.id, label: "Cover", type: .image)
+                            await model.addField(to: initialSchema.id, label: "Ingredients", type: .image)
+                        }
+                        let schema = model.schema(for: initialSchema.id) ?? initialSchema
                         var values: [UUID: FieldValue] = [:]
                         for field in schema.fields {
                             switch field.type {
@@ -49,6 +55,16 @@ struct ArcaUXFlows: App {
                             case .singleSelect: values[field.id] = field.options.first.map { .singleSelect($0.id) } ?? .null
                             case .multiSelect: values[field.id] = .multiSelect(field.options.prefix(1).map(\.id))
                             case .rating: values[field.id] = .rating(4)
+                            case .image:
+                                let photo = UIGraphicsImageRenderer(size: CGSize(width: 600, height: 600)).image { context in
+                                    (field.label == "Cover" ? UIColor.systemOrange : UIColor.systemGreen).setFill()
+                                    context.fill(CGRect(x: 0, y: 0, width: 600, height: 600))
+                                    UIImage(systemName: field.label == "Cover" ? "fish.fill" : "carrot.fill")?
+                                        .withTintColor(.white, renderingMode: .alwaysOriginal).draw(in: CGRect(x: 120, y: 120, width: 360, height: 360))
+                                }
+                                if let data = photo.pngData(), let reference = try? await model.attachImage(data: data, to: schema.spaceId) {
+                                    values[field.id] = .attachments([reference])
+                                }
                             case .attachment: values[field.id] = .attachments([])
                             }
                         }

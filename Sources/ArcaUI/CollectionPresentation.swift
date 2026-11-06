@@ -160,6 +160,7 @@ public struct CollectionPresentationPreferences: Codable, Sendable, Equatable {
     public var addFormMode: CollectionAddFormMode
     public var compactSecondaryFieldId: UUID?
     public var iconPreference: CollectionIconPreference?
+    public var thumbnailFieldId: UUID?
 
     public init(
         listMode: CollectionListMode = .normal,
@@ -171,6 +172,7 @@ public struct CollectionPresentationPreferences: Codable, Sendable, Equatable {
         self.addFormMode = addFormMode
         self.compactSecondaryFieldId = compactSecondaryFieldId
         self.iconPreference = iconPreference
+        self.thumbnailFieldId = nil
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -178,6 +180,7 @@ public struct CollectionPresentationPreferences: Codable, Sendable, Equatable {
         case addFormMode
         case compactSecondaryFieldId
         case iconPreference
+        case thumbnailFieldId
     }
 
     public init(from decoder: Decoder) throws {
@@ -190,6 +193,7 @@ public struct CollectionPresentationPreferences: Codable, Sendable, Equatable {
             self.compactSecondaryFieldId = nil
         }
         self.iconPreference = try? container.decodeIfPresent(CollectionIconPreference.self, forKey: .iconPreference)
+        self.thumbnailFieldId = try? container.decodeIfPresent(UUID.self, forKey: .thumbnailFieldId)
     }
 }
 
@@ -579,6 +583,16 @@ public final class CollectionPresentationStore {
         updatePreferences(for: collectionId) { $0.compactSecondaryFieldId = fieldId }
     }
 
+    public func setThumbnailField(_ fieldId: UUID?, for collectionId: UUID) {
+        updatePreferences(for: collectionId) { $0.thumbnailFieldId = fieldId }
+    }
+
+    public func thumbnailReference(for record: RecordItem, schema: CollectionSchema) -> AttachmentReference? {
+        guard let field = schema.thumbnailField(preferredId: preferences(for: schema.id).thumbnailFieldId),
+              case .attachments(let images) = record.values[field.id] else { return nil }
+        return images.first
+    }
+
     public func setIcon(_ iconPreference: CollectionIconPreference?, for collectionId: UUID) {
         if case .customImage = iconPreference {
             // Keep existing custom image file
@@ -591,8 +605,9 @@ public final class CollectionPresentationStore {
     /// Returns candidate fields that can be displayed beside the primary title in Compact mode.
     public nonisolated static func secondaryFieldCandidates(for schema: CollectionSchema) -> [FieldDefinition] {
         let primaryId = schema.primaryTitleField?.id
-        let nonPrimary = schema.activeFields.filter { $0.id != primaryId }
-        return nonPrimary.isEmpty ? schema.activeFields : nonPrimary
+        let candidates = schema.activeFields.filter { $0.type != .image && $0.type != .attachment }
+        let nonPrimary = candidates.filter { $0.id != primaryId }
+        return nonPrimary.isEmpty ? candidates : nonPrimary
     }
 
     /// Resolves the active compact secondary field for `schema`, automatically falling back if the

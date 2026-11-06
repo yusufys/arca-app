@@ -683,55 +683,17 @@ class ArcaBackendApiTest extends TestCase
             ->assertJsonPath('revoked', true);
     }
 
-    /**
-     * 8. Encrypted attachment metadata registration and quota enforcement.
-     */
-    public function test_encrypted_attachment_registration_and_quota(): void
+    /** Metadata-only placeholder uploads must never reserve storage or return fake URLs. */
+    public function test_legacy_attachment_registration_is_rejected_without_charging_quota(): void
     {
-        $user = User::factory()->create([
-            'subscription_tier' => 'free',
-            'remote_storage_bytes_used' => 0,
-        ]);
+        $user = User::factory()->create(['remote_storage_bytes_used' => 0]);
         $device = $user->enrolledDevices()->create(['device_name' => 'A', 'platform' => 'ios']);
-        $authHeader = ['Authorization' => 'Bearer '.ApiSession::issue($user, $device->id)];
-
-        $spaceId = (string) Str::uuid();
-        $recordId = (string) Str::uuid();
-        $attId = (string) Str::uuid();
-
-        // 8a. Store attachment metadata
-        $storeResp = $this->withHeaders($authHeader)->postJson("/api/v1/spaces/{$spaceId}/attachments", [
-            'id' => $attId,
-            'record_id' => $recordId,
-            'byte_size' => 1048576, // 1 MB
-            'ciphertext_sha256' => 'sample_sha256_hash_value',
-            'key_version' => 1,
-        ]);
-
-        $storeResp->assertStatus(201)
-            ->assertJsonPath('attachment.id', $attId)
-            ->assertJsonStructure(['upload_url', 'attachment', 'object_key']);
-
-        $user->refresh();
-        $this->assertEquals(1048576, $user->remote_storage_bytes_used);
-
-        // 8b. Retrieve attachment download URL
-        $getResp = $this->withHeaders($authHeader)->getJson("/api/v1/spaces/{$spaceId}/attachments/{$attId}");
-        $getResp->assertStatus(200)
-            ->assertJsonPath('attachment.id', $attId)
-            ->assertJsonPath('ciphertext_sha256', 'sample_sha256_hash_value')
-            ->assertJsonStructure(['download_url']);
-
-        // 8c. Test storage quota exceeded
-        $user->update(['remote_storage_bytes_used' => $user->maxAllowedStorageBytes()]);
-        $overQuotaResp = $this->withHeaders($authHeader)->postJson("/api/v1/spaces/{$spaceId}/attachments", [
-            'id' => (string) Str::uuid(),
-            'record_id' => $recordId,
-            'byte_size' => 1024,
-            'ciphertext_sha256' => 'hash',
-        ]);
-        $overQuotaResp->assertStatus(403)
-            ->assertJsonPath('error', 'REMOTE_STORAGE_QUOTA_EXCEEDED');
+        $this->withToken(ApiSession::issue($user, $device->id))->postJson('/api/v1/spaces/'.Str::uuid().'/attachments', [
+            'id' => (string) Str::uuid(), 'record_id' => (string) Str::uuid(), 'byte_size' => 1048576,
+            'ciphertext_sha256' => 'sample_sha256_hash_value', 'key_version' => 1,
+        ])->assertUnprocessable();
+        $this->assertSame(0, $user->fresh()->remote_storage_bytes_used);
+        $this->assertDatabaseCount('encrypted_attachments', 0);
     }
 
     /**

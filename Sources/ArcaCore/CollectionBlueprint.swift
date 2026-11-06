@@ -6,12 +6,12 @@ public struct CollectionDesignError: LocalizedError {
     public init(_ message: String) { errorDescription = message }
 }
 
-/// Version 1 is pinned to the field renderers shipped in this binary. The backend serves the same contract.
+/// Version 2 is pinned to the field renderers shipped in this binary. The backend serves the same contract.
 public enum CollectionBlueprint {
     public static let maximumReplyBytes = 262_144
     private typealias Rule = [String: Any]
     private static let rules: Rule? = {
-        guard let url = Bundle.module.url(forResource: "collection-v1", withExtension: "json"),
+        guard let url = Bundle.module.url(forResource: "collection-v2", withExtension: "json"),
               let data = try? Data(contentsOf: url) else { return nil }
         return (try? JSONSerialization.jsonObject(with: data)) as? Rule
     }()
