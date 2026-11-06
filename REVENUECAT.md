@@ -4,7 +4,7 @@ Arca uses the same account UUID for Forge and RevenueCat. A signed-in user opens
 
 ## Release status — November 6, 2026
 
-Build 8 uses the Apple public SDK key. The current offering `default` returns Apple products `monthly` and `yearly`, both linked to `arca_app_pro`. Pro includes 1 GB encrypted storage and 10 synced devices. Lifetime is deferred for App Store distribution. Production ignores sandbox events. Use a separate sandbox backend to verify the server quota lifecycle.
+Build 8 uses the Apple public SDK key. The current offering `default` returns Apple products `monthly` and `yearly`, both linked to `arca_app_pro`. Pro includes 1 GB encrypted storage and 10 synced devices. Lifetime is deferred for App Store distribution. Apple Business shows the Paid Apps Agreement as New and asks the account holder to update their legal entity before signing. Apple requires an Active agreement for sandbox purchases. Production ignores sandbox events. Use a separate sandbox backend to verify the server quota lifecycle.
 
 ## 1. Install the package and run Debug
 
