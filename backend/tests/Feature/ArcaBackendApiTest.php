@@ -434,6 +434,7 @@ class ArcaBackendApiTest extends TestCase
         $this->assertEquals('pro', $user->subscription_tier);
         $this->assertEquals('active', $user->subscription_state);
         $this->assertEquals('monthly', $user->subscription_product_id);
+        $this->assertSame(1_073_741_824, $user->maxAllowedStorageBytes());
 
         // 5b. BILLING_ISSUE webhook -> transitions to billing_grace_period
         $billingResp = $this->withHeaders($webhookHeader)->postJson('/api/v1/webhooks/revenuecat', [

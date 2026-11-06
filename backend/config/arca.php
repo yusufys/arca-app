@@ -17,7 +17,7 @@ return [
     | Storage and Device Quotas
     |--------------------------------------------------------------------------
     | Free tier: 2 devices, 250 MB ciphertext storage (262,144,000 bytes)
-    | Pro tier: 10 devices, 25 GB ciphertext storage (26,843,545,600 bytes)
+    | Pro tier: 10 devices, 1 GB ciphertext storage (1,073,741,824 bytes)
     */
     'quotas' => [
         'free' => [
@@ -26,7 +26,7 @@ return [
         ],
         'pro' => [
             'max_devices' => 10,
-            'max_storage_bytes' => 26843545600, // 25 GB
+            'max_storage_bytes' => 1073741824, // 1 GB
         ],
     ],
 

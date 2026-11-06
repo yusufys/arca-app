@@ -26,9 +26,9 @@ public enum ArcaCommercialConfig {
     public static let provisionalMonthlyPrice = MoneyValue(minorUnits: 399, currencyCode: "USD", fractionDigits: 2)
     public static let provisionalMonthlyDisplayPrice = "$3.99 / month"
 
-    /// Provisional annual price ($34.99/year).
-    public static let provisionalAnnualPrice = MoneyValue(minorUnits: 3499, currencyCode: "USD", fractionDigits: 2)
-    public static let provisionalAnnualDisplayPrice = "$34.99 / year"
+    /// Provisional annual price ($29.99/year).
+    public static let provisionalAnnualPrice = MoneyValue(minorUnits: 2999, currencyCode: "USD", fractionDigits: 2)
+    public static let provisionalAnnualDisplayPrice = "$29.99 / year"
 
     /// Free tier active synced device limit (2 devices: e.g., iPhone + iPad or iPhone + Mac).
     public static let freeMaxActiveDevices: Int = 2
@@ -39,8 +39,8 @@ public enum ArcaCommercialConfig {
     /// Free tier encrypted cloud storage allowance (250 MB).
     public static let freeCloudStorageQuotaBytes: Int64 = 250 * 1024 * 1024
 
-    /// Pro tier encrypted cloud storage allowance (25 GB).
-    public static let proCloudStorageQuotaBytes: Int64 = 25 * 1024 * 1024 * 1024
+    /// Pro tier encrypted cloud storage allowance (1 GB).
+    public static let proCloudStorageQuotaBytes: Int64 = 1024 * 1024 * 1024
 
     /// Number of days encrypted remote records are retained after Pro expiry before remote archival.
     public static let remoteRetentionDaysAfterExpiry: Int = 90
@@ -74,7 +74,7 @@ public enum ArcaCommercialConfig {
         case .free:
             return "250 MB"
         case .pro:
-            return "25 GB"
+            return "1 GB"
         }
     }
 }
@@ -274,11 +274,13 @@ public struct PostExpiryPolicy: Codable, Sendable, Equatable, Hashable {
             self.isSyncPullAllowed = true
             self.syncPauseReason = .storageQuotaExceeded
             self.explanationSummary =
-                "Your local records are completely safe and editable. Cloud sync uploads are paused because your encrypted cloud usage exceeds the \(effectiveTier.formattedStorageQuota) Free allowance. Existing remote ciphertext is retained for \(ArcaCommercialConfig.remoteRetentionDaysAfterExpiry) days."
+                "Your local records are completely safe and editable. Cloud sync uploads are paused because your encrypted cloud usage exceeds the \(effectiveTier.formattedStorageQuota) \(effectiveTier.displayName) allowance. Existing remote ciphertext is retained for \(ArcaCommercialConfig.remoteRetentionDaysAfterExpiry) days."
             self.recommendedUserActions = [
                 "All local records and attachments remain intact on this device.",
                 "Export a portable .arcaarchive backup at any time.",
-                "Switch heavy Spaces to Local-Only or renew Arca Pro (25 GB) to resume cloud uploads."
+                effectiveTier == .pro
+                    ? "Remove large remote attachments or switch large Spaces to Local-Only to resume cloud uploads."
+                    : "Switch large Spaces to Local-Only or upgrade to Arca Pro (\(ArcaCommercialConfig.formattedStorageQuota(for: .pro))) to resume cloud uploads."
             ]
         } else {
             self.isSyncPushAllowed = true
@@ -359,11 +361,11 @@ public struct ArcaPlanDescriptor: Identifiable, Codable, Sendable, Equatable, Ha
         billingPeriodLabel: "Monthly",
         displayPrice: ArcaCommercialConfig.provisionalMonthlyDisplayPrice,
         maxDevices: ArcaCommercialConfig.proMaxActiveDevices,
-        formattedStorageQuota: "25 GB",
+        formattedStorageQuota: ArcaCommercialConfig.formattedStorageQuota(for: .pro),
         features: [
             "Everything in Arca Free",
             "Sync across up to 10 Active Devices",
-            "25 GB End-to-End Encrypted Cloud Storage",
+            "\(ArcaCommercialConfig.formattedStorageQuota(for: .pro)) End-to-End Encrypted Cloud Storage",
             "Optional Encrypted Personal Cloud Backup Adapters",
             "Zero Lock-In: Keep all local data & exports if you ever cancel"
         ],
@@ -377,13 +379,13 @@ public struct ArcaPlanDescriptor: Identifiable, Codable, Sendable, Equatable, Ha
         billingPeriodLabel: "Annual",
         displayPrice: ArcaCommercialConfig.provisionalAnnualDisplayPrice,
         maxDevices: ArcaCommercialConfig.proMaxActiveDevices,
-        formattedStorageQuota: "25 GB",
+        formattedStorageQuota: ArcaCommercialConfig.formattedStorageQuota(for: .pro),
         features: [
             "Everything in Arca Free",
             "Sync across up to 10 Active Devices",
-            "25 GB End-to-End Encrypted Cloud Storage",
+            "\(ArcaCommercialConfig.formattedStorageQuota(for: .pro)) End-to-End Encrypted Cloud Storage",
             "Optional Encrypted Personal Cloud Backup Adapters",
-            "Save 27% compared to monthly billing"
+            "Save 37% compared to monthly billing"
         ],
         badgeText: "Best Value"
     )

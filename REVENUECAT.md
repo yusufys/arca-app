@@ -4,13 +4,13 @@ Arca uses the same account UUID for Forge and RevenueCat. A signed-in user opens
 
 ## Release status — November 6, 2026
 
-Build 8 uses the Apple public SDK key. A fresh lookup still returned current offering `default` with **zero Apple packages**. Apple reports all three products as `MISSING_METADATA`; monthly/yearly periods are saved as one month/one year; English monthly/yearly product names and descriptions and the Arca Pro group display name are saved. Test Store testing is complete, but Apple purchases and server entitlement changes remain a public-release blocker. The owner must choose prices/storefronts and complete commercial agreements; then finish product metadata, attach Apple products to the entitlement/offering, and test on an isolated sandbox backend. Production rejects sandbox webhook events by design.
+Build 8 uses the Apple public SDK key. The current offering `default` returns Apple products `monthly` and `yearly`, both linked to `arca_app_pro`. Pro includes 1 GB encrypted storage and 10 synced devices. Lifetime is deferred for App Store distribution. Production ignores sandbox events. Use a separate sandbox backend to verify the server quota lifecycle.
 
 ## 1. Install the package and run Debug
 
 Open `Arca.xcodeproj`. The iOS app target links **RevenueCat** and **RevenueCatUI** from [purchases-ios-spm](https://github.com/RevenueCat/purchases-ios-spm.git). The project resolves version 5.102.0. Xcode’s Package Dependencies and the committed Package.resolved record the integration. [Installation instructions](https://www.revenuecat.com/docs/getting-started/installation/ios#install-via-swift-package-manager)
 
-Debug uses the supplied Test Store public key. Sign into an Arca test account and open the plan screen. The Test Store API returned the current offering `default` and all three package mappings below on 5 November 2026. That lookup verifies the catalog. The Apple public SDK key returned the same current offering with zero packages for Apple. Link the Apple products in step 3. Native simulator UI tests completed a Test Store purchase and cold-relaunch restore for each of the three products. Monthly cancellation left the account free. Apple sandbox tests on the TestFlight candidate are still open. The SDK displayed its fallback paywall until a dashboard paywall is published.
+Debug uses the supplied Test Store public key. Sign into an Arca test account and open the plan screen. The Test Store API returned three test products on 5 November 2026, including a test-only lifetime product. Native simulator UI tests completed a Test Store purchase and cold-relaunch restore for each of the three products. Monthly cancellation left the account free. Apple sandbox tests on the TestFlight candidate are still open. The SDK displayed its fallback paywall until a dashboard paywall is published.
 
 ## 2. Connect the real Apple app
 
@@ -19,17 +19,16 @@ Debug uses the supplied Test Store public key. Sign into an Arca test account an
 3. Open [RevenueCat](https://app.revenuecat.com/) → Arca → **Apps & providers**. Add an Apple App Store app with that same bundle ID. Upload the .p8 directly to its In-app purchase key configuration, enter the Issuer ID and save. Complete Apple server notifications using the URL in that app’s RevenueCat configuration. [Apple credential guide](https://www.revenuecat.com/docs/service-credentials/itunesconnect-app-specific-shared-secret/in-app-purchase-key-configuration)
 4. In RevenueCat **Project settings → API keys → Public app-specific API keys**, select the Apple app and copy its `appl_…` key. The supplied Apple public key for RevenueCat app `appcf1b74bb7d` is configured in the Xcode app target’s **Release** build setting `ARCA_RC_PUBLIC_KEY`, or supply it to the archive command. The Test Store key is scoped to Debug. Use the Apple app key for TestFlight, where Apple purchases run in its sandbox.
 
-## 3. Set up three products and one entitlement
+## 3. Set up monthly and yearly under one entitlement
 
 | Apple product ID | App Store Connect product type | Package in the current offering |
 | --- | --- | --- |
 | `monthly` | Auto-renewable subscription, one month | Monthly / `$rc_monthly` |
 | `yearly` | Auto-renewable subscription, one year | Annual / `$rc_annual` |
-| `lifetime` | Non-consumable in-app purchase | Lifetime / `$rc_lifetime` |
 
-In the Apple app’s **Subscriptions**, create one subscription group for monthly and yearly. Use the same access level for both. Create lifetime under **In-App Purchases**. Supply prices, availability, localizations and review information using the intended commercial terms.
+In the Apple app’s **Subscriptions**, create one subscription group for monthly and yearly. Use the same access level for both. Supply prices, availability, localizations and review information using the intended commercial terms.
 
-In RevenueCat **Product catalog → Products**, import or add those Apple products. Under **Entitlements**, attach all three to the exact identifier `arca_app_pro`. Under **Offerings → default**, attach each Apple product to the matching existing package alongside its Test Store counterpart. Set the offering as current. Publish a paywall for that offering with all three choices, localized prices, restore and the required legal links. Configure Customer Center support with **hi@kawkbi.com** and verify that the project’s plan includes Customer Center. [Paywalls](https://www.revenuecat.com/docs/tools/paywalls) · [Customer Center](https://www.revenuecat.com/docs/tools/customer-center)
+In RevenueCat **Product catalog → Products**, import or add those Apple products. Under **Entitlements**, attach both to the exact identifier `arca_app_pro`. Under **Offerings → default**, attach each Apple product to the matching existing package alongside its Test Store counterpart. Set the offering as current. Publish a paywall for that offering with both choices, localized prices, restore and the required legal links. Configure Customer Center support with **hi@kawkbi.com** and verify that the project’s plan includes Customer Center. [Paywalls](https://www.revenuecat.com/docs/tools/paywalls) · [Customer Center](https://www.revenuecat.com/docs/tools/customer-center)
 
 ## 4. SwiftUI implementation
 
@@ -63,6 +62,6 @@ The screen offers retry for network failures and unavailable offerings. Customer
 
 ## 6. Sign off each path
 
-Use disposable accounts. Record build, environment, device, product, CustomerInfo state and the account’s Forge entitlement after the webhook. Check successful and cancelled purchase, restore on a fresh install, expiry, refund, billing retry, lifetime access with no expiration, loss of network, and Customer Center. Run again on the Apple sandbox TestFlight build before public submission. Verify the privacy disclosures against [RevenueCat’s Apple privacy guidance](https://www.revenuecat.com/docs/platform-resources/apple-platform-resources/apple-app-privacy).
+Use disposable accounts. Record build, environment, device, product, CustomerInfo state and the account’s Forge entitlement after the webhook. Check successful and cancelled purchase, restore on a fresh install, expiry, refund, billing retry, loss of network, and Customer Center. Run again on the Apple sandbox TestFlight build before public submission. Verify the privacy disclosures against [RevenueCat’s Apple privacy guidance](https://www.revenuecat.com/docs/platform-resources/apple-platform-resources/apple-app-privacy).
 
 To prepare a signed archive once the public Apple key is available, run <code>ARCA_RC_PUBLIC_KEY=appl_YOUR_PUBLIC_KEY ./ci/archive-ios.sh</code>. In Xcode Organizer validate the archive, distribute it to App Store Connect and select the processed build for the internal tester group. Complete Apple’s export compliance questions for the actual encryption implementation. Support: https://arca-api.on-forge.com/support.html · Privacy: https://arca-api.on-forge.com/privacy.html
