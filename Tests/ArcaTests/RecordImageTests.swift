@@ -6,9 +6,59 @@ import ArcaCore
 import ArcaCrypto
 import ArcaPersistence
 import ArcaSync
+import ArcaArchive
 @testable import ArcaUI
 
 final class RecordImageTests: XCTestCase {
+    func testEncryptedArchiveRestoresMultipleImagesWithoutChangingExistingSpace() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let space = SpaceMetadata(name: "Image recovery", storageMode: .localOnly)
+        let catalog = CatalogStore(baseDirectoryURL: root)
+        await catalog.saveSpace(space)
+        let store = SpaceStore(space: space, baseDirectoryURL: root)
+        let cover = FieldDefinition(label: "Cover", type: .image)
+        let privatePhoto = FieldDefinition(label: "Private image", type: .image, privacy: .localOnly)
+        let schema = CollectionSchema(spaceId: space.id, name: "Recovery fixture", fields: [cover, privatePhoto])
+        try await store.saveCollectionStrict(schema)
+        let bytes = [Data("cover recovery fixture".utf8), Data("private recovery fixture".utf8)]
+        let first = try await store.storeAttachment(data: bytes[0], filename: "cover.jpg", mimeType: "image/jpeg")
+        let second = try await store.storeAttachment(data: bytes[1], filename: "private.jpg", mimeType: "image/jpeg")
+        let record = RecordItem(spaceId: space.id, collectionId: schema.id,
+                                values: [cover.id: .attachments([first]), privatePhoto.id: .attachments([second])])
+        try await store.saveRecord(record, schema: schema)
+        let archive = try await ArchiveService.exportSpace(space: space, store: store,
+            destinationDirectory: root.appendingPathComponent("exports"), encryptionPassphrase: "Recovery fixture password")
+        do {
+            _ = try await ArchiveService.restoreArchiveAsNewSpace(from: archive, passphrase: "Wrong password",
+                into: catalog, spacesRootDirectory: root)
+            XCTFail("Wrong password must not import a Space")
+        } catch { XCTAssertEqual(error as? ArchiveError, .decryptionFailed) }
+        let before = await catalog.listSpaces()
+        XCTAssertEqual(before.map(\.id), [space.id])
+        let restored = try await ArchiveService.restoreArchiveAsNewSpace(from: archive,
+            passphrase: "Recovery fixture password", into: catalog, spacesRootDirectory: root)
+        XCTAssertNotEqual(restored.id, space.id)
+        XCTAssertEqual(restored.storageMode, .localOnly)
+        let reopened = SpaceStore(space: restored, baseDirectoryURL: root)
+        let restoredSchemas = await reopened.listCollections()
+        XCTAssertEqual(restoredSchemas.first?.imageFields.count, 2)
+        let restoredRecords = await reopened.listRecords()
+        XCTAssertEqual(restoredRecords.count, 1)
+        let recovered = try XCTUnwrap(restoredRecords.first)
+        XCTAssertNotEqual(recovered.id, record.id)
+        for (field, expected) in [(cover, bytes[0]), (privatePhoto, bytes[1])] {
+            guard case .attachments(let refs) = recovered.values[field.id], let ref = refs.first else {
+                return XCTFail("Restored image reference missing")
+            }
+            let data = try await reopened.loadAttachmentData(for: ref)
+            XCTAssertEqual(data, expected)
+            XCTAssertEqual(ref.sha256Hex, ClientCryptoEngine.sha256Hex(of: expected))
+        }
+        let original = try await store.loadAttachmentData(for: first)
+        XCTAssertEqual(original, bytes[0])
+    }
+
     func testImageImportBoundsDimensionsAndRemovesLocationMetadata() throws {
         let context = try XCTUnwrap(CGContext(data: nil, width: 3200, height: 1600, bitsPerComponent: 8,
             bytesPerRow: 0, space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))

@@ -38,3 +38,5 @@ backend/storage/*.key
 /artifacts/Arca-UX-Handoff-*.zip
 
 /artifacts/record-images/
+/artifacts/app-store-build*/
+__pycache__/

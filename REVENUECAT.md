@@ -2,6 +2,10 @@
 
 Arca uses the same account UUID for Forge and RevenueCat. A signed-in user opens **Settings → Arca Plan & Quotas** to purchase, restore or manage Pro. Local-only use requires no billing identity.
 
+## Release status — November 6, 2026
+
+Build 8 uses the Apple public SDK key. A fresh lookup still returned current offering `default` with **zero Apple packages**. Apple reports all three products as `MISSING_METADATA`; monthly/yearly periods are saved as one month/one year; English monthly/yearly product names and descriptions and the Arca Pro group display name are saved. Test Store testing is complete, but Apple purchases and server entitlement changes remain a public-release blocker. The owner must choose prices/storefronts and complete commercial agreements; then finish product metadata, attach Apple products to the entitlement/offering, and test on an isolated sandbox backend. Production rejects sandbox webhook events by design.
+
 ## 1. Install the package and run Debug
 
 Open `Arca.xcodeproj`. The iOS app target links **RevenueCat** and **RevenueCatUI** from [purchases-ios-spm](https://github.com/RevenueCat/purchases-ios-spm.git). The project resolves version 5.102.0. Xcode’s Package Dependencies and the committed Package.resolved record the integration. [Installation instructions](https://www.revenuecat.com/docs/getting-started/installation/ios#install-via-swift-package-manager)
