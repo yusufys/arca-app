@@ -26,7 +26,7 @@ mainfile=file('ArcaUXFlows.swift','sourcecode.swift');testfile=file('UXFlowsTest
 pkg=add('XCLocalSwiftPackageReference',relativePath=str(repo))
 ui=add('XCSwiftPackageProductDependency',package=pkg,productName='ArcaUI')
 ui_link=add('PBXBuildFile',productRef=ui)
-base={'SWIFT_VERSION':'5.0','IPHONEOS_DEPLOYMENT_TARGET':'17.0','SDKROOT':'iphoneos','TARGETED_DEVICE_FAMILY':'1','CODE_SIGN_IDENTITY':'-','CODE_SIGN_ENTITLEMENTS':'UXFlows.entitlements','CODE_SIGN_STYLE':'Automatic','GENERATE_INFOPLIST_FILE':'YES','INFOPLIST_KEY_UIApplicationSceneManifest_Generation':'YES','INFOPLIST_KEY_UILaunchScreen_Generation':'YES','ENABLE_TESTABILITY':'YES','SWIFT_OPTIMIZATION_LEVEL':'-Onone','ONLY_ACTIVE_ARCH':'YES','SWIFT_EMIT_LOC_STRINGS':'NO','PRODUCT_NAME':'$(TARGET_NAME)','SUPPORTED_PLATFORMS':'iphonesimulator','ENABLE_USER_SCRIPT_SANDBOXING':'YES'}
+base={'SWIFT_VERSION':'5.0','IPHONEOS_DEPLOYMENT_TARGET':'17.0','SDKROOT':'iphoneos','TARGETED_DEVICE_FAMILY':'1,2','CODE_SIGN_IDENTITY':'-','CODE_SIGN_ENTITLEMENTS':'UXFlows.entitlements','CODE_SIGN_STYLE':'Automatic','GENERATE_INFOPLIST_FILE':'YES','INFOPLIST_KEY_UIApplicationSceneManifest_Generation':'YES','INFOPLIST_KEY_UILaunchScreen_Generation':'YES','ENABLE_TESTABILITY':'YES','SWIFT_OPTIMIZATION_LEVEL':'-Onone','ONLY_ACTIVE_ARCH':'YES','SWIFT_EMIT_LOC_STRINGS':'NO','PRODUCT_NAME':'$(TARGET_NAME)','SUPPORTED_PLATFORMS':'iphonesimulator','ENABLE_USER_SCRIPT_SANDBOXING':'YES'}
 def app(name,bundle,srcs,frameworks=[],products=[]):
  ref=add('PBXFileReference',explicitFileType='wrapper.application',path=name+'.app',sourceTree='BUILT_PRODUCTS_DIR',includeInIndex=0)
  settings=base|{'PRODUCT_BUNDLE_IDENTIFIER':bundle,'INFOPLIST_KEY_CFBundleDisplayName':name}
