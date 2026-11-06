@@ -74,7 +74,8 @@ TestFlight 8 is available. **Public release is not yet ready.** Use [the release
 - Ten Swift recovery/key-persistence/account-cleanup tests passed. The new archive test restores multiple images into a new Space, rejects a wrong password and confirms original records are unchanged.
 - Six focused backend security/image tests passed (41 assertions). Native screenshot capture passed across EN/AR/TR on iPhone and iPad. These supplement the feature's 66 Swift and 53 backend tests documented above.
 - A private PostgreSQL custom dump was created on the server and verified readable, including the encrypted-image table. It is not an off-server backup or a completed restore rehearsal.
-- English listing fields and private review details are saved. Public release mode is manual. Image/privacy/recovery guidance is prepared in the public support and privacy pages.
+- English listing fields and private review details are saved. Public release mode is manual. PR #5 merged to main as `d151992`; Forge deployment `82253770` finished successfully. Updated image/privacy/recovery sections were verified on the live support and privacy pages. Cloudflare rewrites email markup, so byte-for-byte HTML comparison is not expected.
+- Pricing research and a proposed $3.99 monthly / $29.99 yearly launch price are in [the release board](RELEASE_READINESS.html). Prices and quotas have not been changed; the owner has not chosen a commercial plan. Current shared Pro limits are 25 GB and 10 devices, including lifetime, which needs a hosting-cost decision.
 
 ### Remaining, in release order
 
